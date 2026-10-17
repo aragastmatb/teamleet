@@ -28,7 +28,6 @@ var selected := -1
 # Replies to your last action, shown in the bottom panel where you're looking.
 var feedback_from := -1
 var talk_with := ""
-var review_choices := {}
 
 
 func _ready() -> void:
@@ -118,7 +117,6 @@ func _end_day() -> void:
 	feedback_from = -1
 	_clear_selection()
 	talk_with = ""
-	review_choices.clear()
 	rules.end_day()
 	_render()
 
@@ -139,14 +137,8 @@ func _event(choice: String) -> void:
 	_render()
 
 
-func _review_pick(uid: int, choice: String) -> void:
-	review_choices[uid] = choice
-	_render()
-
-
-func _confirm_review() -> void:
-	rules.resolve_review(review_choices)
-	review_choices.clear()
+func _answer(choice: String) -> void:
+	rules.answer_review(choice)
 	_render()
 
 
@@ -658,22 +650,23 @@ func _build_report() -> void:
 	v.add_child(_button(Loc.t("report.to_review" if not rules.review.is_empty() else "report.next"), _continue_report, 260, true))
 
 
+# One question from Irina at a time; the answers are things you'd say, checked against the truth.
 func _build_review() -> void:
-	var v := _overlay(820)
-	v.add_child(_label(Loc.t("review_title"), 22, COL_ACCENT))
-	v.add_child(_label(Loc.t("review_hint"), 14, COL_MUTED, true))
-	for item in rules.review:
-		var t := rules.task(item["uid"])
-		var line := Loc.t("review.kind." + item["kind"], [Loc.t("taskname." + t["id"]), Loc.person(t["owner"])])
-		v.add_child(_label(line, 17, COL_GOOD if item["kind"] == "success" else COL_DANGER, true))
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		v.add_child(row)
-		var options: Array = rules.review_choices(item)
-		var current: String = review_choices.get(item["uid"], options[0])
-		for choice in options:
-			row.add_child(_button(Loc.t("review.choice." + choice), _review_pick.bind(item["uid"], choice), 0, current == choice))
-	v.add_child(_button(Loc.t("review_confirm"), _confirm_review, 220, true))
+	var item: Dictionary = rules.review[0]
+	var t := rules.task(item["uid"])
+	var names := {"task": "@taskname." + t["id"], "owner": "@name.%s.nom" % t["owner"], "owner_gen": "@name.%s.gen" % t["owner"], "owner_dat": "@name.%s.dat" % t["owner"]}
+	var v := _overlay(760)
+	v.add_child(_label(Loc.t("review_title"), 20, COL_ACCENT))
+	var key := "review.q.success"
+	if item["kind"] == "failure":
+		key = "review.q.late" if t["late"] else "review.q.poor"
+	v.add_child(_label(Loc.person("boss"), 15, COL_MUTED))
+	v.add_child(_label(Loc.t("quote", [Loc.render(key, [], names)]), 22, COL_TEXT, true))
+	v.add_child(_label(Loc.render("review.context", [], {"owner": Loc.person(t["owner"])}), 14, COL_MUTED, true))
+	v.add_child(_spacer(4))
+	for choice in rules.review_choices(item):
+		v.add_child(_button(Loc.render("review.a." + choice, [], names), _answer.bind(choice), 0))
+	v.add_child(_label(Loc.t("review_hint." + item["kind"]), 13, COL_MUTED, true))
 
 
 func _build_end() -> void:

@@ -7,7 +7,7 @@ Two working weeks with a team of four. Tasks arrive daily; you assign them with 
 - Skills and motives are hidden and revealed by results, the pace of work, and one-on-ones. Skills vary a little each run.
 - Overload leads to sick leave, resentment to resignation; Vika's ambition can cost you your job.
 - Morning scenes grow out of what's happening: Alex and Vika argue over credit after working together, Dima confesses a mistake, Gena forgets a task at the bottom of his list, Irina asks about a deadline that's slipping, Taras wants to borrow someone. Choices leave consequences that come back later.
-- Friday reviews: credit yourself or whoever did the work, blame them or take responsibility.
+- Fridays: a report on who worked how many hours, then Irina asks about the week's most visible success and worst failure. Answers are checked against the truth: claiming personal control only holds if you took part, blaming the owner only if they could do it and weren't overworked, "we were swamped" only if the report shows overtime.
 - Endings follow your style: master of delegation, a leader people follow, workaholic, replaced by Vika, the team fell apart, removed.
 
 ## Files (`teamlead/`)

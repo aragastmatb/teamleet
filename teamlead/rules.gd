@@ -38,7 +38,7 @@ var day := 1
 var phase := "title" # plan, event, evening, report, review, end
 var people := {}
 var tasks: Array[Dictionary] = []
-var boss := 0
+var boss := 0.0
 var vika_standing := 0
 var hours := 0
 var my_week_hours := [0, 0]
@@ -85,7 +85,7 @@ func start_run(seed_value: int = -1) -> void:
 			"week_hours": [0, 0], "week_overtime": [0, 0], "week_done": [0, 0], "debts": 0, "caught_flattery": false,
 		}
 	tasks.clear()
-	boss = 0
+	boss = 0.0
 	vika_standing = 0
 	hours = 0
 	my_week_hours = [0, 0]
@@ -115,7 +115,15 @@ func _start_day() -> void:
 		elif st["sick"] > 0:
 			st["sick"] -= 1
 			_say(p, "absent.sick")
-	for id in C.SCHEDULE.get(day, []):
+	var arrivals: Array = C.SCHEDULE.get(day, []).duplicate()
+	if flags.get("relief", false):
+		for id in arrivals:
+			if not C.TASKS[id]["public"] and C.TASKS[id]["from"] != "boss":
+				arrivals.erase(id)
+				flags["relief"] = false
+				_narrate("relief", [], {"task": "@taskname." + id})
+				break
+	for id in arrivals:
 		var info: Dictionary = C.TASKS[id]
 		tasks.append({
 			"uid": next_uid, "id": id, "cat": info["cat"], "size": info["size"], "progress": 0.0,
@@ -822,52 +830,127 @@ func days_needed(t: Dictionary) -> float:
 
 # ---------- Friday review ----------
 
+# Irina doesn't go through everything: she asks about the week's most visible success and its
+# most painful failure. The rest she notes quietly.
 func _build_review() -> void:
 	review.clear()
+	var w := week()
+	var best := {}
+	var worst := {}
 	for t in tasks:
 		if t["reviewed"]:
 			continue
-		var done: bool = t["status"] == "done"
 		var by_team: bool = C.TEAM.has(t["owner"])
+		var done: bool = t["status"] == "done"
+		var good: bool = done and (t["quality"] == "good" or t["quality"] == "ok") and not t["late"]
 		if done and t["owner"] == "me":
 			t["reviewed"] = true
-			boss += 1
+			boss += 1.0
 			_narrate("review.mine", [], {"task": "@taskname." + t["id"]})
-		elif done and t["owner"] == "taras":
+		elif by_team and good and t["public"]:
+			if best.is_empty() or t["size"] > best["size"]:
+				best = t
+		elif by_team and (t["late"] or (done and t["public"] and not good)):
+			if worst.is_empty() or _pain(t) > _pain(worst):
+				worst = t
+	if not best.is_empty():
+		review.append({"uid": best["uid"], "kind": "success"})
+	if not worst.is_empty():
+		review.append({"uid": worst["uid"], "kind": "failure"})
+	# Everything else from this week: quiet credit for visible work done well.
+	for t in tasks:
+		if t["reviewed"] or (not best.is_empty() and t["uid"] == best["uid"]) or (not worst.is_empty() and t["uid"] == worst["uid"]):
+			continue
+		if t["status"] == "done" or t["late"]:
 			t["reviewed"] = true
-		elif done and by_team and (t["public"] or t["late"]):
-			var kind := "success" if (t["quality"] == "good" or t["quality"] == "ok") and not t["late"] else "failure"
-			review.append({"uid": t["uid"], "kind": kind, "weird": t["quality"] == "weird"})
-		elif not done and t["late"] and by_team:
-			review.append({"uid": t["uid"], "kind": "failure", "weird": false})
+			if C.TEAM.has(t["owner"]) and t["public"] and (t["quality"] == "good" or t["quality"] == "ok") and not t["late"]:
+				boss += 0.5
+	if not review.is_empty():
+		_ask_review()
+
+
+func _pain(t: Dictionary) -> float:
+	return (2.0 if t["public"] or t["from"] == "boss" else 0.0) + t["size"] * 0.1
+
+
+func _review_names(t: Dictionary) -> Dictionary:
+	var p: String = t["owner"]
+	return {"task": "@taskname." + t["id"], "owner": "@name.%s.nom" % p, "owner_gen": "@name.%s.gen" % p, "owner_dat": "@name.%s.dat" % p}
+
+
+func _ask_review() -> void:
+	var item: Dictionary = review[0]
+	var t := task(item["uid"])
+	var key := "review.q.success"
+	if item["kind"] == "failure":
+		key = "review.q.late" if t["late"] else "review.q.poor"
+	_say("boss", key, [], _review_names(t))
 
 
 func review_choices(item: Dictionary) -> Array:
 	if item["kind"] == "success":
-		return ["self", "owner"]
-	return ["blame", "own", "spin"] if item["weird"] else ["blame", "own"]
+		return ["credit_owner", "team", "self"]
+	return ["own", "overload", "blame"]
 
 
-func resolve_review(choices: Dictionary) -> void:
-	if phase != "review":
+# Is this answer true? The weekly report is the evidence for "we were swamped".
+func review_true(item: Dictionary, choice: String) -> bool:
+	var t := task(item["uid"])
+	var p: String = t["owner"]
+	match choice:
+		"self":
+			return t.get("involved", false)
+		"blame":
+			return people[p]["skills"][t["cat"]] >= 2 and people[p]["week_overtime"][week()] == 0
+		"overload":
+			var overtime := 0
+			for q in C.TEAM:
+				overtime += people[q]["week_overtime"][week()]
+			return overtime >= 4 or people[p]["week_overtime"][week()] >= 2
+	return true
+
+
+func answer_review(choice: String) -> void:
+	if phase != "review" or review.is_empty() or not review_choices(review[0]).has(choice):
 		return
-	for item in review:
-		var t := task(item["uid"])
-		var p: String = t["owner"]
-		var st: Dictionary = people[p]
-		var choice: String = choices.get(item["uid"], review_choices(item)[0])
-		t["reviewed"] = true
-		var names := {"task": "@taskname." + t["id"], "owner": "@name.%s.nom" % p, "owner_gen": "@name.%s.gen" % p, "owner_dat": "@name.%s.dat" % p}
-		history.append({"who": "you", "key": "review.%s" % choice, "args": [], "names": names, "day": day})
-		match choice:
-			"self":
-				boss += 2
+	var item: Dictionary = review.pop_front()
+	var t := task(item["uid"])
+	t["reviewed"] = true
+	var p: String = t["owner"]
+	var st: Dictionary = people[p]
+	var names := _review_names(t)
+	var truth := review_true(item, choice)
+	history.append({"who": "you", "key": "review.a." + choice, "args": [], "names": names, "day": day})
+	match choice:
+		"credit_owner":
+			boss += 1.0
+			st["mood"] += 1.0
+			st["trust"] += 1
+			_say("boss", "review.boss.credit_owner", [], names)
+			if st["promised"]:
+				st["promised"] = false
+			if p == "vika" and t["quality"] == "good":
+				vika_standing += 1
+		"team":
+			boss += 1.0
+			for q in C.TEAM:
+				if available(q):
+					people[q]["mood"] += 0.3
+			if C.PEOPLE[p]["drive"] == "visibility":
+				st["mood"] -= 0.8
+				_say(p, "review.team." + p if L.has_key("review.team." + p) else "review.hurt", [], names)
+			_say("boss", "review.boss.team", [], names)
+		"self":
+			boss += 2.0
+			_say("boss", "review.boss.self", [], names)
+			if truth:
+				st["mood"] -= 0.5
+			else:
 				st["mood"] -= 1.5
 				st["trust"] -= 1
 				if not flags.has("credit_taken"):
 					flags["credit_taken"] = []
 				flags["credit_taken"].append({"uid": t["uid"], "owner": p, "day": day})
-				_say("boss", "review.boss.self", [], names)
 				if p == "vika":
 					st["ambition"] += 1
 					if st["ambition"] >= 3:
@@ -875,33 +958,30 @@ func resolve_review(choices: Dictionary) -> void:
 						_say("vika", "review.vika_goes_to_boss", [], names)
 				else:
 					_say(p, "review.hurt", [], names)
-			"owner":
-				boss += 1
-				st["mood"] += 1.0
-				st["trust"] += 1
-				st["promised"] = false
-				_say("boss", "review.boss.owner", [], names)
-				if p == "vika" and t["quality"] == "good":
-					vika_standing += 1
-			"blame":
-				st["mood"] -= 2.0
-				st["trust"] -= 1
+		"own":
+			st["trust"] += 1
+			_say("boss", "review.boss.own", [], names)
+		"blame":
+			st["mood"] -= 2.0
+			st["trust"] -= 1 if truth else 2
+			if truth:
+				boss += 1.0
 				_say("boss", "review.boss.blame", [], names)
-				_say(p, "review.blamed", [], names)
-			"own":
-				boss -= 1
-				st["trust"] += 1
-				_say("boss", "review.boss.own", [], names)
-			"spin":
-				if rng.randf() < 0.5:
-					boss += 1
-					_say("boss", "review.boss.spin_ok", [], names)
-				else:
-					boss -= 1
-					_say("boss", "review.boss.spin_bad", [], names)
-		st["mood"] = clampf(st["mood"], -5.0, 5.0)
-	review.clear()
-	if day >= C.DAYS:
+			else:
+				_say("boss", "review.boss.blame_false", [], names)
+			_say(p, "review.blamed", [], names)
+		"overload":
+			if truth:
+				boss += 1.0
+				flags["relief"] = true
+				_say("boss", "review.boss.overload_true", [], names)
+			else:
+				boss -= 1.0
+				_say("boss", "review.boss.overload_false", [], names)
+	st["mood"] = clampf(st["mood"], -5.0, 5.0)
+	if not review.is_empty():
+		_ask_review()
+	elif day >= C.DAYS:
 		_finish_run()
 	else:
 		phase = "evening"
@@ -928,15 +1008,15 @@ func _finish_run() -> void:
 		ending = "team_gone"
 	elif boss <= -4:
 		ending = "fired"
-	elif vika_standing >= 4 and vika_standing > boss:
+	elif vika_standing >= 3 and vika_standing > boss:
 		ending = "replaced"
 	elif hours >= 24:
 		ending = "workhorse"
-	elif hours <= 8 and boss >= 2 and trust_avg < 0.0:
+	elif hours <= 8 and boss >= 1 and trust_avg < 0.0:
 		ending = "puppeteer"
 	elif trust_avg >= 1.0 and boss >= 1 and quits == 0:
 		ending = "leader"
-	elif hours <= 8 and boss >= 2:
+	elif hours <= 8 and boss >= 1.5:
 		ending = "puppeteer"
 	else:
 		ending = "middle"

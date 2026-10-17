@@ -331,12 +331,14 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.unassign_now(t)
 			r.people["gena"]["mood"] += 0.5
 		"gena_forgot/myself":
+			t["involved"] = true
 			t["owner"] = "me"
 			t["helper"] = ""
 			t["first"] = true
 
 		"dima_mistake/help":
 			r.add_my_hours(3)
+			t["involved"] = true
 			t["q_sum"] += 1.2 * t["q_days"]
 			r.people["dima"]["mood"] += 1.0
 			r.people["dima"]["trust"] += 1
