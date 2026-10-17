@@ -41,36 +41,53 @@ const TONES := {
 
 const ONE_ON_ONE := ["praise", "listen", "push", "promise", "dayoff"]
 
-# size: days of work for someone decent at it. due: days after arrival. public: the boss will look at it.
+# size: days of work for someone decent at it. due: days after arrival (0 = today). public: the boss will look at it.
+# There's more work than the team can do; something will slip, and the question is what.
 const TASKS := {
 	"client_report": {"cat": "analytics", "size": 3, "due": 4, "public": true, "from": "boss"},
 	"minutes": {"cat": "routine", "size": 1, "due": 2, "public": false, "from": "boss"},
 	"corporate": {"cat": "people", "size": 2, "due": 5, "public": false, "from": "marina"},
-	"integration": {"cat": "tech", "size": 3, "due": 5, "public": false, "from": "taras"},
+	"weekly_report": {"cat": "routine", "size": 1, "due": 1, "public": true, "from": "boss"},
+	"integration": {"cat": "tech", "size": 2, "due": 5, "public": false, "from": "taras"},
+	"timesheets": {"cat": "routine", "size": 1, "due": 2, "public": false, "from": "marina"},
+	"security_patch": {"cat": "tech", "size": 1, "due": 2, "public": false, "from": "taras"},
 	"onboarding": {"cat": "people", "size": 2, "due": 3, "public": false, "from": "marina"},
 	"okr": {"cat": "analytics", "size": 2, "due": 3, "public": true, "from": "boss"},
+	"ab_test": {"cat": "analytics", "size": 1, "due": 2, "public": false, "from": "taras"},
+	"inventory": {"cat": "routine", "size": 1, "due": 2, "public": false, "from": "marina"},
 	"prod_fix": {"cat": "tech", "size": 1, "due": 1, "public": true, "from": "boss"},
+	"pricing": {"cat": "analytics", "size": 2, "due": 3, "public": true, "from": "boss"},
+	"newsletter": {"cat": "people", "size": 1, "due": 3, "public": false, "from": "marina"},
 	"survey": {"cat": "people", "size": 1, "due": 3, "public": false, "from": "marina"},
+	"new_feature": {"cat": "tech", "size": 3, "due": 5, "public": true, "from": "boss"},
+	"angry_client": {"cat": "people", "size": 1, "due": 1, "public": true, "from": "boss"},
+	"vendor_contract": {"cat": "routine", "size": 1, "due": 3, "public": false, "from": "boss"},
 	"board_deck": {"cat": "analytics", "size": 3, "due": 4, "public": true, "from": "boss"},
 	"legacy_export": {"cat": "routine", "size": 2, "due": 3, "public": false, "from": "boss"},
+	"forecast": {"cat": "analytics", "size": 1, "due": 3, "public": false, "from": "taras"},
 	"client_bug": {"cat": "tech", "size": 2, "due": 2, "public": true, "from": "boss"},
-	"docs": {"cat": "routine", "size": 2, "due": 4, "public": false, "from": "taras"},
-	"migration": {"cat": "tech", "size": 4, "due": 5, "public": false, "from": "taras"},
+	"docs": {"cat": "routine", "size": 1, "due": 3, "public": false, "from": "taras"},
+	"client_demo": {"cat": "people", "size": 2, "due": 3, "public": true, "from": "boss"},
+	"budget": {"cat": "analytics", "size": 2, "due": 2, "public": true, "from": "boss"},
+	"migration": {"cat": "tech", "size": 3, "due": 2, "public": false, "from": "taras"},
 	"interviews": {"cat": "people", "size": 2, "due": 3, "public": false, "from": "marina"},
-	"budget": {"cat": "analytics", "size": 3, "due": 4, "public": true, "from": "boss"},
-	"audit": {"cat": "routine", "size": 2, "due": 2, "public": true, "from": "boss"},
+	"load_test": {"cat": "tech", "size": 2, "due": 3, "public": false, "from": "taras"},
+	"mentoring": {"cat": "people", "size": 1, "due": 1, "public": false, "from": "marina"},
+	"perf_reviews": {"cat": "people", "size": 1, "due": 1, "public": false, "from": "marina"},
+	"dashboard": {"cat": "analytics", "size": 1, "due": 3, "public": false, "from": "taras"},
+	"audit": {"cat": "routine", "size": 1, "due": 2, "public": true, "from": "boss"},
 }
 
-# Which tasks arrive on which morning.
+# Which tasks arrive on which morning. Ids can repeat (the weekly report, another outage).
 const SCHEDULE := {
-	1: ["client_report", "minutes", "corporate"],
-	2: ["integration"],
-	3: ["onboarding", "okr"],
-	4: ["prod_fix"],
-	5: ["survey"],
-	6: ["board_deck", "legacy_export"],
-	7: ["client_bug", "docs"],
-	8: ["migration", "interviews"],
-	9: ["budget"],
-	10: ["audit"],
+	1: ["client_report", "minutes", "corporate", "weekly_report"],
+	2: ["integration", "timesheets", "security_patch"],
+	3: ["onboarding", "okr", "ab_test", "inventory", "dashboard"],
+	4: ["prod_fix", "pricing", "newsletter", "load_test"],
+	5: ["survey", "new_feature", "angry_client", "vendor_contract"],
+	6: ["board_deck", "legacy_export", "weekly_report", "forecast", "interviews"],
+	7: ["client_bug", "docs", "client_demo", "mentoring"],
+	8: ["migration", "budget", "prod_fix", "audit"],
+	9: ["perf_reviews"],
+	10: ["timesheets"],
 }

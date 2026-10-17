@@ -26,6 +26,9 @@ var rules := Rules.new()
 var ui: Control
 var selected := -1
 var picked := ""
+var picked_helper := ""
+# Replies to your last action, shown in the bottom panel where you're looking.
+var feedback_from := -1
 var talk_with := ""
 var review_choices := {}
 
@@ -67,20 +70,33 @@ func _select(uid: int) -> void:
 
 func _pick(p: String) -> void:
 	picked = p
+	if picked_helper == p:
+		picked_helper = ""
+	_render()
+
+
+func _pick_helper(p: String) -> void:
+	picked_helper = "" if picked_helper == p else p
 	_render()
 
 
 func _assign(tone: String) -> void:
-	rules.assign(selected, picked, tone)
+	feedback_from = rules.history.size()
+	var uid := selected
+	rules.assign(uid, picked, tone)
+	if picked_helper != "" and rules.task(uid)["owner"] == picked:
+		rules.set_helper(uid, picked_helper)
 	_clear_selection()
 
 
 func _direct(p: String) -> void:
+	feedback_from = rules.history.size()
 	rules.assign(selected, p, "plain")
 	_clear_selection()
 
 
 func _helper(p: String) -> void:
+	feedback_from = rules.history.size()
 	rules.set_helper(selected, p)
 	_render()
 
@@ -98,12 +114,14 @@ func _talk_to(p: String) -> void:
 
 
 func _talk(approach: String) -> void:
+	feedback_from = rules.history.size()
 	rules.one_on_one(talk_with, approach)
 	talk_with = ""
 	_render()
 
 
 func _end_day() -> void:
+	feedback_from = -1
 	_clear_selection()
 	talk_with = ""
 	review_choices.clear()
@@ -116,7 +134,13 @@ func _next() -> void:
 	_render()
 
 
+func _continue_report() -> void:
+	rules.continue_report()
+	_render()
+
+
 func _event(choice: String) -> void:
+	feedback_from = rules.history.size()
 	rules.resolve_event(choice)
 	_render()
 
@@ -141,6 +165,7 @@ func _start_run() -> void:
 func _clear_selection() -> void:
 	selected = -1
 	picked = ""
+	picked_helper = ""
 	_render()
 
 
@@ -167,6 +192,8 @@ func _render() -> void:
 			_build_event()
 		"evening":
 			_build_evening()
+		"report":
+			_build_report()
 		"review":
 			_build_review()
 		"end":
@@ -210,9 +237,13 @@ func _build_office() -> void:
 	middle.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	middle.add_theme_constant_override("separation", 10)
 	v.add_child(middle)
+	var board_scroll := ScrollContainer.new()
+	board_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	board_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	middle.add_child(board_scroll)
 	var board := _vbox(6)
 	board.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	middle.add_child(board)
+	board_scroll.add_child(board)
 	for p in C.TEAM:
 		board.add_child(_person_row(p))
 	board.add_child(_me_row())
@@ -228,7 +259,6 @@ func _top_bar() -> Control:
 	top.add_child(header)
 	var word := rules.boss_word()
 	top.add_child(_label(Loc.t("boss_label", ["@boss." + word]), 17, BOSS_COLORS[word]))
-	top.add_child(_label(Loc.t("hours", [rules.hours]), 17, COL_GOOD if rules.hours == 0 else COL_DANGER))
 	var lang := _button(Loc.t("lang_button"), _toggle_lang, 110)
 	lang.custom_minimum_size.y = 36
 	top.add_child(lang)
@@ -275,11 +305,17 @@ func _person_row(p: String) -> Control:
 		var level: String = Loc.t("level.%d" % st["skills"][cat]) if known.has("skill." + cat) else Loc.t("unknown")
 		skills.append("%s: %s" % [Loc.t("cat." + cat), level])
 	card.add_child(_label(Loc.t("known.skills", [", ".join(skills)]), 12, COL_MUTED, true))
+	var middle := _vbox(6)
+	middle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(middle)
 	var queue := HFlowContainer.new()
 	queue.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	queue.add_theme_constant_override("h_separation", 6)
 	queue.add_theme_constant_override("v_separation", 6)
-	h.add_child(queue)
+	middle.add_child(queue)
+	var said := _said_today(p)
+	if said != "":
+		middle.add_child(_bubble(said))
 	for t in rules.queue_of(p):
 		queue.add_child(_task_chip(t))
 	for t in rules.tasks:
@@ -293,6 +329,30 @@ func _person_row(p: String) -> Control:
 	talk.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(talk)
 	return row
+
+
+# The last thing this person said today, if anything.
+func _said_today(p: String) -> String:
+	for i in range(rules.history.size() - 1, -1, -1):
+		var e: Dictionary = rules.history[i]
+		if e["day"] != rules.day:
+			break
+		if e["who"] == p:
+			var body := Loc.render(e["key"], e.get("args", []), e.get("names", {}))
+			return body if body.begins_with("(") or body.begins_with("«") or body.begins_with("\"") else Loc.t("quote", [body])
+	return ""
+
+
+func _bubble(text_value: String) -> Control:
+	var box := PanelContainer.new()
+	var style := _box(COL_BG.lightened(0.06), COL_PANEL_BORDER, 1, 6)
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 3
+	style.content_margin_bottom = 3
+	box.add_theme_stylebox_override("panel", style)
+	box.add_child(_label(text_value, 13, COL_TEXT, true))
+	return box
 
 
 func _me_row() -> Control:
@@ -318,9 +378,14 @@ func _side() -> Control:
 	side.custom_minimum_size.x = 330
 	var inbox := PanelContainer.new()
 	inbox.add_theme_stylebox_override("panel", _box(COL_PANEL.darkened(0.2), COL_PANEL_BORDER, 1, 8))
+	inbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	side.add_child(inbox)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	inbox.add_child(scroll)
 	var iv := _vbox(6)
-	inbox.add_child(iv)
+	iv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(iv)
 	iv.add_child(_label(Loc.t("inbox"), 12, COL_MUTED))
 	var items := rules.inbox()
 	if items.is_empty():
@@ -331,31 +396,13 @@ func _side() -> Control:
 	iv.add_child(flow)
 	for t in items:
 		flow.add_child(_task_chip(t))
-	var chat := PanelContainer.new()
-	chat.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	chat.add_theme_stylebox_override("panel", _box(COL_PANEL.darkened(0.2), COL_PANEL_BORDER, 1, 8))
-	side.add_child(chat)
-	var cv := _vbox(4)
-	chat.add_child(cv)
-	cv.add_child(_label(Loc.t("chat"), 12, COL_MUTED))
-	var log_box := RichTextLabel.new()
-	log_box.bbcode_enabled = true
-	log_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	log_box.scroll_following = true
-	log_box.add_theme_font_size_override("normal_font_size", 13)
-	var lines := PackedStringArray()
-	for entry in rules.history:
-		var color := COL_ACCENT if entry["who"] == "you" else (COL_MUTED if entry["who"] == "" else COL_TEXT)
-		lines.append("[color=#%s]%s[/color]" % [color.to_html(false), _entry_text(entry)])
-	log_box.text = "\n".join(lines)
-	cv.add_child(log_box)
 	return side
 
 
 func _task_chip(t: Dictionary) -> Control:
 	var b := Button.new()
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(160, 62)
+	b.custom_minimum_size = Vector2(160, 70)
 	var chosen: bool = selected == t["uid"]
 	var color: Color = CAT_COLORS[t["cat"]]
 	var normal := _box(COL_PAPER if not chosen else COL_PAPER.lightened(0.5), COL_ACCENT if chosen else color, 3 if chosen else 2, 6)
@@ -379,6 +426,8 @@ func _task_chip(t: Dictionary) -> Control:
 	margin.add_child(v)
 	v.add_child(_label(Loc.t("taskname." + t["id"]), 13, COL_INK, true))
 	var due := _due_text(t)
+	if t["helper"] != "" and t["status"] == "active":
+		due += "  " + Loc.t("chip_helper", [Loc.person(t["helper"])])
 	v.add_child(_label(due, 11, COL_DANGER if t["late"] or t["due"] - rules.day <= 0 else COL_INK_MUTED))
 	if t["status"] == "active":
 		var bar := ProgressBar.new()
@@ -419,9 +468,13 @@ func _action_panel() -> Control:
 	elif selected >= 0 and not rules.task(selected).is_empty() and rules.task(selected)["status"] in ["inbox", "active"]:
 		_task_actions(v, rules.task(selected))
 	else:
-		v.add_child(_label(Loc.t("talk_used") if rules.talked_today else Loc.t("pick_task"), 16, COL_MUTED, true))
-		if rules.talked_today:
+		var replies := _feedback_lines()
+		for line in replies:
+			v.add_child(_label(line, 18, COL_TEXT, true))
+		if replies.is_empty():
 			v.add_child(_label(Loc.t("pick_task"), 16, COL_MUTED, true))
+		if rules.talked_today:
+			v.add_child(_label(Loc.t("talk_used"), 14, COL_MUTED, true))
 	var end := _button(Loc.t("end_day"), _end_day, 220, true)
 	end.disabled = rules.phase != "plan"
 	end.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -455,6 +508,15 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 	if t["status"] == "active":
 		who.add_child(_button(Loc.t("unassign"), _unassign, 0))
 	if picked != "":
+		var pair := HBoxContainer.new()
+		pair.add_theme_constant_override("separation", 6)
+		v.add_child(pair)
+		pair.add_child(_label(Loc.t("helper_optional"), 14, COL_MUTED))
+		for p in C.TEAM:
+			if p != picked and rules.available(p):
+				pair.add_child(_button(Loc.person(p), _pick_helper.bind(p), 0, picked_helper == p))
+		pair.add_child(_label(Loc.t("helper_hint"), 12, COL_MUTED, true))
+		pair.get_child(pair.get_child_count() - 1).size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var tones := HFlowContainer.new()
 		tones.add_theme_constant_override("h_separation", 6)
 		tones.add_theme_constant_override("v_separation", 6)
@@ -466,11 +528,24 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 		var pair := HBoxContainer.new()
 		pair.add_theme_constant_override("separation", 6)
 		v.add_child(pair)
-		pair.add_child(_label(Loc.t("helper"), 14, COL_MUTED))
+		pair.add_child(_label(Loc.t("helper_optional"), 14, COL_MUTED))
 		for p in C.TEAM:
 			if p != t["owner"] and rules.available(p):
 				pair.add_child(_button(Loc.person(p), _helper.bind(p), 0, t["helper"] == p))
 		pair.add_child(_button(Loc.t("no_helper"), _helper.bind(""), 0, t["helper"] == ""))
+		pair.add_child(_label(Loc.t("helper_hint"), 12, COL_MUTED, true))
+		pair.get_child(pair.get_child_count() - 1).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+
+func _feedback_lines() -> PackedStringArray:
+	var out := PackedStringArray()
+	if feedback_from < 0:
+		return out
+	for i in range(feedback_from, rules.history.size()):
+		var e: Dictionary = rules.history[i]
+		if e["who"] != "you":
+			out.append(_entry_text(e))
+	return out.slice(maxi(0, out.size() - 3))
 
 
 func _talk_actions(v: VBoxContainer) -> void:
@@ -532,6 +607,31 @@ func _build_evening() -> void:
 		var color := COL_MUTED if entry["who"] == "" else (COL_ACCENT if entry["who"] == "you" else COL_TEXT)
 		list.add_child(_label(_entry_text(entry), 16, color, true))
 	v.add_child(_button(Loc.t("to_end" if rules.day >= C.DAYS else "next_day"), _next, 260, true))
+
+
+func _build_report() -> void:
+	var w := rules.week()
+	var v := _overlay(720)
+	v.add_child(_label(Loc.t("report_title", [w + 1]), 24, COL_ACCENT))
+	v.add_child(_label(Loc.t("report_hint"), 14, COL_MUTED, true))
+	for p in C.TEAM:
+		var st: Dictionary = rules.people[p]
+		var hours: int = st["week_hours"][w]
+		var line := Loc.render("report.row", [], {"who": Loc.person(p), "hours": hours, "done": st["week_done"][w]})
+		if st["week_overtime"][w] > 0:
+			line += Loc.render("report.overtime", [], {"days": st["week_overtime"][w]})
+		if st["gone"]:
+			line += " — " + Loc.t("gone_label")
+		var color := COL_DANGER if hours >= 46 else (COL_ACCENT if hours <= 16 else COL_TEXT)
+		v.add_child(_label(line, 18, color, true))
+	v.add_child(_label(Loc.render("report.me", [], {"hours": rules.my_week_hours[w]}), 18, COL_GOOD if rules.my_week_hours[w] == 0 else COL_ACCENT))
+	var late := 0
+	for t in rules.tasks:
+		if t["late"] and int((t["late_day"] - 1) / 5.0) == w:
+			late += 1
+	v.add_child(_label(Loc.render("report.late", [], {"count": late}), 16, COL_DANGER if late > 0 else COL_MUTED))
+	v.add_child(_spacer(6))
+	v.add_child(_button(Loc.t("report.to_review" if not rules.review.is_empty() else "report.next"), _continue_report, 260, true))
 
 
 func _build_review() -> void:

@@ -242,7 +242,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			t["first"] = true
 
 		"dima_mistake/help":
-			r.hours += 3
+			r.add_my_hours(3)
 			t["q_sum"] += 1.2 * t["q_days"]
 			r.people["dima"]["mood"] += 1.0
 			r.people["dima"]["trust"] += 1
@@ -270,7 +270,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.people["vika"]["mood"] -= 1.0
 			r.people["vika"]["trust"] += 1
 		"vika_promise_check/do_now":
-			r.hours += 2
+			r.add_my_hours(2)
 			r.people["vika"]["promised"] = false
 			r.people["vika"]["mood"] += 2.0
 			r.people["vika"]["trust"] += 1

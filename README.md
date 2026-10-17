@@ -1,4 +1,4 @@
-# This Meeting Could Have Been an Email — team lead simulator
+# TeamLeet — a team lead simulator
 
 Godot 4.6, Russian and English (switch in-game). No assets, all UI built in code. Run with F5.
 

@@ -35,12 +35,13 @@ const PUSH_SPEED := 0.2
 var rng := RandomNumberGenerator.new()
 var scenes := Scenes.new()
 var day := 1
-var phase := "title" # plan, event, evening, review, end
+var phase := "title" # plan, event, evening, report, review, end
 var people := {}
 var tasks: Array[Dictionary] = []
 var boss := 0
 var vika_standing := 0
 var hours := 0
+var my_week_hours := [0, 0]
 var quits := 0
 var talked_today := false
 var events: Array[Dictionary] = []
@@ -75,11 +76,13 @@ func start_run(seed_value: int = -1) -> void:
 			"sick": 0, "absent": false, "absent_reason": "", "off_next": false, "pushed": 0, "promised": false, "ambition": 0,
 			"gone": false, "known": {}, "favors": 0, "warned_mood": false, "warned_tired": false,
 			"last_done": -10, "idle_said": false, "idle_days": 0, "promised_day": 0,
+			"week_hours": [0, 0], "week_overtime": [0, 0], "week_done": [0, 0],
 		}
 	tasks.clear()
 	boss = 0
 	vika_standing = 0
 	hours = 0
+	my_week_hours = [0, 0]
 	quits = 0
 	events.clear()
 	review.clear()
@@ -109,7 +112,7 @@ func _start_day() -> void:
 		tasks.append({
 			"uid": next_uid, "id": id, "cat": info["cat"], "size": info["size"], "progress": 0.0,
 			"due": day + info["due"], "public": info["public"], "from": info["from"], "owner": "", "helper": "",
-			"tone": "plain", "q_sum": 0.0, "q_days": 0, "status": "inbox", "late": false, "quality": "",
+			"tone": "plain", "q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
 			"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
 			"asked": false, "vouched": false, "flaw": false,
 		})
@@ -370,8 +373,8 @@ func end_day() -> void:
 	for t in tasks:
 		if (t["status"] == "inbox" or t["status"] == "active") and t["due"] == day and not t["late"]:
 			t["late"] = true
-			boss -= 1
-			_narrate("late", [], {"task": "@taskname." + t["id"]})
+			t["late_day"] = day
+			_late(t)
 			if t["vouched"]:
 				boss -= 1
 				_say("boss", "boss.vouched_late", [], {"task": "@taskname." + t["id"]})
@@ -379,11 +382,43 @@ func end_day() -> void:
 		_check_person(p)
 	if C.REVIEW_DAYS.has(day):
 		_build_review()
-		phase = "review" if not review.is_empty() else "evening"
 		if review.is_empty():
 			_narrate("review.empty")
+		phase = "report"
 	else:
 		phase = "evening"
+
+
+# The boss minds every slipped task she asked for or will look at. Others' requests only reach her
+# when the same person has complained twice.
+func _late(t: Dictionary) -> void:
+	var names := {"task": "@taskname." + t["id"]}
+	if t["public"] or t["from"] == "boss":
+		boss -= 1
+		_narrate("late", [], names)
+		return
+	var who: String = t["from"]
+	flags["complaints_" + who] = flags.get("complaints_" + who, 0) + 1
+	_say(who, "late.complain.%s" % who, [], names)
+	if flags["complaints_" + who] == 2:
+		boss -= 1
+		_narrate("late.escalated", [], {"who": "@name.%s.nom" % who, "who_gen": "@name.%s.gen" % who})
+
+
+# After the Friday report: the review if there's anything to discuss, otherwise the evening.
+func continue_report() -> void:
+	if phase != "report":
+		return
+	phase = "review" if not review.is_empty() else "evening"
+
+
+func week() -> int:
+	return clampi(int((day - 1) / 5.0), 0, 1)
+
+
+func add_my_hours(n: int) -> void:
+	hours += n
+	my_week_hours[week()] += n
 
 
 func _speed(p: String, t: Dictionary) -> float:
@@ -416,48 +451,63 @@ func _work(p: String) -> void:
 	if st["absent"]:
 		if st["absent_reason"] == "taras":
 			st["energy"] -= 0.5
+			st["week_hours"][week()] += 8
 		else:
 			st["energy"] = minf(_stamina(p), st["energy"] + IDLE_REST)
 		return
 	var q := queue_of(p)
 	if not q.is_empty():
-		var t: Dictionary = q[0]
-		var skill: int = st["skills"][t["cat"]]
-		var step := _speed(p, t)
-		t["progress"] += step
-		var quality: float = skill + st["mood"] * 0.1 + rng.randf_range(-0.7, 0.7) + C.TONES[t["tone"]].get("quality", 0.0)
-		var h: String = t["helper"]
-		if h != "" and _helping_now(h):
-			t["helped"][h] = t["helped"].get(h, 0) + 1
-			if people[h]["skills"][t["cat"]] > skill:
-				quality += 0.5
-		t["q_sum"] += quality
-		t["q_days"] += 1
-		_learn(p, t["cat"], 1.0)
-		var drain: float = DRAIN + C.TONES[t["tone"]].get("drain", 0.0)
-		if skill < 2:
+		# The day is spent down the queue: whatever's left after finishing one task goes to the next.
+		var first: Dictionary = q[0]
+		var time := 1.0
+		for t in q:
+			if time < 0.05:
+				break
+			var skill: int = st["skills"][t["cat"]]
+			var step := _speed(p, t)
+			var spend := minf(time, (t["size"] - t["progress"]) / step)
+			time -= spend
+			t["progress"] += step * spend
+			var quality: float = skill + st["mood"] * 0.1 + rng.randf_range(-0.7, 0.7) + C.TONES[t["tone"]].get("quality", 0.0)
+			var h: String = t["helper"]
+			if h != "" and _helping_now(h):
+				t["helped"][h] = t["helped"].get(h, 0) + 1
+				if people[h]["skills"][t["cat"]] > skill:
+					quality += 0.5
+			t["q_sum"] += quality * spend
+			t["q_days"] += spend
+			_learn(p, t["cat"], spend)
+			if C.PEOPLE[p]["likes"].has(t["cat"]):
+				st["mood"] += 0.3 * spend
+			if C.PEOPLE[p]["hates"].has(t["cat"]):
+				st["mood"] -= 0.4 * spend
+			if t["progress"] >= t["size"] - 0.001:
+				_finish(p, t)
+			else:
+				# How far they got today, relative to the task: the main way to read someone's skill.
+				var part: float = step * spend / t["size"]
+				var pace := "big" if part >= 0.45 else ("mid" if part >= 0.25 else "small")
+				_narrate("pace." + pace, [], {"who": "@name.%s.nom" % p, "task": "@taskname." + t["id"]})
+		var drain: float = DRAIN + C.TONES[first["tone"]].get("drain", 0.0)
+		if st["skills"][first["cat"]] < 2:
 			drain += HARD_DRAIN
 		if q.size() >= OVERLOAD_AT:
 			drain += OVERLOAD_DRAIN
 			st["mood"] -= 0.3
+		# Overloaded, rushed or pushed people stay late.
+		st["week_hours"][week()] += 8
+		if q.size() >= OVERLOAD_AT or first["tone"] == "urgent" or st["pushed"] > 0:
+			st["week_hours"][week()] += 2 + (1 if q.size() >= OVERLOAD_AT + 2 else 0)
+			st["week_overtime"][week()] += 1
 		st["energy"] -= drain
-		if C.PEOPLE[p]["likes"].has(t["cat"]):
-			st["mood"] += 0.3
-		if C.PEOPLE[p]["hates"].has(t["cat"]):
-			st["mood"] -= 0.4
 		st["idle_said"] = false
 		st["idle_days"] = 0
-		if t["progress"] >= t["size"]:
-			_finish(p, t)
-		else:
-			# How far they got today, relative to the task: the main way to read someone's skill.
-			var pace := "big" if step / t["size"] >= 0.45 else ("mid" if step / t["size"] >= 0.25 else "small")
-			_narrate("pace." + pace, [], {"who": "@name.%s.nom" % p, "task": "@taskname." + t["id"]})
 	else:
 		var helping := false
 		for t in tasks:
 			if t["status"] == "active" and t["helper"] == p and available(t["owner"]) and not people[t["owner"]]["absent"]:
 				helping = true
+				st["week_hours"][week()] += 8
 				_learn(p, t["cat"], 1.5)
 				st["energy"] -= 0.7
 				break
@@ -488,13 +538,14 @@ func _learn(p: String, cat: String, amount: float) -> void:
 
 
 func _finish(p: String, t: Dictionary) -> void:
-	var avg: float = t["q_sum"] / maxi(1, t["q_days"])
+	var avg: float = t["q_sum"] / maxf(0.01, t["q_days"])
 	t["quality"] = "good" if avg >= GOOD_Q else ("ok" if avg >= OK_Q else ("weird" if avg >= WEIRD_Q else "poor"))
 	if t["flaw"] and (t["quality"] == "good" or t["quality"] == "ok"):
 		t["quality"] = "weird"
 	t["status"] = "done"
 	t["done_day"] = day
 	people[p]["last_done"] = day
+	people[p]["week_done"][week()] += 1
 	if p == "vika" and t["public"] and (t["quality"] == "good" or t["quality"] == "ok"):
 		people[p]["ambition"] += 1
 	_say(p, _result_line(p, t["id"], t["quality"]), [], {"task": "@taskname." + t["id"]})
@@ -514,7 +565,7 @@ func _work_myself() -> void:
 		return
 	var t: Dictionary = q[0]
 	t["progress"] += MY_SPEED
-	hours += MY_HOURS
+	add_my_hours(MY_HOURS)
 	if t["progress"] >= t["size"]:
 		t["status"] = "done"
 		t["done_day"] = day
@@ -645,7 +696,7 @@ func resolve_review(choices: Dictionary) -> void:
 				st["trust"] += 1
 				st["promised"] = false
 				_say("boss", "review.boss.owner", [], names)
-				if p == "vika":
+				if p == "vika" and t["quality"] == "good":
 					vika_standing += 1
 			"blame":
 				st["mood"] -= 2.0
@@ -692,7 +743,7 @@ func _finish_run() -> void:
 		ending = "team_gone"
 	elif boss <= -4:
 		ending = "fired"
-	elif vika_standing >= 3 and vika_standing > boss:
+	elif vika_standing >= 4 and vika_standing > boss:
 		ending = "replaced"
 	elif hours >= 24:
 		ending = "workhorse"
