@@ -25,8 +25,6 @@ const CAT_COLORS := {"tech": Color("4a8fd9"), "analytics": Color("9b6cd6"), "peo
 var rules := Rules.new()
 var ui: Control
 var selected := -1
-var picked := ""
-var picked_helper := ""
 # Replies to your last action, shown in the bottom panel where you're looking.
 var feedback_from := -1
 var talk_with := ""
@@ -63,36 +61,27 @@ func _fit_window() -> void:
 
 func _select(uid: int) -> void:
 	selected = -1 if selected == uid else uid
-	picked = ""
 	talk_with = ""
 	_render()
 
 
+# Clicking a person hands them the task right away; the task stays selected so you can add a helper.
 func _pick(p: String) -> void:
-	picked = p
-	if picked_helper == p:
-		picked_helper = ""
-	_render()
-
-
-func _pick_helper(p: String) -> void:
-	picked_helper = "" if picked_helper == p else p
-	_render()
-
-
-func _assign(tone: String) -> void:
 	feedback_from = rules.history.size()
-	var uid := selected
-	rules.assign(uid, picked, tone)
-	if picked_helper != "" and rules.task(uid)["owner"] == picked:
-		rules.set_helper(uid, picked_helper)
-	_clear_selection()
+	rules.assign(selected, p)
+	_render()
 
 
 func _direct(p: String) -> void:
 	feedback_from = rules.history.size()
-	rules.assign(selected, p, "plain")
+	rules.assign(selected, p)
 	_clear_selection()
+
+
+func _persuade(intent: String) -> void:
+	feedback_from = rules.history.size()
+	rules.persuade(intent)
+	_render()
 
 
 func _helper(p: String) -> void:
@@ -109,7 +98,6 @@ func _unassign() -> void:
 func _talk_to(p: String) -> void:
 	talk_with = p
 	selected = -1
-	picked = ""
 	_render()
 
 
@@ -164,8 +152,6 @@ func _start_run() -> void:
 
 func _clear_selection() -> void:
 	selected = -1
-	picked = ""
-	picked_helper = ""
 	_render()
 
 
@@ -268,7 +254,7 @@ func _top_bar() -> Control:
 func _person_row(p: String) -> Control:
 	var st: Dictionary = rules.people[p]
 	var row := PanelContainer.new()
-	var highlight: bool = picked == p or talk_with == p
+	var highlight: bool = talk_with == p or rules.pending.get("p", "") == p
 	row.add_theme_stylebox_override("panel", _box(COL_PANEL, COL_ACCENT if highlight else COL_PANEL_BORDER, 2 if highlight else 1, 8))
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
@@ -328,7 +314,7 @@ func _person_row(p: String) -> Control:
 			queue.add_child(helping)
 	var talk := _button(Loc.t("talk_button"), _talk_to.bind(p), 0)
 	talk.custom_minimum_size = Vector2(110, 34)
-	talk.disabled = rules.phase != "plan" or rules.talked_today or st["absent"]
+	talk.disabled = rules.phase != "plan" or rules.talked_today or st["absent"] or not rules.pending.is_empty()
 	talk.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(talk)
 	return row
@@ -433,7 +419,7 @@ func _task_chip(t: Dictionary) -> Control:
 	b.add_theme_stylebox_override("hover", _box(COL_PAPER.lightened(0.5), COL_ACCENT, 2, 6))
 	b.add_theme_stylebox_override("pressed", normal)
 	b.add_theme_stylebox_override("disabled", normal)
-	b.disabled = rules.phase != "plan"
+	b.disabled = rules.phase != "plan" or not rules.pending.is_empty()
 	b.pressed.connect(_select.bind(t["uid"]))
 	var margin := MarginContainer.new()
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -487,7 +473,9 @@ func _action_panel() -> Control:
 	var v := _vbox(8)
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(v)
-	if talk_with != "":
+	if not rules.pending.is_empty():
+		_objection_actions(v)
+	elif talk_with != "":
 		_talk_actions(v)
 	elif selected >= 0 and not rules.task(selected).is_empty() and rules.task(selected)["status"] in ["inbox", "active"]:
 		_task_actions(v, rules.task(selected))
@@ -500,7 +488,7 @@ func _action_panel() -> Control:
 		if rules.talked_today:
 			v.add_child(_label(Loc.t("talk_used"), 14, COL_MUTED, true))
 	var end := _button(Loc.t("end_day"), _end_day, 220, true)
-	end.disabled = rules.phase != "plan"
+	end.disabled = rules.phase != "plan" or not rules.pending.is_empty()
 	end.size_flags_vertical = Control.SIZE_SHRINK_END
 	h.add_child(end)
 	return panel
@@ -525,36 +513,19 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 	for p in C.TEAM:
 		if not rules.available(p):
 			continue
-		var b := _button(Loc.person(p), _pick.bind(p), 0, picked == p)
+		var pe: Dictionary = rules.estimate(t, p)
+		var label := "%s  ~%s" % [Loc.person(p), _days(pe["days"])] if pe["sure"] else "%s  ?" % Loc.person(p)
+		var b := _button(label, _pick.bind(p), 0, t["owner"] == p)
 		b.disabled = t["owner"] == p
 		who.add_child(b)
 	who.add_child(_button(Loc.t("myself"), _direct.bind("me"), 0))
 	who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
 	if t["status"] == "active":
 		who.add_child(_button(Loc.t("unassign"), _unassign, 0))
-	if picked != "":
-		var pe: Dictionary = rules.estimate(t, picked)
-		if pe["sure"]:
-			v.add_child(_label(Loc.render("est.for", [], {"who": Loc.person(picked), "days": _days(pe["days"])}), 14, COL_TEXT))
-		else:
-			v.add_child(_label(Loc.render("est.for_unknown", [], {"who": Loc.person(picked)}), 14, COL_MUTED))
-		var pair := HBoxContainer.new()
-		pair.add_theme_constant_override("separation", 6)
-		v.add_child(pair)
-		pair.add_child(_label(Loc.t("helper_optional"), 14, COL_MUTED))
-		for p in C.TEAM:
-			if p != picked and rules.available(p):
-				pair.add_child(_button(Loc.person(p), _pick_helper.bind(p), 0, picked_helper == p))
-		pair.add_child(_label(Loc.t("helper_hint"), 12, COL_MUTED, true))
-		pair.get_child(pair.get_child_count() - 1).size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var tones := HFlowContainer.new()
-		tones.add_theme_constant_override("h_separation", 6)
-		tones.add_theme_constant_override("v_separation", 6)
-		v.add_child(tones)
-		tones.add_child(_label(Loc.t("how"), 14, COL_MUTED))
-		for tone in C.TONES:
-			tones.add_child(_button(Loc.t("tone." + tone), _assign.bind(tone), 0))
-	elif t["status"] == "active" and C.TEAM.has(t["owner"]):
+	var replies := _feedback_lines()
+	if not replies.is_empty():
+		v.add_child(_label(replies[replies.size() - 1], 15, COL_TEXT, true))
+	if t["status"] == "active" and C.TEAM.has(t["owner"]):
 		var pair := HBoxContainer.new()
 		pair.add_theme_constant_override("separation", 6)
 		v.add_child(pair)
@@ -576,6 +547,21 @@ func _feedback_lines() -> PackedStringArray:
 		if e["who"] != "you":
 			out.append(_entry_text(e))
 	return out.slice(maxi(0, out.size() - 3))
+
+
+# Someone pushed back: their words, then how you answer.
+func _objection_actions(v: VBoxContainer) -> void:
+	var p: String = rules.pending["p"]
+	var t := rules.task(rules.pending["uid"])
+	v.add_child(_label(Loc.render("objection_title", [], {"who": Loc.person(p)}) + " · " + Loc.t("taskname." + t["id"]), 16, COL_ACCENT))
+	v.add_child(_label(_said_today(p), 19, COL_TEXT, true))
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 6)
+	row.add_theme_constant_override("v_separation", 6)
+	v.add_child(row)
+	for intent in C.INTENTS + ["back_off"]:
+		row.add_child(_button(Loc.t("intent." + intent), _persuade.bind(intent), 0))
+	v.add_child(_label(Loc.t("objection_hint"), 12, COL_MUTED, true))
 
 
 func _talk_actions(v: VBoxContainer) -> void:

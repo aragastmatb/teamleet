@@ -2,7 +2,7 @@
 
 Godot 4.6, Russian and English (switch in-game). No assets, all UI built in code. Run with F5.
 
-Two working weeks with a team of four. Tasks arrive daily; you assign them with a tone, pair people up, and hold one one-on-one a day. Ending the day simulates the work: progress, quality, fatigue, mood and skill growth.
+Two working weeks with a team of four. Tasks arrive daily; you assign them with a click, pair people up, and hold one one-on-one a day. People with a reason to refuse push back, and you pick how to talk them round: tell it straight, flatter, cite the boss, promise a breather, or insist. Flattery and citing the boss only work when true; a lie about the boss may come out that evening. Ending the day simulates the work: progress, quality, fatigue, mood and skill growth.
 
 - Skills and motives are hidden and revealed by results, the pace of work, and one-on-ones. Skills vary a little each run.
 - Overload leads to sick leave, resentment to resignation; Vika's ambition can cost you your job.

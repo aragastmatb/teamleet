@@ -1,7 +1,7 @@
 extends RefCounted
 # Team lead prototype rules, no UI. main.gd drives it; tests can drive it headless.
 #
-# Each day: tasks arrive, you assign them (with a tone), pair people up, and hold one one-on-one.
+# Each day: tasks arrive, you assign them (people may push back), pair people up, and hold one one-on-one.
 # Ending the day simulates the work: progress, quality, fatigue, mood, growth. Fridays end with a
 # review where you decide who gets the credit and who takes the blame. Skills and motives are hidden
 # until results and conversations reveal them.
@@ -50,6 +50,10 @@ var flags := {}
 var ending := ""
 var evening_from := 0
 var next_uid := 0
+# An objection waiting for your answer: {"uid", "p", "reason"}. Empty when none.
+var pending := {}
+# Times you invoked the boss without her asking: [{"p", "uid"}], checked that evening.
+var lies: Array = []
 # Today's pairs: task uid -> share of the helper's day spent on it. Fixed at the start of the evening.
 var shares := {}
 # Chat entries: {"who": speaker id, "you" or "" for narration; "key"; "args": [] for %s; "names": {} for {placeholders}; "day"}.
@@ -76,9 +80,9 @@ func start_run(seed_value: int = -1) -> void:
 		people[p] = {
 			"skills": skills, "xp": xp, "energy": float(base["stamina"]), "mood": 1.0, "trust": 0,
 			"sick": 0, "absent": false, "absent_reason": "", "off_next": false, "pushed": 0, "promised": false, "ambition": 0,
-			"gone": false, "known": {}, "favors": 0, "warned_mood": false, "warned_tired": false,
+			"gone": false, "known": {}, "warned_mood": false, "warned_tired": false,
 			"last_done": -10, "idle_said": false, "idle_days": 0, "promised_day": 0,
-			"week_hours": [0, 0], "week_overtime": [0, 0], "week_done": [0, 0],
+			"week_hours": [0, 0], "week_overtime": [0, 0], "week_done": [0, 0], "debts": 0, "caught_flattery": false,
 		}
 	tasks.clear()
 	boss = 0
@@ -88,6 +92,8 @@ func start_run(seed_value: int = -1) -> void:
 	quits = 0
 	events.clear()
 	review.clear()
+	pending = {}
+	lies.clear()
 	flags.clear()
 	history.clear()
 	ending = ""
@@ -114,7 +120,7 @@ func _start_day() -> void:
 		tasks.append({
 			"uid": next_uid, "id": id, "cat": info["cat"], "size": info["size"], "progress": 0.0,
 			"due": day + info["due"], "public": info["public"], "from": info["from"], "owner": "", "helper": "",
-			"tone": "plain", "q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
+			"q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
 			"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
 			"asked": false, "vouched": false, "flaw": false,
 		})
@@ -181,9 +187,9 @@ func available(p: String) -> bool:
 	return C.TEAM.has(p) and not people[p]["gone"]
 
 
-func assign(uid: int, p: String, tone: String) -> void:
+func assign(uid: int, p: String) -> void:
 	var t := task(uid)
-	if phase != "plan" or t.is_empty() or t["status"] == "done" or t["status"] == "taras" or p == t["owner"]:
+	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] == "done" or t["status"] == "taras" or p == t["owner"]:
 		return
 	var previous: String = t["owner"]
 	if p == "taras":
@@ -191,35 +197,125 @@ func assign(uid: int, p: String, tone: String) -> void:
 		return
 	if p != "me" and not available(p):
 		return
-	history.append({"who": "you", "key": "tone." + tone, "args": [], "names": {}, "to": p, "day": day})
+	var names := {"task": "@taskname." + t["id"]}
+	if p != "me":
+		history.append({"who": "you", "key": "assign.say", "args": [], "names": names, "to": p, "day": day})
 	if C.TEAM.has(previous) and t["progress"] > 0.0 and not people[previous]["gone"]:
 		people[previous]["mood"] -= 0.5
-		_say(previous, "taken_away", [], {"task": "@taskname." + t["id"]})
+		_say(previous, "taken_away", [], names)
+	var reason := _objection(p, t) if p != "me" else ""
 	t["owner"] = p
-	t["tone"] = tone
 	t["status"] = "active"
 	t["assigned_day"] = day
 	t["first"] = false
 	if t["helper"] == p:
 		t["helper"] = ""
 	if p == "me":
-		_say("", "you.myself_note", [], {"task": "@taskname." + t["id"]})
+		_say("", "you.myself_note", [], names)
 		return
+	if reason != "":
+		pending = {"uid": uid, "p": p, "reason": reason}
+		_say(p, _first_key(["object.%s.%s" % [p, reason], "object.any." + reason]), [], names)
+		return
+	_accept(p, t, 0.0, "")
+
+
+# Why this person would push back on this task right now, or "" if they just take it.
+func _objection(p: String, t: Dictionary) -> String:
 	var st: Dictionary = people[p]
+	var load := 0.0
+	var count := 0
+	for q in queue_of(p):
+		if q["uid"] != t["uid"]:
+			load += q["size"] - q["progress"]
+			count += 1
+	if st["energy"] <= TIRED_ENERGY:
+		return "tired"
+	if count >= 2 and load >= 2.5:
+		return "overload"
+	if C.PEOPLE[p]["hates"].has(t["cat"]):
+		return "hates"
+	if C.PEOPLE[p]["drive"] == "peace" and t["due"] - day <= 1:
+		return "rush"
+	if st["skills"][t["cat"]] <= 1 and C.PEOPLE[p]["drive"] != "growth":
+		return "weak"
+	if st["mood"] <= -2.0:
+		return "mood"
+	return ""
+
+
+# Is what you'd say with this intent actually true here?
+func intent_true(intent: String) -> bool:
+	if pending.is_empty():
+		return true
+	var t := task(pending["uid"])
+	var p: String = pending["p"]
+	match intent:
+		"flatter":
+			return people[p]["skills"][t["cat"]] >= 3
+		"boss":
+			return t["public"] or t["from"] == "boss"
+	return true
+
+
+func persuade(intent: String) -> void:
+	if pending.is_empty():
+		return
+	var t := task(pending["uid"])
+	var p: String = pending["p"]
+	var reason: String = pending["reason"]
+	pending = {}
+	var st: Dictionary = people[p]
+	var names := {"task": "@taskname." + t["id"]}
+	history.append({"who": "you", "key": _first_key(["say.%s.%s" % [intent, reason], "say." + intent]), "args": [], "names": names, "to": p, "day": day})
+	if intent == "back_off":
+		unassign_now(t)
+		st["mood"] = clampf(st["mood"] + 0.3, -5.0, 5.0)
+		_say(p, "persuade.back_off.reply")
+		return
 	var drive: String = C.PEOPLE[p]["drive"]
-	var taste: int = C.TONE_TASTE[drive].get(tone, 0)
-	var delta := float(taste)
+	var taste: int = C.INTENT_TASTE[drive][intent]
+	var delta := -1.0 + taste
+	var reply := ""
+	match intent:
+		"honest":
+			if reason == "tired" or reason == "overload":
+				delta -= 0.5
+			if reason == "weak" and drive == "growth":
+				delta += 1.0
+		"flatter":
+			if not intent_true("flatter") or st["caught_flattery"]:
+				st["caught_flattery"] = true
+				st["trust"] -= 1
+				delta = -1.5
+				reply = "persuade.flatter_fake"
+		"boss":
+			if not intent_true("boss"):
+				lies.append({"p": p, "uid": t["uid"]})
+		"promise":
+			if st["debts"] > 0:
+				st["trust"] -= 1
+				delta = -1.5
+				reply = "persuade.promise_again"
+			else:
+				st["debts"] += 1
+		"order":
+			if reason == "tired" or reason == "overload":
+				st["trust"] -= 1
+	_accept(p, t, delta, reply)
+	if absi(taste) >= 2 and reply == "":
+		_reveal(p, "drive")
+
+
+# They take the task. Mood moves with what it is and how you got them to take it.
+func _accept(p: String, t: Dictionary, delta: float, reply: String) -> void:
+	var st: Dictionary = people[p]
 	if C.PEOPLE[p]["likes"].has(t["cat"]):
 		delta += 1.0
 	if C.PEOPLE[p]["hates"].has(t["cat"]):
 		delta -= 1.0
 	if p == "vika" and t["public"]:
 		delta += 1.0
-	if drive == "peace" and t["due"] - day <= 1:
-		delta -= 1.0
-	if tone == "favor":
-		delta -= st["favors"]
-		st["favors"] += 1
 	var terms_line := ""
 	if p == "alex" and flags.has("alex_terms"):
 		if t["cat"] == "people":
@@ -228,19 +324,18 @@ func assign(uid: int, p: String, tone: String) -> void:
 		elif t["cat"] == "tech":
 			delta += 0.5
 	st["mood"] = clampf(st["mood"] + delta, -5.0, 5.0)
-	_say(p, _tone_line(p, tone, delta), [], {"task": "@taskname." + t["id"]})
+	if reply == "":
+		reply = "react.%s.%s" % [p, "pos" if delta >= 1.0 else ("neg" if delta <= -1.0 else "neu")]
+	_say(p, reply, [], {"task": "@taskname." + t["id"]})
 	if terms_line != "":
 		_say(p, terms_line)
-	if absi(taste) >= 2:
-		_reveal(p, "drive")
 
 
-func _tone_line(p: String, tone: String, delta: float) -> String:
-	var mood := "pos" if delta >= 1.0 else ("neg" if delta <= -1.0 else "neu")
-	for k in ["tone.%s.%s.%s" % [p, tone, mood], "react.%s.%s" % [p, mood]]:
+func _first_key(keys: Array) -> String:
+	for k in keys:
 		if L.has_key(k):
 			return k
-	return "react.any.%s" % mood
+	return keys[keys.size() - 1]
 
 
 func _hand_to_taras(t: Dictionary) -> void:
@@ -290,7 +385,7 @@ func unassign_now(t: Dictionary) -> void:
 
 
 func one_on_one(p: String, approach: String) -> void:
-	if phase != "plan" or talked_today or not available(p) or people[p]["absent"]:
+	if phase != "plan" or not pending.is_empty() or talked_today or not available(p) or people[p]["absent"]:
 		return
 	talked_today = true
 	var st: Dictionary = people[p]
@@ -328,7 +423,12 @@ func one_on_one(p: String, approach: String) -> void:
 		"dayoff":
 			st["off_next"] = true
 			st["mood"] += 1.0
-			_say(p, "talk.dayoff.ok")
+			if st["debts"] > 0:
+				st["debts"] = 0
+				st["trust"] += 1
+				_say(p, "talk.dayoff.debt")
+			else:
+				_say(p, "talk.dayoff.ok")
 	st["mood"] = clampf(st["mood"], -5.0, 5.0)
 
 
@@ -359,7 +459,7 @@ func _reveal(p: String, key: String) -> void:
 # ---------- the day's work ----------
 
 func end_day() -> void:
-	if phase != "plan":
+	if phase != "plan" or not pending.is_empty():
 		return
 	evening_from = history.size()
 	_narrate("log.evening")
@@ -385,6 +485,7 @@ func end_day() -> void:
 			if t["vouched"]:
 				boss -= 1
 				_say("boss", "boss.vouched_late", [], {"task": "@taskname." + t["id"]})
+	_check_lies()
 	for p in C.TEAM:
 		_check_person(p)
 	if C.REVIEW_DAYS.has(day):
@@ -394,6 +495,18 @@ func end_day() -> void:
 		phase = "report"
 	else:
 		phase = "evening"
+
+
+# Half the time, whoever you told "the boss asked" goes and mentions it to her.
+func _check_lies() -> void:
+	for lie in lies:
+		var p: String = lie["p"]
+		if not available(p) or rng.randf() > 0.5:
+			continue
+		people[p]["trust"] -= 2
+		people[p]["mood"] = clampf(people[p]["mood"] - 1.0, -5.0, 5.0)
+		_say(p, "lie.boss_found." + p, [], {"task": "@taskname." + task(lie["uid"])["id"]})
+	lies.clear()
 
 
 # The boss minds every slipped task she asked for or will look at. Others' requests only reach her
@@ -433,7 +546,6 @@ func _speed(p: String, t: Dictionary) -> float:
 	var skill: int = st["skills"][t["cat"]]
 	var s := SPEED_BASE + SPEED_PER_SKILL * skill
 	s *= 1.0 + st["mood"] * 0.04
-	s *= 1.0 + C.TONES[t["tone"]].get("speed", 0.0)
 	if st["pushed"] > 0:
 		s *= 1.0 + PUSH_SPEED
 	var share: float = shares.get(t["uid"], 0.0)
@@ -521,7 +633,7 @@ func _work(p: String) -> void:
 			var spend := minf(time, (t["size"] - t["progress"]) / step)
 			time -= spend
 			t["progress"] += step * spend
-			var quality: float = skill + st["mood"] * 0.1 + rng.randf_range(-0.7, 0.7) + C.TONES[t["tone"]].get("quality", 0.0)
+			var quality: float = skill + st["mood"] * 0.1 + rng.randf_range(-0.7, 0.7)
 			var h: String = t["helper"]
 			var share: float = shares.get(t["uid"], 0.0)
 			if share > 0.0:
@@ -542,7 +654,7 @@ func _work(p: String) -> void:
 				var part: float = step * spend / t["size"]
 				var pace := "big" if part >= 0.45 else ("mid" if part >= 0.25 else "small")
 				_narrate("pace." + pace, [], {"who": "@name.%s.nom" % p, "task": "@taskname." + t["id"]})
-		var drain: float = DRAIN + C.TONES[first["tone"]].get("drain", 0.0)
+		var drain: float = DRAIN
 		if st["skills"][first["cat"]] < 2:
 			drain += HARD_DRAIN
 		if q.size() >= OVERLOAD_AT:
@@ -550,7 +662,7 @@ func _work(p: String) -> void:
 			st["mood"] -= 0.3
 		# Overloaded, rushed or pushed people stay late.
 		st["week_hours"][week()] += 8
-		if q.size() >= OVERLOAD_AT or first["tone"] == "urgent" or st["pushed"] > 0:
+		if q.size() >= OVERLOAD_AT or st["pushed"] > 0:
 			st["week_hours"][week()] += 2 + (1 if q.size() >= OVERLOAD_AT + 2 else 0)
 			st["week_overtime"][week()] += 1
 		st["energy"] -= drain
@@ -812,7 +924,7 @@ func _finish_run() -> void:
 func broken_promises() -> Array[String]:
 	var result: Array[String] = []
 	for p in C.TEAM:
-		if people[p]["promised"]:
+		if people[p]["promised"] or people[p]["debts"] > 0:
 			result.append(p)
 	return result
 
@@ -862,10 +974,6 @@ func boss_word() -> String:
 	if boss >= -3:
 		return "doubts"
 	return "angry"
-
-
-func size_word(t: Dictionary) -> String:
-	return "size.%d" % clampi(t["size"], 1, 4)
 
 
 # ---------- helpers ----------

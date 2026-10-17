@@ -20,23 +20,15 @@ const PEOPLE := {
 	"gena": {"skills": {"tech": 2, "analytics": 0, "people": 1, "routine": 4}, "drive": "peace", "likes": ["routine"], "hates": ["people"], "idle": 0.3, "stamina": 7},
 }
 
-# How each motive takes an assignment tone (mood change on assigning).
-const TONE_TASTE := {
-	"craft": {"plain": 0, "growth": -1, "only_you": 2, "urgent": -1, "favor": 1, "formality": -1, "visible": 0},
-	"visibility": {"plain": 0, "growth": 1, "only_you": 1, "urgent": 0, "favor": -1, "formality": -2, "visible": 2},
-	"growth": {"plain": 0, "growth": 2, "only_you": 1, "urgent": 0, "favor": 0, "formality": -1, "visible": 1},
-	"peace": {"plain": 0, "growth": -2, "only_you": -1, "urgent": -2, "favor": 1, "formality": 2, "visible": -1},
-}
-
-# urgent: faster but more tiring. formality: they take it lightly, quality drops.
-const TONES := {
-	"plain": {},
-	"growth": {},
-	"only_you": {},
-	"urgent": {"speed": 0.25, "drain": 0.5},
-	"favor": {},
-	"formality": {"quality": -0.6},
-	"visible": {},
+# When someone pushes back on a task, you answer with an intent. Each motive takes each intent
+# differently (mood change on top of grudgingly accepting). Some intents only work when true:
+# flattery when they really are good at it, the boss when she really asked or will look.
+const INTENTS := ["honest", "flatter", "boss", "promise", "order"]
+const INTENT_TASTE := {
+	"craft": {"honest": 1, "flatter": 1, "boss": -1, "promise": 0, "order": -2},
+	"visibility": {"honest": 0, "flatter": 2, "boss": 1, "promise": 1, "order": -1},
+	"growth": {"honest": 1, "flatter": 1, "boss": 0, "promise": 1, "order": -1},
+	"peace": {"honest": 1, "flatter": 0, "boss": 1, "promise": 1, "order": -1},
 }
 
 const ONE_ON_ONE := ["praise", "listen", "push", "promise", "dayoff"]
