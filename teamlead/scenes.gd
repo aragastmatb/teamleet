@@ -14,8 +14,8 @@ const MAX_PER_MORNING := 2
 
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
-	"boss_deadline", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
-	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "taras_borrow",
+	"boss_deadline", "boss_details", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
+	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "vika_takes_task", "gena_mentor", "taras_borrow",
 ]
 
 
@@ -42,7 +42,8 @@ func once(r, id: String) -> bool:
 
 
 func task_names(r, t: Dictionary) -> Dictionary:
-	return {"task": "@taskname." + t["id"], "from": "@name.%s.nom" % t["from"], "owner": "@name.%s.nom" % t["owner"]}
+	return {"task": "@taskname." + t["id"], "from": "@name.%s.nom" % t["from"], "owner": "@name.%s.nom" % t["owner"],
+		"owner_gen": "@name.%s.gen" % t["owner"], "owner_acc": "@name.%s.acc" % t["owner"]}
 
 
 # ---------- conditions ----------
@@ -58,6 +59,30 @@ func _check_boss_deadline(r) -> Dictionary:
 		t["asked"] = true
 		return {"who": "boss", "uid": t["uid"], "names": task_names(r, t),
 			"lines": [{"who": "boss", "key": "event.boss_deadline.ask"}], "choices": ["yes", "warn"]}
+	return {}
+
+
+# You took the credit at the review; now Irina wants the details.
+func _check_boss_details(r) -> Dictionary:
+	var credits: Array = r.flags.get("credit_taken", [])
+	if r.flags.has("boss_details_w%d" % r.week()):
+		return {}
+	for c in credits:
+		if r.day > c["day"] and r.available(c["owner"]) and r.rng.randf() < 0.6:
+			credits.erase(c)
+			r.flags["boss_details_w%d" % r.week()] = true
+			var t: Dictionary = r.task(c["uid"])
+			return {"who": "boss", "uid": t["uid"], "names": task_names(r, t),
+				"lines": [{"who": "boss", "key": "event.boss_details.ask"}], "choices": ["call_owner", "improvise", "dodge"]}
+	return {}
+
+
+# Someone unhappy went to HR; Marina passes it on.
+func _check_marina_warns(r) -> Dictionary:
+	for p in C.TEAM:
+		if here(r, p) and r.people[p]["mood"] <= -3.0 and once(r, "marina_" + p):
+			return {"who": "marina", "target": p, "names": {"who": "@name.%s.nom" % p, "who_ins": "@name.%s.ins" % p},
+				"lines": [{"who": "marina", "key": "event.marina_warns.ask." + p}], "choices": ["listen", "dismiss"]}
 	return {}
 
 
@@ -151,6 +176,29 @@ func _check_dima_bored(r) -> Dictionary:
 	return {"who": "dima", "lines": [{"who": "dima", "key": "event.dima_bored.ask"}], "choices": choices}
 
 
+# Vika has room and spots a visible task sitting in someone else's queue.
+func _check_vika_takes_task(r) -> Dictionary:
+	if not here(r, "vika") or r.queue_of("vika").size() > 1 or r.flags.has("scene_vika_takes_task"):
+		return {}
+	for t in r.tasks:
+		if t["status"] == "active" and t["public"] and t["progress"] == 0.0 and C.TEAM.has(t["owner"]) and t["owner"] != "vika":
+			once(r, "vika_takes_task")
+			return {"who": "vika", "uid": t["uid"], "names": task_names(r, t),
+				"lines": [{"who": "vika", "key": "event.vika_takes_task.ask"}], "choices": ["give", "refuse"]}
+	return {}
+
+
+# Gena and Dima worked together for a couple of days, and Gena liked it.
+func _check_gena_mentor(r) -> Dictionary:
+	if not here(r, "gena") or not r.available("dima") or r.flags.has("scene_gena_mentor"):
+		return {}
+	for t in r.tasks:
+		if (t["owner"] == "gena" and t["helped"].get("dima", 0) >= 1) or (t["owner"] == "dima" and t["helped"].get("gena", 0) >= 1):
+			once(r, "gena_mentor")
+			return {"who": "gena", "lines": [{"who": "gena", "key": "event.gena_mentor.ask"}], "choices": ["encourage", "work"]}
+	return {}
+
+
 # Taras needs a pair of hands for a day.
 func _check_taras_borrow(r) -> Dictionary:
 	if r.day < 3 or r.day > 8 or r.flags.has("scene_taras_borrow"):
@@ -190,6 +238,52 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			if r.flags["warned_late"] >= 2:
 				r.boss -= 1
 				reply = "event.boss_deadline.warn.reply_again"
+
+		"boss_details/call_owner":
+			r.boss -= 1
+			r.people[t["owner"]]["mood"] += 1.0
+			r.people[t["owner"]]["trust"] += 1
+		"boss_details/improvise":
+			if r.rng.randf() >= 0.4:
+				r.boss -= 2
+				reply = "event.boss_details.improvise.reply_bad"
+		"boss_details/dodge":
+			# She asks whoever did the work. If they resent you, they tell her.
+			var owner: String = t["owner"]
+			if r.people[owner]["trust"] < 0:
+				r.boss -= 2
+				r.say(owner, "event.boss_details.reveal." + owner, [], names)
+				reply = "event.boss_details.dodge.reply_bad"
+			else:
+				r.people[owner]["mood"] -= 1.0
+				r.say(owner, "event.boss_details.cover", [], names)
+
+		"marina_warns/listen":
+			r.people[ev["target"]]["mood"] += 1.5
+			r.add_my_hours(1)
+		"marina_warns/dismiss":
+			r.boss -= 1
+			r.people[ev["target"]]["mood"] -= 1.0
+			r.people[ev["target"]]["trust"] -= 1
+
+		"vika_takes_task/give":
+			var prev: String = t["owner"]
+			t["owner"] = "vika"
+			t["helper"] = "" if t["helper"] == "vika" else t["helper"]
+			r.people["vika"]["mood"] += 1.0
+			r.people["vika"]["ambition"] += 1
+			var keen: bool = C.PEOPLE[prev]["likes"].has(t["cat"])
+			r.people[prev]["mood"] += -1.0 if keen else 0.5
+			r.say(prev, "event.vika_takes_task.given_" + ("keen" if keen else "glad"), [], names)
+		"vika_takes_task/refuse":
+			r.people["vika"]["mood"] -= 1.0
+
+		"gena_mentor/encourage":
+			r.people["gena"]["mood"] += 1.5
+			r.flags["gena_mentor"] = true
+		"gena_mentor/work":
+			r.people["gena"]["mood"] -= 1.0
+			r.people["dima"]["mood"] -= 0.5
 
 		"alex_offer/terms":
 			r.people["alex"]["mood"] += 2.0

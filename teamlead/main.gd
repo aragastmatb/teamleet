@@ -90,6 +90,12 @@ func _helper(p: String) -> void:
 	_render()
 
 
+func _prioritize() -> void:
+	feedback_from = rules.history.size()
+	rules.prioritize(selected)
+	_render()
+
+
 func _unassign() -> void:
 	rules.unassign(selected)
 	_render()
@@ -522,6 +528,8 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 	who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
 	if t["status"] == "active":
 		who.add_child(_button(Loc.t("unassign"), _unassign, 0))
+		if C.TEAM.has(t["owner"]) and rules.queue_of(t["owner"])[0]["uid"] != t["uid"]:
+			who.add_child(_button(Loc.t("prioritize"), _prioritize, 0))
 	var replies := _feedback_lines()
 	if not replies.is_empty():
 		v.add_child(_label(replies[replies.size() - 1], 15, COL_TEXT, true))

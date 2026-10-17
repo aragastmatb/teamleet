@@ -358,6 +358,24 @@ func _hand_to_taras(t: Dictionary) -> void:
 	_say("taras", "taras.accept", [], {"task": "@taskname." + t["id"]})
 
 
+# Move a task to the front of its owner's queue. Dropping something half-done costs a little mood.
+func prioritize(uid: int) -> void:
+	var t := task(uid)
+	if phase != "plan" or t.is_empty() or t["status"] != "active" or not C.TEAM.has(t["owner"]):
+		return
+	var p: String = t["owner"]
+	var head: Dictionary = queue_of(p)[0]
+	if head["uid"] == uid:
+		return
+	for other in queue_of(p):
+		other["first"] = false
+	t["first"] = true
+	if head["progress"] > 0.0:
+		people[p]["mood"] = clampf(people[p]["mood"] - 0.3, -5.0, 5.0)
+	history.append({"who": "you", "key": "prioritize.say", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": p, "day": day})
+	_say(p, _first_key(["prioritize.reply." + p, "prioritize.reply"]))
+
+
 func set_helper(uid: int, p: String) -> void:
 	var t := task(uid)
 	if phase != "plan" or t.is_empty() or t["status"] != "active" or p == t["owner"] or (p != "" and not available(p)):
@@ -588,7 +606,8 @@ func _help(p: String, t: Dictionary, share: float) -> void:
 	var owner: String = t["owner"]
 	var hs: int = people[p]["skills"][t["cat"]]
 	var os: int = people[owner]["skills"][t["cat"]]
-	_learn(p, t["cat"], 1.2 * share * (1.0 + 0.25 * maxi(0, os - hs)))
+	var mentor := 1.3 if flags.has("gena_mentor") and [p, owner].has("gena") and [p, owner].has("dima") else 1.0
+	_learn(p, t["cat"], 1.2 * share * mentor * (1.0 + 0.25 * maxi(0, os - hs)))
 	var kind := "learn" if hs < os else ("boost" if hs > os else "even")
 	_narrate("pair." + kind, [], {"helper": "@name.%s.nom" % p, "owner_ins": "@name.%s.ins" % owner,
 		"task": "@taskname." + t["id"], "half": "@pair.half" if share < 1.0 else ""})
@@ -845,6 +864,9 @@ func resolve_review(choices: Dictionary) -> void:
 				boss += 2
 				st["mood"] -= 1.5
 				st["trust"] -= 1
+				if not flags.has("credit_taken"):
+					flags["credit_taken"] = []
+				flags["credit_taken"].append({"uid": t["uid"], "owner": p, "day": day})
 				_say("boss", "review.boss.self", [], names)
 				if p == "vika":
 					st["ambition"] += 1
