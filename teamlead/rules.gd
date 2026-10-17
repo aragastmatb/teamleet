@@ -82,7 +82,7 @@ func start_run(seed_value: int = -1) -> void:
 			"sick": 0, "absent": false, "absent_reason": "", "off_next": false, "pushed": 0, "promised": false, "ambition": 0,
 			"gone": false, "known": {}, "warned_mood": false, "warned_tired": false,
 			"last_done": -10, "idle_said": false, "idle_days": 0, "promised_day": 0,
-			"week_hours": [0, 0], "week_overtime": [0, 0], "week_done": [0, 0], "debts": 0, "caught_flattery": false,
+			"week_hours": [0, 0], "week_overtime": [0, 0], "week_extra": [0, 0], "week_absent": [0, 0], "week_done": [0, 0], "debts": 0, "caught_flattery": false, "done_cats": {},
 		}
 	tasks.clear()
 	boss = 0.0
@@ -130,7 +130,7 @@ func _start_day() -> void:
 			"due": day + info["due"], "public": info["public"], "from": info["from"], "owner": "", "helper": "",
 			"q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
 			"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
-			"asked": false, "vouched": false, "flaw": false,
+			"asked": false, "vouched": false, "flaw": false, "complicated": false, "blocked": 0, "q_bonus": 0.0, "involved": false,
 		})
 		next_uid += 1
 		_say(info["from"], "task.%s.ask" % id)
@@ -220,6 +220,11 @@ func assign(uid: int, p: String) -> void:
 		t["helper"] = ""
 	if p == "me":
 		_say("", "you.myself_note", [], names)
+		for q in C.TEAM:
+			if available(q) and not people[q]["absent"] and people[q]["skills"][t["cat"]] >= 3 and queue_of(q).size() <= 1:
+				people[q]["mood"] = clampf(people[q]["mood"] - 0.7, -5.0, 5.0)
+				_say(q, "slighted", [], names)
+				break
 		return
 	if reason != "":
 		pending = {"uid": uid, "p": p, "reason": reason}
@@ -337,6 +342,20 @@ func _accept(p: String, t: Dictionary, delta: float, reply: String) -> void:
 	_say(p, reply, [], {"task": "@taskname." + t["id"]})
 	if terms_line != "":
 		_say(p, terms_line)
+
+
+# A role isn't given, it's what someone ends up doing: three or more tasks done, most in one area.
+func role_of(p: String) -> String:
+	var done: Dictionary = people[p]["done_cats"]
+	var total := 0
+	var best := ""
+	for cat in done:
+		total += done[cat]
+		if best == "" or done[cat] > done[best]:
+			best = cat
+	if total >= 3 and done[best] >= 2 and done[best] * 2 > total:
+		return best
+	return ""
 
 
 func _first_key(keys: Array) -> String:
@@ -498,6 +517,9 @@ func end_day() -> void:
 		_work(p)
 	_work_myself()
 	for t in tasks:
+		if t["blocked"] > 0:
+			t["blocked"] -= 1
+	for t in tasks:
 		if t["status"] == "taras" and t["due"] == day:
 			t["status"] = "done"
 			t["quality"] = "ok"
@@ -621,16 +643,35 @@ func _help(p: String, t: Dictionary, share: float) -> void:
 		"task": "@taskname." + t["id"], "half": "@pair.half" if share < 1.0 else ""})
 
 
-# Days of work left on a task for this person. Known skill gives a real estimate; otherwise it's
-# the lead's rough guess, as if someone decent did it.
+# Days of work left on a task for this person (and its helper, if any). Known skills give a real
+# estimate; unknown ones are the lead's rough guess, as if someone decent did it.
 func estimate(t: Dictionary, p: String = "") -> Dictionary:
 	var who: String = p if p != "" else t["owner"]
 	var left: float = maxf(0.0, t["size"] - t["progress"])
 	if who == "me":
-		return {"days": left / MY_SPEED, "sure": true}
+		return {"days": left / MY_SPEED + t["blocked"], "sure": true}
+	var sure := true
+	var skill := 2
 	if C.TEAM.has(who) and people[who]["known"].has("skill." + t["cat"]):
-		return {"days": left / (SPEED_BASE + SPEED_PER_SKILL * people[who]["skills"][t["cat"]]), "sure": true}
-	return {"days": left / (SPEED_BASE + SPEED_PER_SKILL * 2), "sure": false}
+		skill = people[who]["skills"][t["cat"]]
+	else:
+		sure = false
+	var speed := SPEED_BASE + SPEED_PER_SKILL * skill
+	var h: String = t["helper"] if p == "" or p == t["owner"] else ""
+	if h != "" and available(h):
+		var share := 1.0 if queue_of(h).is_empty() else 0.5
+		var hs := 2
+		if people[h]["known"].has("skill." + t["cat"]):
+			hs = people[h]["skills"][t["cat"]]
+		else:
+			sure = false
+		if hs > skill:
+			speed += share * 0.5 * (SPEED_BASE + SPEED_PER_SKILL * hs)
+		elif hs < skill:
+			speed *= 1.0 - 0.15 * share
+		else:
+			speed += share * 0.3 * (SPEED_BASE + SPEED_PER_SKILL * hs)
+	return {"days": left / speed + t["blocked"], "sure": sure}
 
 
 func _work(p: String) -> void:
@@ -643,6 +684,7 @@ func _work(p: String) -> void:
 			st["week_hours"][week()] += 8
 		else:
 			st["energy"] = minf(_stamina(p), st["energy"] + IDLE_REST)
+			st["week_absent"][week()] += 1
 		return
 	var q := queue_of(p)
 	var helping := _helping_task(p)
@@ -652,9 +694,13 @@ func _work(p: String) -> void:
 		# Half of it goes to the pair if they're helping someone.
 		var first: Dictionary = q[0]
 		var time := 1.0 - help_part
+		var stuck: Array = []
 		for t in q:
 			if time < 0.05:
 				break
+			if t["blocked"] > 0:
+				stuck.append(t)
+				continue
 			var skill: int = st["skills"][t["cat"]]
 			var step := _speed(p, t)
 			var spend := minf(time, (t["size"] - t["progress"]) / step)
@@ -681,6 +727,8 @@ func _work(p: String) -> void:
 				var part: float = step * spend / t["size"]
 				var pace := "big" if part >= 0.45 else ("mid" if part >= 0.25 else "small")
 				_narrate("pace." + pace, [], {"who": "@name.%s.nom" % p, "task": "@taskname." + t["id"]})
+		for t in stuck:
+			_narrate("blocked", [], {"task": "@taskname." + t["id"], "who": "@name.%s.nom" % p})
 		var drain: float = DRAIN
 		if st["skills"][first["cat"]] < 2:
 			drain += HARD_DRAIN
@@ -690,7 +738,7 @@ func _work(p: String) -> void:
 		# Overloaded, rushed or pushed people stay late.
 		st["week_hours"][week()] += 8
 		if q.size() >= OVERLOAD_AT or st["pushed"] > 0:
-			st["week_hours"][week()] += 2 + (1 if q.size() >= OVERLOAD_AT + 2 else 0)
+			st["week_extra"][week()] += 2 + (1 if q.size() >= OVERLOAD_AT + 2 else 0)
 			st["week_overtime"][week()] += 1
 		st["energy"] -= drain
 		st["idle_said"] = false
@@ -728,7 +776,7 @@ func _learn(p: String, cat: String, amount: float) -> void:
 
 
 func _finish(p: String, t: Dictionary) -> void:
-	var avg: float = t["q_sum"] / maxf(0.01, t["q_days"])
+	var avg: float = t["q_sum"] / maxf(0.01, t["q_days"]) + t["q_bonus"]
 	t["quality"] = "good" if avg >= GOOD_Q else ("ok" if avg >= OK_Q else ("weird" if avg >= WEIRD_Q else "poor"))
 	if t["flaw"] and (t["quality"] == "good" or t["quality"] == "ok"):
 		t["quality"] = "weird"
@@ -736,6 +784,11 @@ func _finish(p: String, t: Dictionary) -> void:
 	t["done_day"] = day
 	people[p]["last_done"] = day
 	people[p]["week_done"][week()] += 1
+	var before := role_of(p)
+	people[p]["done_cats"][t["cat"]] = people[p]["done_cats"].get(t["cat"], 0) + 1
+	var after := role_of(p)
+	if after != "" and after != before:
+		_narrate("role.emerged", [], {"who": "@name.%s.nom" % p, "role": "@role." + after})
 	if p == "vika" and t["public"] and (t["quality"] == "good" or t["quality"] == "ok"):
 		people[p]["ambition"] += 1
 	_say(p, _result_line(p, t["id"], t["quality"]), [], {"task": "@taskname." + t["id"]})
@@ -845,8 +898,6 @@ func _build_review() -> void:
 		var good: bool = done and (t["quality"] == "good" or t["quality"] == "ok") and not t["late"]
 		if done and t["owner"] == "me":
 			t["reviewed"] = true
-			boss += 1.0
-			_narrate("review.mine", [], {"task": "@taskname." + t["id"]})
 		elif by_team and good and t["public"]:
 			if best.is_empty() or t["size"] > best["size"]:
 				best = t
@@ -865,6 +916,10 @@ func _build_review() -> void:
 			t["reviewed"] = true
 			if C.TEAM.has(t["owner"]) and t["public"] and (t["quality"] == "good" or t["quality"] == "ok") and not t["late"]:
 				boss += 0.5
+	# A lead who does the work instead of leading isn't what she hired.
+	if my_week_hours[w] >= 16:
+		boss -= 1.0
+		_say("boss", "review.boss.workaholic", [], {"hours": my_week_hours[w]})
 	if not review.is_empty():
 		_ask_review()
 

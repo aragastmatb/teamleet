@@ -14,7 +14,7 @@ const MAX_PER_MORNING := 2
 
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
-	"boss_deadline", "boss_details", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
+	"boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
 	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "vika_takes_task", "gena_mentor", "taras_borrow",
 ]
 
@@ -25,7 +25,7 @@ func queue(r) -> void:
 			break
 		var ev: Dictionary = call("_check_" + id, r)
 		if not ev.is_empty():
-			ev["id"] = id
+			ev["id"] = ev.get("id", id)
 			ev.merge({"names": {}, "uid": -1}, false)
 			r.events.append(ev)
 
@@ -74,6 +74,38 @@ func _check_boss_details(r) -> Dictionary:
 			var t: Dictionary = r.task(c["uid"])
 			return {"who": "boss", "uid": t["uid"], "names": task_names(r, t),
 				"lines": [{"who": "boss", "key": "event.boss_details.ask"}], "choices": ["call_owner", "improvise", "dodge"]}
+	return {}
+
+
+# Something comes up inside a task that's under way. At most one a morning, once per task.
+func _check_complication(r) -> Dictionary:
+	var candidates: Array = []
+	for t in r.tasks:
+		if t["status"] != "active" or t["complicated"] or not C.TEAM.has(t["owner"]) or not here(r, t["owner"]):
+			continue
+		if t["progress"] < 0.2 * t["size"] or t["size"] - t["progress"] < 0.6:
+			continue
+		candidates.append(t)
+	candidates.shuffle()
+	for t in candidates:
+		if r.rng.randf() > 0.35:
+			continue
+		var options: Array = []
+		for cid in C.COMPLICATIONS:
+			var c: Dictionary = C.COMPLICATIONS[cid]
+			if c["cats"].has(t["cat"]):
+				options.append(cid)
+		if options.is_empty():
+			continue
+		var cid: String = options[r.rng.randi() % options.size()]
+		var data: Dictionary = C.COMPLICATIONS[cid]
+		t["complicated"] = true
+		var who: String = t["owner"] if data["who"] == "owner" else t["from"]
+		var choices: Array = data["choices"].keys()
+		if cid == "old_system" and (t["owner"] == "gena" or not here(r, "gena")):
+			choices.erase("ask_gena")
+		return {"id": "comp_" + cid, "comp": cid, "who": who, "uid": t["uid"], "names": task_names(r, t),
+			"lines": [{"who": who, "key": "event.comp_%s.ask" % cid}], "choices": choices}
 	return {}
 
 
@@ -218,6 +250,61 @@ func _check_taras_borrow(r) -> Dictionary:
 
 # ---------- choices ----------
 
+func _resolve_complication(r, ev: Dictionary, c: String, t: Dictionary, names: Dictionary) -> void:
+	var cid: String = ev["comp"]
+	var fx: Dictionary = C.COMPLICATIONS[cid]["choices"][c]
+	var p: String = t["owner"]
+	if not C.TEAM.has(p) or t["status"] != "active":
+		return
+	var reply := "event.comp_%s.%s.reply" % [cid, c]
+	if fx.has("check"):
+		var passed: bool = r.people[p]["skills"][t["cat"]] >= fx["check"]
+		fx = fx["pass"] if passed else fx["fail"]
+		reply = "event.comp_%s.%s.%s" % [cid, c, "pass" if passed else "fail"]
+	var who: String = ev["who"]
+	match fx.get("special", ""):
+		"taras":
+			who = "taras"
+			if r.flags.has("taras_grudge"):
+				fx = {"block": 1}
+				reply = "event.comp_needs_access.ask_taras.no"
+			else:
+				r.flags["taras_owes"] = false
+		"grudge":
+			r.flags["taras_grudge"] = true
+		"please_from":
+			if t["from"] == "boss":
+				r.boss += 0.5
+		"annoy_from":
+			if t["from"] == "boss":
+				r.boss -= 0.5
+		"negotiate":
+			fx = fx.duplicate()
+			if r.rng.randf() < 0.6:
+				fx["rework"] = 0.1
+				reply = "event.comp_client_changes.negotiate.ok"
+			else:
+				fx["rework"] = 0.4
+				reply = "event.comp_client_changes.negotiate.bad"
+		"gena":
+			who = "gena"
+			r.people["gena"]["mood"] += 1.0
+	t["size"] += fx.get("size", 0.0)
+	t["due"] += fx.get("due", 0)
+	t["q_bonus"] += fx.get("quality", 0.0)
+	t["progress"] -= t["progress"] * fx.get("rework", 0.0)
+	t["blocked"] = maxi(t["blocked"], fx.get("block", 0))
+	if fx.get("hours", 0) > 0:
+		r.add_my_hours(fx["hours"])
+		t["involved"] = true
+	if fx.has("learn"):
+		r.learn(p, t["cat"], fx["learn"])
+	r.people[p]["mood"] += fx.get("mood", 0.0)
+	r.people[p]["energy"] += fx.get("energy", 0.0)
+	r.boss += fx.get("boss", 0.0)
+	r.say(who, reply, [], names)
+
+
 func resolve(r, ev: Dictionary, choice: String) -> void:
 	var parts := choice.split(":")
 	var c: String = parts[0]
@@ -229,6 +316,9 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 	r.history.append({"who": "you", "key": "event.%s.choice.%s" % [ev["id"], c], "args": [], "names": names, "day": r.day})
 	var who: String = ev["who"]
 	var reply := "event.%s.%s.reply" % [ev["id"], c]
+	if ev.has("comp"):
+		_resolve_complication(r, ev, c, t, names)
+		who = ""
 	match ev["id"] + "/" + c:
 		"boss_deadline/yes":
 			t["vouched"] = true
@@ -268,6 +358,9 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 
 		"vika_takes_task/give":
 			var prev: String = t["owner"]
+			if not C.TEAM.has(prev) or t["status"] != "active":
+				r.say("vika", reply, [], names)
+				return
 			t["owner"] = "vika"
 			t["helper"] = "" if t["helper"] == "vika" else t["helper"]
 			r.people["vika"]["mood"] += 1.0

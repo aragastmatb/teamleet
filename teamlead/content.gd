@@ -72,14 +72,59 @@ const TASKS := {
 
 # Which tasks arrive on which morning. Ids can repeat (the weekly report, another outage).
 const SCHEDULE := {
-	1: ["client_report", "minutes", "corporate", "weekly_report"],
-	2: ["integration", "timesheets", "security_patch"],
-	3: ["onboarding", "okr", "ab_test", "inventory", "dashboard"],
-	4: ["prod_fix", "pricing", "newsletter", "load_test"],
-	5: ["survey", "new_feature", "angry_client", "vendor_contract"],
-	6: ["board_deck", "legacy_export", "weekly_report", "forecast", "interviews"],
-	7: ["client_bug", "docs", "client_demo", "mentoring"],
-	8: ["migration", "budget", "prod_fix", "audit"],
+	1: ["client_report", "minutes", "weekly_report"],
+	2: ["integration", "corporate", "security_patch"],
+	3: ["onboarding", "okr", "ab_test"],
+	4: ["prod_fix", "pricing", "survey"],
+	5: ["new_feature", "angry_client", "vendor_contract"],
+	6: ["board_deck", "weekly_report", "legacy_export", "interviews"],
+	7: ["client_bug", "docs", "client_demo", "inventory"],
+	8: ["migration", "budget", "audit"],
 	9: ["perf_reviews"],
 	10: ["timesheets"],
+}
+
+# Things that happen inside a task while it's being worked on. Each comes up at most once per task.
+# who: "owner" (the person doing it) or "from" (whoever asked for it).
+# Choice effects: size / due / quality (added to the task's average) / rework (share of progress lost) /
+# block (days it stands still) / hours (your own time; you were involved) / learn (owner xp) /
+# mood / energy (owner) / boss / special (handled in scenes.gd).
+# check: owner skill needed; "pass" and "fail" hold the effects for each outcome.
+const COMPLICATIONS := {
+	"legacy_bug": {"cats": ["tech"], "who": "owner", "choices": {
+		"fix": {"check": 3, "pass": {"size": 0.5, "quality": 0.8}, "fail": {"size": 1.5, "quality": 0.3}},
+		"hack": {"quality": -1.0},
+		"together": {"hours": 3, "size": 0.5, "quality": 0.5, "learn": 1.0}}},
+	"needs_access": {"cats": ["tech"], "who": "owner", "choices": {
+		"ask_taras": {"special": "taras"},
+		"escalate": {"boss": -0.5, "special": "grudge"},
+		"wait": {"block": 1}}},
+	"scope_creep": {"cats": ["tech", "analytics", "people", "routine"], "who": "from", "choices": {
+		"accept": {"size": 1.0, "special": "please_from"},
+		"deadline": {"size": 1.0, "due": 1},
+		"push_back": {"special": "annoy_from"}}},
+	"bad_data": {"cats": ["analytics"], "who": "owner", "choices": {
+		"clean": {"check": 3, "pass": {"size": 0.5, "quality": 0.6}, "fail": {"size": 1.5, "quality": 0.3}},
+		"as_is": {"quality": -1.0},
+		"together": {"hours": 2, "size": 0.5, "quality": 0.4, "learn": 1.0}}},
+	"client_changes": {"cats": ["analytics", "people"], "who": "owner", "choices": {
+		"redo": {"rework": 0.4},
+		"negotiate": {"hours": 2, "special": "negotiate"},
+		"ignore": {"quality": -1.0}}},
+	"no_reply": {"cats": ["people"], "who": "owner", "choices": {
+		"wait": {"block": 1},
+		"push": {"energy": -1.0, "mood": -0.5},
+		"you_call": {"hours": 2}}},
+	"conflict": {"cats": ["people"], "who": "owner", "choices": {
+		"owner_handles": {"check": 3, "pass": {"learn": 1.5, "mood": 0.5}, "fail": {"block": 1, "mood": -1.0}},
+		"mediate": {"hours": 2},
+		"escalate": {"block": 1}}},
+	"old_system": {"cats": ["routine"], "who": "owner", "choices": {
+		"manual": {"size": 1.0, "mood": -0.5},
+		"ask_gena": {"special": "gena"},
+		"corners": {"quality": -0.8}}},
+	"missing_docs": {"cats": ["routine", "tech"], "who": "owner", "choices": {
+		"dig": {"check": 2, "pass": {"size": 0.3, "learn": 1.0}, "fail": {"size": 1.0, "learn": 1.0}},
+		"together": {"hours": 2},
+		"corners": {"quality": -0.6}}},
 }

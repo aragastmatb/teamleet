@@ -264,7 +264,9 @@ func _person_row(p: String) -> Control:
 	name_row.add_theme_constant_override("separation", 8)
 	card.add_child(name_row)
 	name_row.add_child(_label(Loc.person(p), 18))
-	name_row.add_child(_label(Loc.t("role." + p), 13, COL_MUTED))
+	var role := rules.role_of(p)
+	if role != "":
+		name_row.add_child(_label(Loc.t("role." + role), 13, COL_MUTED))
 	if st["gone"]:
 		card.add_child(_label(Loc.t("gone_label"), 14, COL_DANGER))
 		row.modulate = Color(1, 1, 1, 0.5)
@@ -432,6 +434,8 @@ func _task_chip(t: Dictionary) -> Control:
 	margin.add_child(v)
 	v.add_child(_label(Loc.t("taskname." + t["id"]), 13, COL_INK, true))
 	var due := _due_text(t)
+	if t["blocked"] > 0:
+		due = Loc.t("chip_blocked") + " · " + due
 	if t["helper"] != "" and t["status"] == "active":
 		due += "  " + Loc.t("chip_helper", [Loc.person(t["helper"])])
 	v.add_child(_label(due, 11, COL_DANGER if t["late"] or t["due"] - rules.day <= 0 else COL_INK_MUTED))
@@ -633,14 +637,19 @@ func _build_report() -> void:
 	for p in C.TEAM:
 		var st: Dictionary = rules.people[p]
 		var hours: int = st["week_hours"][w]
-		var line := Loc.render("report.row", [], {"who": Loc.person(p), "hours": hours, "done": st["week_done"][w]})
-		if st["week_overtime"][w] > 0:
-			line += Loc.render("report.overtime", [], {"days": st["week_overtime"][w]})
+		var norm: int = 8 * (5 - st["week_absent"][w])
+		var extra: int = st["week_extra"][w]
+		var line := Loc.render("report.row", [], {"who": Loc.person(p), "hours": hours, "norm": norm, "done": st["week_done"][w]})
+		if extra > 0:
+			line += Loc.render("report.overtime", [], {"hours": extra})
+		if st["week_absent"][w] > 0:
+			line += Loc.render("report.absent", [], {"days": st["week_absent"][w]})
 		if st["gone"]:
 			line += " — " + Loc.t("gone_label")
-		var color := COL_DANGER if hours >= 46 else (COL_ACCENT if hours <= 16 else COL_TEXT)
+		var color := COL_DANGER if extra >= 6 else (COL_ACCENT if hours * 2 <= norm else COL_TEXT)
 		v.add_child(_label(line, 18, color, true))
-	v.add_child(_label(Loc.render("report.me", [], {"hours": rules.my_week_hours[w]}), 18, COL_GOOD if rules.my_week_hours[w] == 0 else COL_ACCENT))
+	var mine: int = rules.my_week_hours[w]
+	v.add_child(_label(Loc.render("report.me", [], {"hours": mine}), 18, COL_GOOD if mine < 8 else (COL_ACCENT if mine < 16 else COL_DANGER), true))
 	var late := 0
 	for t in rules.tasks:
 		if t["late"] and int((t["late_day"] - 1) / 5.0) == w:
