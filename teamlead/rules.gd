@@ -50,6 +50,8 @@ var flags := {}
 var ending := ""
 var evening_from := 0
 var next_uid := 0
+# Today's pairs: task uid -> share of the helper's day spent on it. Fixed at the start of the evening.
+var shares := {}
 # Chat entries: {"who": speaker id, "you" or "" for narration; "key"; "args": [] for %s; "names": {} for {placeholders}; "day"}.
 # Values starting with "@" are locale keys.
 var history: Array = []
@@ -361,6 +363,11 @@ func end_day() -> void:
 		return
 	evening_from = history.size()
 	_narrate("log.evening")
+	shares.clear()
+	for t in tasks:
+		var share := help_share(t)
+		if share > 0.0:
+			shares[t["uid"]] = share
 	for p in C.TEAM:
 		_work(p)
 	_work_myself()
@@ -429,19 +436,62 @@ func _speed(p: String, t: Dictionary) -> float:
 	s *= 1.0 + C.TONES[t["tone"]].get("speed", 0.0)
 	if st["pushed"] > 0:
 		s *= 1.0 + PUSH_SPEED
-	var h: String = t["helper"]
-	if h != "" and _helping_now(h):
-		var hs: int = people[h]["skills"][t["cat"]]
-		if hs >= 2:
-			s += 0.5 * (SPEED_BASE + SPEED_PER_SKILL * hs)
-		if hs < skill:
-			s *= 0.85
+	var share: float = shares.get(t["uid"], 0.0)
+	if share > 0.0:
+		var hs: int = people[t["helper"]]["skills"][t["cat"]]
+		if hs > skill:
+			s += share * 0.5 * (SPEED_BASE + SPEED_PER_SKILL * hs)
+		elif hs < skill:
+			s *= 1.0 - 0.15 * share # explaining takes time
+		else:
+			s += share * 0.3 * (SPEED_BASE + SPEED_PER_SKILL * hs)
 	return s
 
 
-# A helper only helps when they have nothing of their own on their plate.
-func _helping_now(h: String) -> bool:
-	return available(h) and not people[h]["absent"] and queue_of(h).is_empty()
+# How much of the helper's day goes to this task: all of it if they have nothing of their own,
+# half if they do. Someone listed as helper on several tasks only helps with the first.
+func help_share(t: Dictionary) -> float:
+	var h: String = t["helper"]
+	if t["status"] != "active" or h == "" or not C.TEAM.has(t["owner"]) or not available(h) or people[h]["absent"]:
+		return 0.0
+	if not available(t["owner"]) or people[t["owner"]]["absent"]:
+		return 0.0
+	for other in tasks:
+		if other["status"] == "active" and other["helper"] == h:
+			if other["uid"] != t["uid"]:
+				return 0.0
+			break
+	return 1.0 if queue_of(h).is_empty() else 0.5
+
+
+func _helping_task(p: String) -> Dictionary:
+	for t in tasks:
+		if t["helper"] == p and shares.has(t["uid"]):
+			return t
+	return {}
+
+
+# The helper's half (or whole) day in the pair: they learn, faster from someone who knows more.
+func _help(p: String, t: Dictionary, share: float) -> void:
+	var owner: String = t["owner"]
+	var hs: int = people[p]["skills"][t["cat"]]
+	var os: int = people[owner]["skills"][t["cat"]]
+	_learn(p, t["cat"], 1.2 * share * (1.0 + 0.25 * maxi(0, os - hs)))
+	var kind := "learn" if hs < os else ("boost" if hs > os else "even")
+	_narrate("pair." + kind, [], {"helper": "@name.%s.nom" % p, "owner_ins": "@name.%s.ins" % owner,
+		"task": "@taskname." + t["id"], "half": "@pair.half" if share < 1.0 else ""})
+
+
+# Days of work left on a task for this person. Known skill gives a real estimate; otherwise it's
+# the lead's rough guess, as if someone decent did it.
+func estimate(t: Dictionary, p: String = "") -> Dictionary:
+	var who: String = p if p != "" else t["owner"]
+	var left: float = maxf(0.0, t["size"] - t["progress"])
+	if who == "me":
+		return {"days": left / MY_SPEED, "sure": true}
+	if C.TEAM.has(who) and people[who]["known"].has("skill." + t["cat"]):
+		return {"days": left / (SPEED_BASE + SPEED_PER_SKILL * people[who]["skills"][t["cat"]]), "sure": true}
+	return {"days": left / (SPEED_BASE + SPEED_PER_SKILL * 2), "sure": false}
 
 
 func _work(p: String) -> void:
@@ -456,10 +506,13 @@ func _work(p: String) -> void:
 			st["energy"] = minf(_stamina(p), st["energy"] + IDLE_REST)
 		return
 	var q := queue_of(p)
+	var helping := _helping_task(p)
+	var help_part: float = shares.get(helping["uid"], 0.0) if not helping.is_empty() else 0.0
 	if not q.is_empty():
 		# The day is spent down the queue: whatever's left after finishing one task goes to the next.
+		# Half of it goes to the pair if they're helping someone.
 		var first: Dictionary = q[0]
-		var time := 1.0
+		var time := 1.0 - help_part
 		for t in q:
 			if time < 0.05:
 				break
@@ -470,10 +523,11 @@ func _work(p: String) -> void:
 			t["progress"] += step * spend
 			var quality: float = skill + st["mood"] * 0.1 + rng.randf_range(-0.7, 0.7) + C.TONES[t["tone"]].get("quality", 0.0)
 			var h: String = t["helper"]
-			if h != "" and _helping_now(h):
+			var share: float = shares.get(t["uid"], 0.0)
+			if share > 0.0:
 				t["helped"][h] = t["helped"].get(h, 0) + 1
 				if people[h]["skills"][t["cat"]] > skill:
-					quality += 0.5
+					quality += 0.5 * share
 			t["q_sum"] += quality * spend
 			t["q_days"] += spend
 			_learn(p, t["cat"], spend)
@@ -502,17 +556,14 @@ func _work(p: String) -> void:
 		st["energy"] -= drain
 		st["idle_said"] = false
 		st["idle_days"] = 0
-	else:
-		var helping := false
-		for t in tasks:
-			if t["status"] == "active" and t["helper"] == p and available(t["owner"]) and not people[t["owner"]]["absent"]:
-				helping = true
-				st["week_hours"][week()] += 8
-				_learn(p, t["cat"], 1.5)
-				st["energy"] -= 0.7
-				break
-		st["idle_days"] = 0 if helping else st["idle_days"] + 1
-		if not helping:
+	if help_part > 0.0:
+		_help(p, helping, help_part)
+	if q.is_empty():
+		st["idle_days"] = 0 if help_part > 0.0 else st["idle_days"] + 1
+		if help_part > 0.0:
+			st["week_hours"][week()] += 8
+			st["energy"] -= 0.7
+		else:
 			st["energy"] = minf(_stamina(p), st["energy"] + IDLE_REST)
 			st["mood"] += C.PEOPLE[p]["idle"]
 			if not st["idle_said"]:

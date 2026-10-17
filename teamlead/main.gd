@@ -300,11 +300,14 @@ func _person_row(p: String) -> Control:
 	var known: Dictionary = st["known"]
 	var drive_text: String = Loc.t("drive." + C.PEOPLE[p]["drive"]) if known.has("drive") else Loc.t("unknown")
 	card.add_child(_label(Loc.t("known.drive", [drive_text]), 12, COL_MUTED, true))
-	var skills := PackedStringArray()
+	var skills := HFlowContainer.new()
+	skills.add_theme_constant_override("h_separation", 4)
+	skills.add_theme_constant_override("v_separation", 4)
+	card.add_child(skills)
 	for cat in C.CATEGORIES:
-		var level: String = Loc.t("level.%d" % st["skills"][cat]) if known.has("skill." + cat) else Loc.t("unknown")
-		skills.append("%s: %s" % [Loc.t("cat." + cat), level])
-	card.add_child(_label(Loc.t("known.skills", [", ".join(skills)]), 12, COL_MUTED, true))
+		var is_known: bool = known.has("skill." + cat)
+		var level: String = Loc.t("level.%d" % st["skills"][cat]) if is_known else Loc.t("unknown")
+		skills.add_child(_skill_chip("%s: %s" % [Loc.t("cat." + cat), level], CAT_COLORS[cat], is_known))
 	var middle := _vbox(6)
 	middle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(middle)
@@ -341,6 +344,25 @@ func _said_today(p: String) -> String:
 			var body := Loc.render(e["key"], e.get("args", []), e.get("names", {}))
 			return body if body.begins_with("(") or body.begins_with("«") or body.begins_with("\"") else Loc.t("quote", [body])
 	return ""
+
+
+func _skill_chip(text_value: String, color: Color, is_known: bool) -> Control:
+	var chip := PanelContainer.new()
+	var style := _box(color.darkened(0.55) if is_known else COL_BG, color if is_known else color.darkened(0.45), 1, 4)
+	style.content_margin_left = 6
+	style.content_margin_right = 6
+	style.content_margin_top = 1
+	style.content_margin_bottom = 1
+	chip.add_theme_stylebox_override("panel", style)
+	chip.add_child(_label(text_value, 12, COL_TEXT if is_known else COL_MUTED))
+	return chip
+
+
+func _days(d: float) -> String:
+	var x: float = maxf(0.5, snappedf(d, 0.5))
+	if is_equal_approx(x, roundf(x)):
+		return str(int(x))
+	return "%d%s5" % [int(x), "," if Loc.lang == "ru" else "."]
 
 
 func _bubble(text_value: String) -> Control:
@@ -402,7 +424,7 @@ func _side() -> Control:
 func _task_chip(t: Dictionary) -> Control:
 	var b := Button.new()
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(160, 70)
+	b.custom_minimum_size = Vector2(160, 82)
 	var chosen: bool = selected == t["uid"]
 	var color: Color = CAT_COLORS[t["cat"]]
 	var normal := _box(COL_PAPER if not chosen else COL_PAPER.lightened(0.5), COL_ACCENT if chosen else color, 3 if chosen else 2, 6)
@@ -429,6 +451,8 @@ func _task_chip(t: Dictionary) -> Control:
 	if t["helper"] != "" and t["status"] == "active":
 		due += "  " + Loc.t("chip_helper", [Loc.person(t["helper"])])
 	v.add_child(_label(due, 11, COL_DANGER if t["late"] or t["due"] - rules.day <= 0 else COL_INK_MUTED))
+	var est: Dictionary = rules.estimate(t)
+	v.add_child(_label(Loc.t("est.short" if est["sure"] else "est.guess", [_days(est["days"])]), 11, COL_INK if est["sure"] else COL_INK_MUTED))
 	if t["status"] == "active":
 		var bar := ProgressBar.new()
 		bar.max_value = t["size"]
@@ -488,7 +512,8 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 	v.add_child(head)
 	head.add_child(_label(Loc.t("taskname." + t["id"]), 18, COL_ACCENT))
 	head.add_child(_chip(Loc.t("cat." + t["cat"]), CAT_COLORS[t["cat"]]))
-	head.add_child(_chip(Loc.t(rules.size_word(t)), COL_MUTED))
+	var est: Dictionary = rules.estimate(t)
+	head.add_child(_chip(Loc.t("est.chip" if est["sure"] else "est.chip_guess", [_days(est["days"])]), COL_TEXT if est["sure"] else COL_MUTED))
 	head.add_child(_chip(_due_text(t), COL_DANGER if t["due"] - rules.day <= 1 else COL_MUTED))
 	if t["public"]:
 		head.add_child(_chip(Loc.t("public"), COL_ACCENT))
@@ -508,6 +533,11 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 	if t["status"] == "active":
 		who.add_child(_button(Loc.t("unassign"), _unassign, 0))
 	if picked != "":
+		var pe: Dictionary = rules.estimate(t, picked)
+		if pe["sure"]:
+			v.add_child(_label(Loc.render("est.for", [], {"who": Loc.person(picked), "days": _days(pe["days"])}), 14, COL_TEXT))
+		else:
+			v.add_child(_label(Loc.render("est.for_unknown", [], {"who": Loc.person(picked)}), 14, COL_MUTED))
 		var pair := HBoxContainer.new()
 		pair.add_theme_constant_override("separation", 6)
 		v.add_child(pair)
