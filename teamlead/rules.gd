@@ -8,6 +8,7 @@ extends RefCounted
 
 const C = preload("res://teamlead/content.gd")
 const L = preload("res://teamlead/locale.gd")
+const Scenes = preload("res://teamlead/scenes.gd")
 
 const SPEED_BASE := 0.5
 const SPEED_PER_SKILL := 0.35
@@ -32,6 +33,7 @@ const PUSH_DAYS := 2
 const PUSH_SPEED := 0.2
 
 var rng := RandomNumberGenerator.new()
+var scenes := Scenes.new()
 var day := 1
 var phase := "title" # plan, event, evening, review, end
 var people := {}
@@ -72,7 +74,7 @@ func start_run(seed_value: int = -1) -> void:
 			"skills": skills, "xp": xp, "energy": float(base["stamina"]), "mood": 1.0, "trust": 0,
 			"sick": 0, "absent": false, "absent_reason": "", "off_next": false, "pushed": 0, "promised": false, "ambition": 0,
 			"gone": false, "known": {}, "favors": 0, "warned_mood": false, "warned_tired": false,
-			"last_done": -10, "idle_said": false,
+			"last_done": -10, "idle_said": false, "idle_days": 0, "promised_day": 0,
 		}
 	tasks.clear()
 	boss = 0
@@ -108,7 +110,8 @@ func _start_day() -> void:
 			"uid": next_uid, "id": id, "cat": info["cat"], "size": info["size"], "progress": 0.0,
 			"due": day + info["due"], "public": info["public"], "from": info["from"], "owner": "", "helper": "",
 			"tone": "plain", "q_sum": 0.0, "q_days": 0, "status": "inbox", "late": false, "quality": "",
-			"done_day": 0, "reviewed": false,
+			"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
+			"asked": false, "vouched": false, "flaw": false,
 		})
 		next_uid += 1
 		_say(info["from"], "task.%s.ask" % id)
@@ -118,43 +121,26 @@ func _start_day() -> void:
 
 
 func _queue_events() -> void:
-	var vika: Dictionary = people["vika"]
-	if not vika["gone"] and not vika["absent"] and vika["ambition"] >= 2 and not flags.has("vika_raise"):
-		flags["vika_raise"] = true
-		events.append({"id": "vika_raise", "who": "vika", "choices": ["promise", "not_yet"]})
-	var alex: Dictionary = people["alex"]
-	if not alex["gone"] and not alex["absent"] and alex["energy"] <= TIRED_ENERGY and not flags.has("alex_tired"):
-		flags["alex_tired"] = true
-		events.append({"id": "alex_tired", "who": "alex", "choices": ["dayoff", "hold_on"]})
-	if not events.is_empty():
-		_say(events[0]["who"], "event.%s.ask" % events[0]["id"])
+	scenes.queue(self)
+	_say_event_lines()
+
+
+func _say_event_lines() -> void:
+	if events.is_empty():
+		return
+	var ev: Dictionary = events[0]
+	for line in ev["lines"]:
+		_say(line["who"], line["key"], [], ev["names"])
 
 
 func resolve_event(choice: String) -> void:
-	if phase != "event" or events.is_empty():
+	if phase != "event" or events.is_empty() or not events[0]["choices"].has(choice):
 		return
-	var ev: Dictionary = events.pop_front()
-	var st: Dictionary = people[ev["who"]]
-	history.append({"who": "you", "key": "event.%s.%s" % [ev["id"], choice], "args": [], "names": {}, "day": day})
-	match ev["id"] + "/" + choice:
-		"vika_raise/promise":
-			st["promised"] = true
-			st["mood"] += 2.0
-		"vika_raise/not_yet":
-			st["mood"] -= 2.0
-			vika_standing += 1
-		"alex_tired/dayoff":
-			st["absent"] = true
-			st["absent_reason"] = "dayoff"
-			st["energy"] = minf(_stamina("alex"), st["energy"] + DAYOFF_REST)
-			st["mood"] += 1.0
-		"alex_tired/hold_on":
-			st["mood"] -= 1.0
-	_say(ev["who"], "event.%s.%s.reply" % [ev["id"], choice])
+	scenes.resolve(self, events.pop_front(), choice)
 	if events.is_empty():
 		phase = "plan"
 	else:
-		_say(events[0]["who"], "event.%s.ask" % events[0]["id"])
+		_say_event_lines()
 
 
 # ---------- planning ----------
@@ -179,7 +165,10 @@ func queue_of(p: String) -> Array[Dictionary]:
 	for t in tasks:
 		if t["status"] == "active" and t["owner"] == p:
 			result.append(t)
-	result.sort_custom(func(a, b): return a["due"] < b["due"] or (a["due"] == b["due"] and a["uid"] < b["uid"]))
+	result.sort_custom(func(a, b):
+		if a["first"] != b["first"]:
+			return a["first"]
+		return a["due"] < b["due"] or (a["due"] == b["due"] and a["uid"] < b["uid"]))
 	return result
 
 
@@ -204,6 +193,8 @@ func assign(uid: int, p: String, tone: String) -> void:
 	t["owner"] = p
 	t["tone"] = tone
 	t["status"] = "active"
+	t["assigned_day"] = day
+	t["first"] = false
 	if t["helper"] == p:
 		t["helper"] = ""
 	if p == "me":
@@ -224,8 +215,17 @@ func assign(uid: int, p: String, tone: String) -> void:
 	if tone == "favor":
 		delta -= st["favors"]
 		st["favors"] += 1
+	var terms_line := ""
+	if p == "alex" and flags.has("alex_terms"):
+		if t["cat"] == "people":
+			delta -= 1.0
+			terms_line = "alex.terms_broken"
+		elif t["cat"] == "tech":
+			delta += 0.5
 	st["mood"] = clampf(st["mood"] + delta, -5.0, 5.0)
 	_say(p, _tone_line(p, tone, delta), [], {"task": "@taskname." + t["id"]})
+	if terms_line != "":
+		_say(p, terms_line)
 	if absi(taste) >= 2:
 		_reveal(p, "drive")
 
@@ -240,9 +240,17 @@ func _tone_line(p: String, tone: String, delta: float) -> String:
 
 func _hand_to_taras(t: Dictionary) -> void:
 	history.append({"who": "you", "key": "you.to_taras", "args": [], "names": {}, "day": day})
-	if t["from"] == "taras" or flags.get("taras_said_no", 0) >= 2 or rng.randf() < 0.5:
+	if t["from"] != "taras" and flags.get("taras_owes", false):
+		flags["taras_owes"] = false
+		t["owner"] = "taras"
+		t["status"] = "taras"
+		t["helper"] = ""
+		_say("taras", "taras.accept_owed", [], {"task": "@taskname." + t["id"]})
+		return
+	if t["from"] == "taras" or flags.has("taras_grudge") or flags.get("taras_said_no", 0) >= 2 or rng.randf() < 0.5:
 		flags["taras_said_no"] = flags.get("taras_said_no", 0) + 1
-		_say("taras", "taras.refuse_own" if t["from"] == "taras" else "taras.refuse", [], {"task": "@taskname." + t["id"]})
+		var no := "taras.refuse_own" if t["from"] == "taras" else ("taras.refuse_grudge" if flags.has("taras_grudge") else "taras.refuse")
+		_say("taras", no, [], {"task": "@taskname." + t["id"]})
 		return
 	t["owner"] = "taras"
 	t["status"] = "taras"
@@ -254,6 +262,9 @@ func set_helper(uid: int, p: String) -> void:
 	var t := task(uid)
 	if phase != "plan" or t.is_empty() or t["status"] != "active" or p == t["owner"] or (p != "" and not available(p)):
 		return
+	if flags.has("no_pair_alex_vika") and [p, t["owner"]].has("alex") and [p, t["owner"]].has("vika"):
+		_say("alex", "helper.no_vika")
+		return
 	t["helper"] = p
 	if p != "":
 		_say(p, "helper.join", [], {"task": "@taskname." + t["id"], "owner": "@name.%s.nom" % t["owner"]})
@@ -263,9 +274,14 @@ func unassign(uid: int) -> void:
 	var t := task(uid)
 	if phase != "plan" or t.is_empty() or t["status"] != "active":
 		return
+	unassign_now(t)
+
+
+func unassign_now(t: Dictionary) -> void:
 	t["owner"] = ""
 	t["helper"] = ""
 	t["status"] = "inbox"
+	t["first"] = false
 
 
 func one_on_one(p: String, approach: String) -> void:
@@ -301,7 +317,7 @@ func one_on_one(p: String, approach: String) -> void:
 				st["trust"] -= 1
 				_say(p, "talk.promise.again")
 			else:
-				st["promised"] = true
+				make_promise(p)
 				st["mood"] += 3.0 if p == "vika" else 2.0
 				_say(p, "talk.promise.%s" % p)
 		"dayoff":
@@ -356,6 +372,9 @@ func end_day() -> void:
 			t["late"] = true
 			boss -= 1
 			_narrate("late", [], {"task": "@taskname." + t["id"]})
+			if t["vouched"]:
+				boss -= 1
+				_say("boss", "boss.vouched_late", [], {"task": "@taskname." + t["id"]})
 	for p in C.TEAM:
 		_check_person(p)
 	if C.REVIEW_DAYS.has(day):
@@ -395,7 +414,10 @@ func _work(p: String) -> void:
 	if st["gone"]:
 		return
 	if st["absent"]:
-		st["energy"] = minf(_stamina(p), st["energy"] + IDLE_REST)
+		if st["absent_reason"] == "taras":
+			st["energy"] -= 0.5
+		else:
+			st["energy"] = minf(_stamina(p), st["energy"] + IDLE_REST)
 		return
 	var q := queue_of(p)
 	if not q.is_empty():
@@ -405,8 +427,10 @@ func _work(p: String) -> void:
 		t["progress"] += step
 		var quality: float = skill + st["mood"] * 0.1 + rng.randf_range(-0.7, 0.7) + C.TONES[t["tone"]].get("quality", 0.0)
 		var h: String = t["helper"]
-		if h != "" and _helping_now(h) and people[h]["skills"][t["cat"]] > skill:
-			quality += 0.5
+		if h != "" and _helping_now(h):
+			t["helped"][h] = t["helped"].get(h, 0) + 1
+			if people[h]["skills"][t["cat"]] > skill:
+				quality += 0.5
 		t["q_sum"] += quality
 		t["q_days"] += 1
 		_learn(p, t["cat"], 1.0)
@@ -422,6 +446,7 @@ func _work(p: String) -> void:
 		if C.PEOPLE[p]["hates"].has(t["cat"]):
 			st["mood"] -= 0.4
 		st["idle_said"] = false
+		st["idle_days"] = 0
 		if t["progress"] >= t["size"]:
 			_finish(p, t)
 		else:
@@ -436,6 +461,7 @@ func _work(p: String) -> void:
 				_learn(p, t["cat"], 1.5)
 				st["energy"] -= 0.7
 				break
+		st["idle_days"] = 0 if helping else st["idle_days"] + 1
 		if not helping:
 			st["energy"] = minf(_stamina(p), st["energy"] + IDLE_REST)
 			st["mood"] += C.PEOPLE[p]["idle"]
@@ -464,6 +490,8 @@ func _learn(p: String, cat: String, amount: float) -> void:
 func _finish(p: String, t: Dictionary) -> void:
 	var avg: float = t["q_sum"] / maxi(1, t["q_days"])
 	t["quality"] = "good" if avg >= GOOD_Q else ("ok" if avg >= OK_Q else ("weird" if avg >= WEIRD_Q else "poor"))
+	if t["flaw"] and (t["quality"] == "good" or t["quality"] == "ok"):
+		t["quality"] = "weird"
 	t["status"] = "done"
 	t["done_day"] = day
 	people[p]["last_done"] = day
@@ -498,7 +526,7 @@ func _check_person(p: String) -> void:
 	var st: Dictionary = people[p]
 	if st["gone"]:
 		return
-	if st["mood"] <= QUIT_MOOD:
+	if st["mood"] <= QUIT_MOOD or (p == "alex" and flags.has("alex_leaving") and day > flags["alex_leaving"] and st["mood"] < -1.0):
 		st["gone"] = true
 		quits += 1
 		_say(p, "quit.%s" % p)
@@ -533,6 +561,30 @@ func _drop_tasks(p: String) -> void:
 
 func _stamina(p: String) -> float:
 	return float(C.PEOPLE[p]["stamina"])
+
+
+func stamina(p: String) -> float:
+	return _stamina(p)
+
+
+func learn(p: String, cat: String, amount: float) -> void:
+	_learn(p, cat, amount)
+
+
+func make_promise(p: String) -> void:
+	people[p]["promised"] = true
+	people[p]["promised_day"] = day
+
+
+# Rough days of work left before this task is done, counting what's ahead of it in the owner's queue.
+func days_needed(t: Dictionary) -> float:
+	var p: String = t["owner"]
+	var total := 0.0
+	for q in queue_of(p):
+		total += (q["size"] - q["progress"]) / _speed(p, q)
+		if q["uid"] == t["uid"]:
+			break
+	return total + (1.0 if people[p]["absent"] else 0.0)
 
 
 # ---------- Friday review ----------
@@ -715,6 +767,10 @@ func size_word(t: Dictionary) -> String:
 
 
 # ---------- helpers ----------
+
+func say(who: String, key: String, args: Array = [], names: Dictionary = {}) -> void:
+	_say(who, key, args, names)
+
 
 func _say(who: String, key: String, args: Array = [], names: Dictionary = {}) -> void:
 	history.append({"who": who, "key": key, "args": args, "names": names, "day": day})

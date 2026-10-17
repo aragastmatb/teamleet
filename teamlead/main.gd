@@ -504,11 +504,17 @@ func _overlay(width: int) -> VBoxContainer:
 
 func _build_event() -> void:
 	var ev: Dictionary = rules.events[0]
-	var v := _overlay(640)
-	v.add_child(_label(Loc.person(ev["who"]), 16, COL_MUTED))
-	v.add_child(_label(Loc.t("quote", [Loc.t("event.%s.ask" % ev["id"])]), 22, COL_TEXT, true))
+	var v := _overlay(700)
+	for line in ev["lines"]:
+		v.add_child(_label(Loc.person(line["who"]), 15, COL_MUTED))
+		v.add_child(_label(Loc.t("quote", [Loc.render(line["key"], [], ev["names"])]), 21, COL_TEXT, true))
+	v.add_child(_spacer(6))
 	for choice in ev["choices"]:
-		v.add_child(_button(Loc.t("choice." + choice), _event.bind(choice), 0))
+		var parts: PackedStringArray = choice.split(":")
+		var names: Dictionary = ev["names"].duplicate()
+		if parts.size() > 1:
+			names["who"] = "@name.%s.acc" % parts[1]
+		v.add_child(_button(Loc.render("event.%s.choice.%s" % [ev["id"], parts[0]], [], names), _event.bind(choice), 0))
 
 
 func _build_evening() -> void:
@@ -638,6 +644,12 @@ func _vbox(separation: int) -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", separation)
 	return v
+
+
+func _spacer(height: int) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size.y = height
+	return c
 
 
 func _button(text_value: String, action: Callable, min_width: int, primary: bool = false) -> Button:
