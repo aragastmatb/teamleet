@@ -19,12 +19,33 @@ const CATEGORIES := ["tech", "analytics", "people", "routine"]
 # skills 0..4 (each run jitters them by up to ±1). drive: what motivates them.
 # likes / hates: task categories that lift or sink their mood while they work on them.
 # idle: mood change per day with nothing to do. stamina: energy at full rest.
+# paei: their own Adizes letter, the kind of lead they warm to (see BOSSES).
+# rest_at: share of stamina they need before they volunteer anything; initiative: daily chance they do.
+# Traits: workaholic (ignores tiredness until it drops them), guards_energy (says no early when tired),
+# needs_approval (only volunteers after praise), touchy (takes hits harder).
 const PEOPLE := {
-	"alex": {"skills": {"tech": 4, "analytics": 1, "people": 0, "routine": 2}, "drive": "craft", "likes": ["tech"], "hates": ["people"], "idle": 0.0, "stamina": 9},
-	"vika": {"skills": {"tech": 1, "analytics": 3, "people": 3, "routine": 0}, "drive": "visibility", "likes": ["analytics"], "hates": ["routine"], "idle": -0.6, "stamina": 8},
-	"dima": {"skills": {"tech": 1, "analytics": 0, "people": 1, "routine": 1}, "drive": "growth", "likes": [], "hates": [], "idle": -0.4, "stamina": 10, "fast_learner": true},
-	"gena": {"skills": {"tech": 2, "analytics": 0, "people": 1, "routine": 4}, "drive": "peace", "likes": ["routine"], "hates": ["people"], "idle": 0.3, "stamina": 7},
+	"alex": {"skills": {"tech": 4, "analytics": 1, "people": 0, "routine": 2}, "drive": "craft", "likes": ["tech"], "hates": ["people"], "idle": 0.0, "stamina": 9,
+		"paei": "P", "rest_at": 0.25, "initiative": 0.6, "workaholic": true},
+	"vika": {"skills": {"tech": 1, "analytics": 3, "people": 3, "routine": 0}, "drive": "visibility", "likes": ["analytics"], "hates": ["routine"], "idle": -0.6, "stamina": 8,
+		"paei": "E", "rest_at": 0.35, "initiative": 0.7},
+	"dima": {"skills": {"tech": 1, "analytics": 0, "people": 1, "routine": 1}, "drive": "growth", "likes": [], "hates": [], "idle": -0.4, "stamina": 10, "fast_learner": true,
+		"paei": "I", "rest_at": 0.5, "initiative": 0.6, "needs_approval": true, "touchy": true},
+	"gena": {"skills": {"tech": 2, "analytics": 0, "people": 1, "routine": 4}, "drive": "peace", "likes": ["routine"], "hates": ["people"], "idle": 0.3, "stamina": 7,
+		"paei": "A", "rest_at": 0.75, "initiative": 0.35, "guards_energy": true},
 }
+
+# Adizes' four roles of a manager: P produces results, A keeps order, E brings change, I holds people
+# together. Everything you do as a lead leans one way; nobody is strong in all four.
+const PAEI := ["P", "A", "E", "I"]
+# Irina comes in four kinds, one per letter: what she values in a lead (taste, -1..1).
+# The game will let you pick her at the start; for now every run uses DEFAULT_BOSS.
+const BOSSES := {
+	"P": {"P": 1.0, "A": 0.3, "E": 0.2, "I": -0.3},
+	"A": {"P": 0.3, "A": 1.0, "E": -0.3, "I": 0.2},
+	"E": {"P": 0.2, "A": -0.3, "E": 1.0, "I": 0.3},
+	"I": {"P": -0.3, "A": 0.2, "E": 0.3, "I": 1.0},
+}
+const DEFAULT_BOSS := "A"
 
 # When someone pushes back on a task, you answer with an intent. Each motive takes each intent
 # differently (mood change on top of grudgingly accepting). Some intents only work when true:

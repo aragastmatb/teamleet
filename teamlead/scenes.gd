@@ -12,6 +12,29 @@ const C = preload("res://teamlead/content.gd")
 
 const MAX_PER_MORNING := 2
 
+# How your answers lean as a lead (Adizes: P results, A order, E change, I people). Keyed "event/choice".
+const STYLE := {
+	"talk/dayoff": [["I", 0.5]], "talk/lighten": [["I", 0.5]], "talk/push": [["P", 0.7], ["I", -0.3]],
+	"talk/listen": [["I", 0.5]], "talk/apologize": [["I", 0.5]], "talk/dismiss": [["P", 0.3], ["I", -0.5]],
+	"talk/fix_load": [["I", 0.3], ["A", 0.3]], "talk/fix_bored": [["E", 0.5]], "talk/fix_hate": [["I", 0.3]],
+	"talk/praise": [["I", 0.3]], "talk/critique": [["P", 0.3], ["A", 0.2]], "talk/mention": [["I", 0.3]],
+	"talk/stretch": [["E", 0.5]], "talk/promote": [["I", 0.3]], "talk/not_yet": [["A", 0.3]],
+	"talk/ask_about": [["I", 0.3]], "talk/praise_general": [["I", 0.2]],
+	"talk/gift_craft": [["I", 0.5]], "talk/gift_visibility": [["I", 0.5]], "talk/gift_growth": [["I", 0.3], ["E", 0.2]], "talk/gift_peace": [["I", 0.3], ["A", 0.2]],
+	"boss_visit/warn": [["A", 1.0]], "boss_visit/delay": [["A", 0.3]], "boss_visit/contractor": [["E", 0.5]],
+	"boss_visit/status": [["A", 0.5]], "boss_visit/mention": [["I", 0.5]], "boss_visit/vika_promo": [["I", 0.5]],
+	"boss_show/alone": [["P", 0.5], ["I", -0.3]], "boss_show/with_owner": [["I", 0.5]],
+	"boss_dump/take": [["P", 0.3]], "boss_dump/refuse": [["E", 1.0]],
+	"boss_deadline/warn": [["A", 0.5]], "boss_deadline/yes": [["P", 0.3]],
+}
+# Calls on complications, by what they do: push through, keep order, find another way, lean on people.
+const COMP_STYLE := {
+	"hack": "E", "manual": "E", "negotiate": "E", "push_back": "E",
+	"deadline": "A", "escalate": "A", "fix": "A", "clean": "A", "dig": "A", "redo": "A", "wait": "A",
+	"as_is": "P", "corners": "P", "push": "P", "accept": "P", "ignore": "P", "together": "P", "you_call": "P",
+	"ask_gena": "I", "ask_taras": "I", "owner_handles": "I", "mediate": "I",
+}
+
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
 	"probation", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
@@ -69,8 +92,8 @@ func _check_probation(r) -> Dictionary:
 	var names := {}
 	for i in C.KEY_PROJECTS.size():
 		names["k%d" % (i + 1)] = "@taskname." + C.KEY_PROJECTS[i]
-	return {"who": "boss", "names": names, "lines": [{"who": "boss", "key": "event.probation.ask"}, {"who": "boss", "key": "event.probation.ask2"}],
-		"choices": ["ok"]}
+	return {"who": "boss", "names": names, "lines": [{"who": "boss", "key": "event.probation.ask"}, {"who": "boss", "key": "event.probation.ask2"},
+		{"who": "boss", "key": "event.probation.taste." + r.boss_type}], "choices": ["ok"]}
 
 
 # Irina drops something urgent on you. Day 2 the first time (you can't refuse yet), then now and
@@ -136,7 +159,8 @@ func _check_complication(r) -> Dictionary:
 		candidates.append(t)
 	candidates.shuffle()
 	for t in candidates:
-		if r.rng.randf() > 0.35:
+		# A lead who keeps order sees fewer surprises.
+		if r.rng.randf() > (0.25 if r.leans("A") else 0.35):
 			continue
 		var options: Array = []
 		for cid in C.COMPLICATIONS:
@@ -305,6 +329,8 @@ func _resolve_complication(r, ev: Dictionary, c: String, t: Dictionary, names: D
 	if not C.TEAM.has(p) or t["status"] != "active":
 		return
 	var reply := "event.comp_%s.%s.reply" % [cid, c]
+	if COMP_STYLE.has(c):
+		r.lead(COMP_STYLE[c], 0.6)
 	if fx.has("check"):
 		var passed: bool = r.people[p]["skills"][t["cat"]] >= fx["check"]
 		fx = fx["pass"] if passed else fx["fail"]
@@ -453,6 +479,7 @@ func _resolve_talk(r, ev: Dictionary, c: String, names: Dictionary) -> String:
 			r.lighten(p)
 			st["mood"] += 1.0
 		"fix_bored":
+			r.offer_today[p] = true
 			if r.initiative_offer(p) != "":
 				r.accept_initiative(p)
 			st["mood"] += 1.0
@@ -576,7 +603,7 @@ func _resolve_visit(r, ev: Dictionary, c: String, arg: String, names: Dictionary
 		"warn":
 			t["asked"] = true
 			t["due"] += 1
-			r.boss += 0.5
+			r.boss += r.boss_like("A", 0.5)
 			r.weight_cause = t["id"]
 		"delay":
 			t["asked"] = true
@@ -593,7 +620,7 @@ func _resolve_visit(r, ev: Dictionary, c: String, arg: String, names: Dictionary
 			# Keeping her in the loop is worth a little, once a week.
 			if not r.flags.has("status_w%d" % r.week()):
 				r.flags["status_w%d" % r.week()] = true
-				r.boss += 0.3
+				r.boss += r.boss_like("A", 0.3)
 			else:
 				reply = "event.boss_visit.status.again"
 		"vika_promo":
@@ -609,7 +636,7 @@ func _resolve_show(r, ev: Dictionary, c: String) -> String:
 	var p: String = t["owner"]
 	r.weight_cause = t["id"]
 	if c == "alone":
-		r.boss += 0.7
+		r.boss += r.boss_like("P", 0.7)
 		if not r.flags.has("credit_taken"):
 			r.flags["credit_taken"] = []
 		r.flags["credit_taken"].append({"uid": t["uid"], "owner": p, "day": r.day})
@@ -619,7 +646,7 @@ func _resolve_show(r, ev: Dictionary, c: String) -> String:
 			r.people[p]["mood"] -= 1.0
 			r.say(p, "event.boss_show.heard", [], {"task": "@taskname." + t["id"]})
 	else:
-		r.boss += 0.25
+		r.boss += r.boss_like("I", 0.25)
 		r.people[p]["mood"] += 1.0
 		r.people[p]["trust"] += 1
 		if p == "vika" and t["key"]:
@@ -638,6 +665,8 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 	elif arg != "":
 		names["who"] = "@name.%s.acc" % arg
 	r.history.append({"who": "you", "key": "event.%s.choice.%s" % [ev["id"], c], "args": [], "names": names, "day": r.day})
+	for pair in STYLE.get(("talk" if ev["id"].begins_with("talk_") else ev["id"]) + "/" + c, []):
+		r.lead(pair[0], pair[1])
 	var who: String = ev["who"]
 	var reply := "event.%s.%s.reply" % [ev["id"], c]
 	var routed := ""

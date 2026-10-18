@@ -31,6 +31,8 @@ const XP_BASE := 3.0
 const XP_PER_SKILL := 2.0
 const PUSH_DAYS := 2
 const PUSH_SPEED := 0.2
+# Below this much leaning overall you haven't really led at all (Adizes' "deadwood").
+const STYLE_MIN := 6.0
 
 var rng := RandomNumberGenerator.new()
 var scenes := Scenes.new()
@@ -67,6 +69,12 @@ var my_sick := 0
 var sick_today := false
 var visited_today := false
 var init_next := {}
+# Who feels like volunteering today: decided each morning from their energy, mood and character.
+var offer_today := {}
+# Which Irina this run has (a key of C.BOSSES) and how your leading leans, overall and this week.
+var boss_type: String = C.DEFAULT_BOSS
+var style := {}
+var week_style := {}
 var events: Array[Dictionary] = []
 var review: Array[Dictionary] = []
 var flags := {}
@@ -86,7 +94,7 @@ var history: Array = []
 
 # ---------- run and day flow ----------
 
-func start_run(seed_value: int = -1) -> void:
+func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS) -> void:
 	if seed_value >= 0:
 		rng.seed = seed_value
 	else:
@@ -115,6 +123,10 @@ func start_run(seed_value: int = -1) -> void:
 	my_energy = 10.0
 	my_sick = 0
 	init_next.clear()
+	boss_type = boss_kind
+	for x in C.PAEI:
+		style[x] = 0.0
+		week_style[x] = 0.0
 	boss = 0.0
 	weight_level = 1
 	weight_cause = ""
@@ -153,6 +165,10 @@ func _start_day() -> void:
 	for id in _arrivals():
 		add_task(id)
 	talked.clear()
+	offer_today.clear()
+	for p in C.TEAM:
+		if day > 1 and available(p) and not people[p]["absent"] and _wants_to_volunteer(p):
+			offer_today[p] = true
 	visited_today = false
 	overtime_today = 0
 	attention = 0 if my_sick > 0 else C.ATTENTION
@@ -317,6 +333,7 @@ func assign(uid: int, p: String) -> void:
 	if t["helper"] == p:
 		t["helper"] = ""
 	if p == "me":
+		lead("P", 2.0)
 		_say("", "you.myself_note", [], names)
 		for q in C.TEAM:
 			if available(q) and not people[q]["absent"] and people[q]["skills"][t["cat"]] >= 3 and queue_of(q).size() <= 1:
@@ -359,7 +376,7 @@ func _objection(p: String, t: Dictionary) -> String:
 		if q["uid"] != t["uid"]:
 			load += q["size"] - q["progress"]
 			count += 1
-	if st["energy"] <= TIRED_ENERGY:
+	if _feels_tired(p):
 		return "tired"
 	if count >= 2 and load >= 2.5:
 		return "overload"
@@ -398,6 +415,7 @@ func persuade(intent: String) -> void:
 	var st: Dictionary = people[p]
 	var names := {"task": "@taskname." + t["id"]}
 	history.append({"who": "you", "key": _first_key(["say.%s.%s" % [intent, reason], "say." + intent]), "args": [], "names": names, "to": p, "day": day})
+	lead({"order": "P", "honest": "I", "boss": "A", "promise": "I", "flatter": "I", "back_off": "I"}[intent], 0.5 if intent == "order" else 0.3)
 	if intent == "back_off":
 		unassign_now(t)
 		st["mood"] = clampf(st["mood"] + 0.3, -5.0, 5.0)
@@ -446,6 +464,10 @@ func _accept(p: String, t: Dictionary, delta: float, reply: String) -> void:
 		delta -= 1.0
 	if p == "vika" and t["public"]:
 		delta += 1.0
+	if leans("I"):
+		delta += 0.4
+	if delta < 0.0 and C.PEOPLE[p].get("touchy", false):
+		delta *= 1.3
 	var terms_line := ""
 	if p == "alex" and flags.has("alex_terms"):
 		if t["cat"] == "people":
@@ -514,6 +536,7 @@ func prioritize(uid: int) -> void:
 	for other in queue_of(p):
 		other["first"] = false
 	t["first"] = true
+	lead("A", 0.3)
 	if head["progress"] > 0.0:
 		people[p]["mood"] = clampf(people[p]["mood"] - 0.3, -5.0, 5.0)
 	history.append({"who": "you", "key": "prioritize.say", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": p, "day": day})
@@ -529,6 +552,7 @@ func set_helper(uid: int, p: String) -> void:
 		return
 	t["helper"] = p
 	if p != "":
+		lead("I", 0.2)
 		_say(p, "helper.join", [], {"task": "@taskname." + t["id"], "owner": "@name.%s.nom" % t["owner"]})
 
 
@@ -551,6 +575,7 @@ func start_talk(p: String) -> void:
 	if not can_talk(p):
 		return
 	talked[p] = true
+	lead("I", 0.3)
 	spend_attention()
 	history.append({"who": "you", "key": "talk.open", "args": [], "names": {}, "to": p, "day": day})
 	_open_conversation(scenes.talk_event(self, p))
@@ -632,6 +657,8 @@ func sit_with(uid: int) -> void:
 	if not C.TEAM.has(p) or not available(p) or people[p]["absent"]:
 		return
 	spend_attention()
+	lead("P", 0.5)
+	lead("I", 0.5)
 	my_week_mgmt[week()] += 2
 	t["sit_today"] = true
 	t["involved"] = true
@@ -646,7 +673,7 @@ func sit_with(uid: int) -> void:
 
 # What a free person offers to do on their own, or "" if nothing (or they're busy).
 func initiative_offer(p: String) -> String:
-	if phase != "plan" or not available(p) or people[p]["absent"] or not queue_of(p).is_empty():
+	if phase != "plan" or not offer_today.has(p) or not available(p) or people[p]["absent"] or not queue_of(p).is_empty():
 		return ""
 	for t in tasks:
 		if t["status"] == "active" and t["helper"] == p:
@@ -667,6 +694,8 @@ func accept_initiative(p: String) -> void:
 	if id == "" or not pending.is_empty():
 		return
 	init_next[p] = C.INITIATIVES[p].find(id) + 1
+	for pair in INIT_STYLE.get(id, []):
+		lead(pair[0], pair[1])
 	flags["init_" + id] = true
 	var info: Dictionary = C.INIT_TASKS[id]
 	add_task_raw("init_" + id, info["cat"], info["size"], C.DAYS + 10, false, p)
@@ -776,6 +805,7 @@ func end_day() -> void:
 	if C.SURVEY_DAYS.has(day):
 		_run_survey()
 	if C.REVIEW_DAYS.has(day):
+		_style_week()
 		_build_review()
 		if review.is_empty():
 			_narrate("review.empty")
@@ -920,6 +950,8 @@ func _speed(p: String, t: Dictionary) -> float:
 	s *= 1.0 + st["mood"] * 0.04
 	if st["pushed"] > 0:
 		s *= 1.0 + PUSH_SPEED
+	if leans("P"):
+		s *= 1.05
 	var share: float = shares.get(t["uid"], 0.0)
 	if share > 0.0 and people.has(t["helper"]):
 		var hs: int = people[t["helper"]]["skills"][t["cat"]]
@@ -1059,6 +1091,8 @@ func _work(p: String) -> void:
 		var drain: float = DRAIN
 		if st["skills"][first["cat"]] < 2:
 			drain += HARD_DRAIN
+		if leans("P"):
+			drain += 0.2
 		if q.size() >= OVERLOAD_AT:
 			drain += OVERLOAD_DRAIN
 			st["mood"] -= 0.3
@@ -1119,7 +1153,8 @@ func _finish(p: String, t: Dictionary) -> void:
 		merit += 0.5
 		# A key project delivered is visible as yours: you led it.
 		if t["key"]:
-			boss += 1.0
+			boss += boss_like("P", 1.0)
+			lead("P", 1.0)
 			weight_cause = t["id"]
 	t["status"] = "done"
 	t["done_day"] = day
@@ -1178,7 +1213,7 @@ func _check_person(p: String) -> void:
 		_say(p, "unhappy.%s" % p)
 	elif st["mood"] > UNHAPPY_MOOD + 1.0:
 		st["warned_mood"] = false
-	if st["energy"] <= TIRED_ENERGY and not st["warned_tired"]:
+	if _feels_tired(p) and not st["warned_tired"]:
 		st["warned_tired"] = true
 		_say(p, "tired.%s" % p)
 	elif st["energy"] > TIRED_ENERGY + 2.0:
@@ -1234,7 +1269,7 @@ func _build_review() -> void:
 	for t in tasks:
 		if t["reviewed"]:
 			continue
-		var by_team: bool = C.TEAM.has(t["owner"])
+		var by_team: bool = C.TEAM.has(t["owner"]) and available(t["owner"])
 		var done: bool = t["status"] == "done"
 		var good: bool = done and (t["quality"] == "good" or t["quality"] == "ok") and not t["late"]
 		if done and t["owner"] == "me":
@@ -1316,9 +1351,11 @@ func answer_review(choice: String) -> void:
 	var truth := review_true(item, choice)
 	weight_cause = t["id"]
 	history.append({"who": "you", "key": "review.a." + choice, "args": [], "names": names, "day": day})
+	for pair in REVIEW_STYLE[choice]:
+		lead(pair[0], pair[1])
 	match choice:
 		"credit_owner":
-			boss += 0.3
+			boss += boss_like("I", 0.3)
 			st["mood"] += 1.0
 			st["trust"] += 1
 			_say("boss", "review.boss.credit_owner", [], names)
@@ -1327,7 +1364,7 @@ func answer_review(choice: String) -> void:
 			if p == "vika" and t["quality"] == "good":
 				vika_up()
 		"team":
-			boss += 0.5
+			boss += boss_like("I", 0.5)
 			for q in C.TEAM:
 				if available(q):
 					people[q]["mood"] += 0.3
@@ -1336,7 +1373,7 @@ func answer_review(choice: String) -> void:
 				_say(p, "review.team." + p if L.has_key("review.team." + p) else "review.hurt", [], names)
 			_say("boss", "review.boss.team", [], names)
 		"self":
-			boss += 2.0
+			boss += boss_like("P", 2.0)
 			_say("boss", "review.boss.self", [], names)
 			if truth:
 				st["mood"] -= 0.5
@@ -1367,7 +1404,7 @@ func answer_review(choice: String) -> void:
 			_say(p, "review.blamed", [], names)
 		"overload":
 			if truth:
-				boss += 1.0
+				boss += boss_like("A", 1.0)
 				flags["relief"] = true
 				_say("boss", "review.boss.overload_true", [], names)
 			else:
@@ -1441,7 +1478,7 @@ func key_status() -> Dictionary:
 
 func results_score() -> float:
 	var k := key_status()
-	return merit + 2.0 * k["good"] - 2.0 * (k["late"] + k["open"] + k["ahead"])
+	return merit + 2.0 * k["good"] - 2.0 * (k["late"] + k["open"] + k["ahead"]) + style_fit()
 
 
 # How the team sees you: trust, mood, and anyone who left.
@@ -1556,6 +1593,159 @@ func _level_of(w: float) -> int:
 	if w > -2.0:
 		return 1
 	return 0
+
+
+# ---------- leadership style (Adizes) ----------
+
+# What each review answer and each initiative says about you as a lead.
+const REVIEW_STYLE := {
+	"credit_owner": [["I", 0.5]], "team": [["I", 0.5]], "self": [["P", 0.5], ["I", -0.5]],
+	"own": [["A", 0.5]], "blame": [["P", 0.3], ["I", -0.7]], "overload": [["A", 0.5]],
+}
+# Some kinds of leading come up every hour (talking to people), some rarely (changing how things
+# are done). Each letter is weighed by how hard it is to show, so a few bold moves count.
+const STYLE_SCALE := {"P": 1.0, "A": 1.3, "E": 2.0, "I": 0.6}
+const INIT_STYLE := {
+	"tech_debt": [["E", 1.0], ["A", 0.5]], "automate_report": [["A", 1.5]], "write_docs": [["A", 1.5]],
+	"showcase": [["E", 1.0]], "self_study": [["E", 0.5], ["I", 0.5]],
+}
+
+
+# Whatever you do as a lead leans toward one of the four roles. Nobody sees these numbers;
+# Irina's Friday remarks and the team's mood are how you find out.
+func lead(letter: String, amount: float) -> void:
+	style[letter] += amount
+	week_style[letter] += amount
+
+
+func style_shares(s: Dictionary = style) -> Dictionary:
+	var total := 0.0
+	for x in C.PAEI:
+		total += maxf(0.0, s[x]) * STYLE_SCALE[x]
+	var out := {}
+	for x in C.PAEI:
+		out[x] = maxf(0.0, s[x]) * STYLE_SCALE[x] / total if total > 0.0 else 0.25
+	return out
+
+
+func _style_total(s: Dictionary) -> float:
+	var total := 0.0
+	for x in C.PAEI:
+		total += maxf(0.0, s[x])
+	return total
+
+
+func _style_top(s: Dictionary) -> String:
+	var top := "P"
+	for x in C.PAEI:
+		if s[x] * STYLE_SCALE[x] > s[top] * STYLE_SCALE[top]:
+			top = x
+	return top
+
+
+# Has your leading so far leaned clearly this way? The team adapts to it.
+func leans(letter: String) -> bool:
+	return _style_total(style) >= 4.0 and style_shares()[letter] >= 0.3
+
+
+# The same move earns more with an Irina who values it, less with one who doesn't.
+func boss_like(letter: String, amount: float) -> float:
+	return amount * (1.0 + 0.5 * C.BOSSES[boss_type][letter])
+
+
+# Your Adizes code: capitals for strong roles, small letters for some, dashes for none ("PaEi", "-A--").
+func adizes_code() -> String:
+	var sh := style_shares()
+	var code := ""
+	for x in C.PAEI:
+		code += x if sh[x] >= 0.28 else (x.to_lower() if sh[x] >= 0.12 else "-")
+	return code
+
+
+# One role crowding out the others is one of Adizes' mismanagement styles; too little of anything is deadwood.
+func adizes_type() -> String:
+	if _style_total(style) < STYLE_MIN:
+		return "deadwood"
+	var sh := style_shares()
+	var top := _style_top(style)
+	if sh[top] >= 0.55:
+		return {"P": "lone_ranger", "A": "bureaucrat", "E": "arsonist", "I": "superfollower"}[top]
+	var strong := 0
+	for x in C.PAEI:
+		if sh[x] >= 0.28:
+			strong += 1
+	if strong >= 2:
+		return "combo"
+	return {"P": "producer", "A": "administrator", "E": "entrepreneur", "I": "integrator"}[top]
+
+
+func mismanaged() -> bool:
+	return adizes_type() in ["deadwood", "lone_ranger", "bureaucrat", "arsonist", "superfollower"]
+
+
+# How Irina sees your style at the assessment: what she values, minus a lopsided or absent lead.
+func style_fit() -> float:
+	var sh := style_shares()
+	var fit := 0.0
+	for x in C.PAEI:
+		fit += sh[x] * C.BOSSES[boss_type][x]
+	return 3.0 * fit - (1.5 if mismanaged() else 0.0)
+
+
+# Friday: a week with nothing late is a week of order. Irina remarks on how you led this week,
+# the people whose kind of lead that was warm up, and someone who got none of what they need says so.
+func _style_week() -> void:
+	var w := week()
+	var late := 0
+	for t in tasks:
+		if t["late"] and int((t["late_day"] - 1) / 5.0) == w:
+			late += 1
+	if late == 0:
+		lead("A", 1.0)
+	if _style_total(week_style) >= 2.0:
+		var top := _style_top(week_style)
+		boss += 0.5 * C.BOSSES[boss_type][top]
+		_say("boss", "style.boss.%s.%s" % [boss_type, top])
+		var sh := style_shares(week_style)
+		var missing := ""
+		for p in C.TEAM:
+			if not available(p):
+				continue
+			var mine: String = C.PEOPLE[p]["paei"]
+			if mine == top:
+				people[p]["mood"] = clampf(people[p]["mood"] + 0.7, -5.0, 5.0)
+				_say(p, "style.team.%s.pos" % p)
+			elif sh[mine] < 0.1:
+				people[p]["mood"] = clampf(people[p]["mood"] - 0.5, -5.0, 5.0)
+				if missing == "":
+					missing = p
+		if missing != "":
+			_say(missing, "style.team.%s.neg" % missing)
+	for x in C.PAEI:
+		week_style[x] = 0.0
+
+
+# Tired enough to say so: a workaholic only when they're about to drop, someone who guards their
+# energy well before that.
+func _feels_tired(p: String) -> bool:
+	var e: float = people[p]["energy"]
+	if C.PEOPLE[p].get("workaholic", false):
+		return e <= 0.5
+	if C.PEOPLE[p].get("guards_energy", false):
+		return e <= 0.4 * _stamina(p)
+	return e <= TIRED_ENERGY
+
+
+# Will they offer to do something on their own today? Only with energy to spare, and (for some)
+# after hearing something good. A team led toward change volunteers more.
+func _wants_to_volunteer(p: String) -> bool:
+	var info: Dictionary = C.PEOPLE[p]
+	var st: Dictionary = people[p]
+	if st["energy"] < info["rest_at"] * _stamina(p):
+		return false
+	if info.get("needs_approval", false) and st["mood"] < 1.5:
+		return false
+	return rng.randf() < info["initiative"] + (0.2 if leans("E") else 0.0)
 
 
 # ---------- helpers ----------

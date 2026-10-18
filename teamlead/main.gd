@@ -985,6 +985,7 @@ func _build_end() -> void:
 	v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": C.KEY_PROJECTS.size(), "boss": "@weight." + rules.boss_word()}), 15, COL_TEXT, true))
 	if rules.ending in ["leader", "puppeteer"]:
 		v.add_child(_label(Loc.t("promoted.yes" if rules.promoted else "promoted.no"), 15, COL_GOOD if rules.promoted else COL_MUTED, true))
+	_adizes_block(v)
 	if not rules.survey.is_empty():
 		_survey_block(v)
 	v.add_child(_spacer(4))
@@ -1012,6 +1013,16 @@ func _build_end() -> void:
 	var b := _button(Loc.t("again"), _start_run, 300, "primary")
 	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	v.add_child(b)
+
+
+# How Irina read your style: your Adizes code, what kind of lead that makes you, and what she herself is.
+func _adizes_block(v: VBoxContainer) -> void:
+	v.add_child(_spacer(4))
+	var kind := rules.adizes_type()
+	v.add_child(_label(Loc.render("adizes.title", [], {"code": rules.adizes_code()}) + " — " + Loc.t("adizes.type.%s.title" % kind), 18, COL_DANGER if rules.mismanaged() else COL_TEXT, true, true))
+	v.add_child(_label(Loc.t("adizes.type.%s.text" % kind), 15, COL_TEXT, true))
+	v.add_child(_label(Loc.t("adizes.boss." + rules.boss_type), 15, COL_MUTED, true))
+	v.add_child(_label(Loc.t("adizes.legend"), 12, COL_FAINT, true))
 
 
 # ---------- text ----------
