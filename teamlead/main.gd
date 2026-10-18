@@ -95,6 +95,18 @@ func _contractor() -> void:
 	_clear_selection()
 
 
+func _accept_initiative(p: String) -> void:
+	feedback_from = rules.history.size()
+	rules.accept_initiative(p)
+	_render()
+
+
+func _sit() -> void:
+	feedback_from = rules.history.size()
+	rules.sit_with(selected)
+	_render()
+
+
 func _prioritize() -> void:
 	feedback_from = rules.history.size()
 	rules.prioritize(selected)
@@ -248,13 +260,30 @@ func _top_bar() -> Control:
 	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(header)
 	var word := rules.boss_word()
+	top.add_child(_label(_attention_text(), 16, COL_TEXT if rules.overtime_today == 0 else COL_DANGER))
 	var k := rules.key_status()
-	top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": C.KEY_PROJECTS.size()}), 17, COL_ACCENT))
-	top.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 17, BOSS_COLORS[word]))
+	top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": C.KEY_PROJECTS.size()}), 16, COL_ACCENT))
+	top.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 16, BOSS_COLORS[word]))
 	var lang := _button(Loc.t("lang_button"), _toggle_lang, 110)
 	lang.custom_minimum_size.y = 36
 	top.add_child(lang)
 	return top
+
+
+func _attention_text() -> String:
+	if rules.sick_today:
+		return Loc.t("you.sick_today")
+	var dots := ""
+	for i in C.ATTENTION:
+		dots += "●" if i < rules.attention else "○"
+	var text := Loc.render("attention_label", [], {"dots": dots, "state": "@me." + rules.my_state()})
+	if rules.overtime_today > 0:
+		text += " " + Loc.render("overtime_label", [], {"n": rules.overtime_today})
+	return text
+
+
+func _cost_mark() -> String:
+	return " ●" if rules.attention > 0 else " " + Loc.t("cost_overtime")
 
 
 func _person_row(p: String) -> Control:
@@ -313,6 +342,15 @@ func _person_row(p: String) -> Control:
 	var said := _said_today(p)
 	if said != "":
 		middle.add_child(_bubble(said))
+	var offer := rules.initiative_offer(p)
+	if offer != "":
+		var row_offer := HBoxContainer.new()
+		row_offer.add_theme_constant_override("separation", 8)
+		middle.add_child(row_offer)
+		var b := _bubble(Loc.t("quote", [Loc.t("init.offer." + offer)]))
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row_offer.add_child(b)
+		row_offer.add_child(_button(Loc.t("init.accept"), _accept_initiative.bind(p), 0, true))
 	for t in rules.queue_of(p):
 		queue.add_child(_task_chip(t))
 	for t in rules.tasks:
@@ -322,7 +360,8 @@ func _person_row(p: String) -> Control:
 			queue.add_child(helping)
 	var talk := _button(Loc.t("talk_button"), _talk_to.bind(p), 0)
 	talk.custom_minimum_size = Vector2(110, 34)
-	talk.disabled = rules.phase != "plan" or rules.talked_today or st["absent"] or not rules.pending.is_empty()
+	talk.text = Loc.t("talk_button") + _cost_mark()
+	talk.disabled = not rules.can_talk(p)
 	talk.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(talk)
 	return row
@@ -386,6 +425,8 @@ func _me_row() -> Control:
 	h.add_child(queue)
 	for t in rules.queue_of("me"):
 		queue.add_child(_task_chip(t))
+	if not rules.queue_of("me").is_empty():
+		queue.add_child(_label(Loc.t("you.busy"), 13, COL_ACCENT, true))
 	return row
 
 
@@ -446,6 +487,8 @@ func _task_chip(t: Dictionary) -> Control:
 		due = Loc.t("chip_blocked") + " · " + due
 	if t["helper"] != "" and t["status"] == "active":
 		due += "  " + Loc.t("chip_helper", [Loc.person(t["helper"])])
+	if t["involved"] and t["owner"] != "me":
+		due += "  " + Loc.t("chip_involved")
 	v.add_child(_label(due, 11, COL_DANGER if t["late"] or t["due"] - rules.day <= 0 else COL_INK_MUTED))
 	var est: Dictionary = rules.estimate(t)
 	v.add_child(_label(Loc.t("est.short" if est["sure"] else "est.guess", [_days(est["days"])]), 11, COL_INK if est["sure"] else COL_INK_MUTED))
@@ -495,8 +538,7 @@ func _action_panel() -> Control:
 			v.add_child(_label(line, 18, COL_TEXT, true))
 		if replies.is_empty():
 			v.add_child(_label(Loc.t("pick_task"), 16, COL_MUTED, true))
-		if rules.talked_today:
-			v.add_child(_label(Loc.t("talk_used"), 14, COL_MUTED, true))
+
 	var end := _button(Loc.t("end_day"), _end_day, 220, true)
 	end.disabled = rules.phase != "plan" or not rules.pending.is_empty()
 	end.size_flags_vertical = Control.SIZE_SHRINK_END
@@ -518,8 +560,9 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 	elif t["public"]:
 		head.add_child(_chip(Loc.t("public"), COL_ACCENT))
 	v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 14, COL_MUTED, true))
-	var who := HBoxContainer.new()
-	who.add_theme_constant_override("separation", 6)
+	var who := HFlowContainer.new()
+	who.add_theme_constant_override("h_separation", 6)
+	who.add_theme_constant_override("v_separation", 6)
 	v.add_child(who)
 	who.add_child(_label(Loc.t("to_whom"), 14, COL_MUTED))
 	for p in C.TEAM:
@@ -532,11 +575,13 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 		who.add_child(b)
 	who.add_child(_button(Loc.t("myself"), _direct.bind("me"), 0))
 	who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
-	who.add_child(_button(Loc.t("contractor") + ("" if rules.has_weight() else " " + Loc.t("needs_weight")), _contractor, 0))
+	who.add_child(_button(Loc.t("contractor") + _cost_mark() + ("" if rules.has_weight() else " " + Loc.t("needs_weight")), _contractor, 0))
 	if t["status"] == "active":
 		who.add_child(_button(Loc.t("unassign"), _unassign, 0))
 		if C.TEAM.has(t["owner"]) and rules.queue_of(t["owner"])[0]["uid"] != t["uid"]:
 			who.add_child(_button(Loc.t("prioritize"), _prioritize, 0))
+		if C.TEAM.has(t["owner"]) and not t["sit_today"]:
+			who.add_child(_button(Loc.t("sit.button") + _cost_mark(), _sit, 0))
 	var replies := _feedback_lines()
 	if not replies.is_empty():
 		v.add_child(_label(replies[replies.size() - 1], 15, COL_TEXT, true))
@@ -623,6 +668,8 @@ func _build_event() -> void:
 		var text := Loc.render("event.%s.choice.%s" % [ev["id"], parts[0]], [], names)
 		if ev["id"] == "boss_dump" and choice == "refuse" and not rules.has_weight():
 			text += " " + Loc.t("needs_weight")
+		if rules.choice_costs(ev, choice):
+			text += _cost_mark()
 		v.add_child(_button(text, _event.bind(choice), 0))
 
 

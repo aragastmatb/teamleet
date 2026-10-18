@@ -129,7 +129,7 @@ func _check_boss_details(r) -> Dictionary:
 func _check_complication(r) -> Dictionary:
 	var candidates: Array = []
 	for t in r.tasks:
-		if t["status"] != "active" or t["complicated"] or not C.TEAM.has(t["owner"]) or not here(r, t["owner"]):
+		if t["status"] != "active" or t["complicated"] or t["id"].begins_with("init_") or not C.TEAM.has(t["owner"]) or not here(r, t["owner"]):
 			continue
 		if t["progress"] < 0.2 * t["size"] or t["size"] - t["progress"] < 0.6:
 			continue
@@ -141,7 +141,7 @@ func _check_complication(r) -> Dictionary:
 		var options: Array = []
 		for cid in C.COMPLICATIONS:
 			var c: Dictionary = C.COMPLICATIONS[cid]
-			if c["cats"].has(t["cat"]):
+			if c["cats"].has(t["cat"]) and not r.comp_off.has(cid):
 				options.append(cid)
 		if options.is_empty():
 			continue

@@ -82,6 +82,7 @@ const TASKS := {
 	"quarter_report": {"cat": "analytics", "size": 3, "due": 4, "public": true, "from": "boss"},
 	"retro": {"cat": "people", "size": 1, "due": 2, "public": false, "from": "marina"},
 	"tax_report": {"cat": "routine", "size": 1, "due": 2, "public": false, "from": "boss"},
+	"client_followup": {"cat": "people", "size": 2, "due": 3, "public": true, "from": "boss"},
 	# Dropped on you by Irina outside the plan; you can try to refuse.
 	"board_memo": {"cat": "analytics", "size": 1, "due": 1, "public": true, "from": "boss"},
 	"slides_fix": {"cat": "routine", "size": 1, "due": 1, "public": true, "from": "boss"},
@@ -89,29 +90,35 @@ const TASKS := {
 	"competitor_brief": {"cat": "analytics", "size": 2, "due": 2, "public": true, "from": "boss"},
 }
 
-# Which tasks arrive on which morning. Ids can repeat (the weekly report, another outage).
-# Which tasks arrive on which morning. Each week carries about the same load with a mix of all four
-# kinds of work, and a day never brings two of the same kind. Ids can repeat (weekly report, outages).
-const SCHEDULE := {
-	1: ["client_report", "weekly_report", "integration"],
-	2: ["corporate", "security_patch"],
-	3: ["okr", "survey"],
-	4: ["prod_fix", "minutes"],
-	5: ["new_feature", "angry_client"],
-	6: ["board_deck", "weekly_report", "interviews"],
-	7: ["client_bug", "inventory"],
-	8: ["pricing", "onboarding"],
-	9: ["audit", "ab_test"],
-	10: ["timesheets", "partner_meeting"],
-	11: ["weekly_report", "migration", "hiring_plan"],
-	12: ["data_cleanup", "docs"],
-	13: ["legacy_export", "security_patch"],
-	14: ["prod_fix", "client_demo"],
-	15: ["quarter_report", "tax_report"],
-	16: ["weekly_report", "release", "budget"],
-	17: ["office_move", "angry_client"],
-	18: ["client_bug", "forecast", "retro"],
-	19: ["perf_reviews", "dashboard"],
+# Key projects arrive on fixed days; everything else comes from a shuffled deck, a few cards each
+# morning. Events add and remove cards: neglect adds trouble, improvements take it away, good work
+# brings more work.
+const KEY_DAYS := {5: "new_feature", 6: "board_deck", 15: "quarter_report"}
+const DECK := [
+	"client_report", "integration", "corporate", "security_patch", "security_patch", "okr", "survey",
+	"prod_fix", "prod_fix", "minutes", "angry_client", "angry_client", "interviews", "client_bug",
+	"client_bug", "inventory", "pricing", "onboarding", "audit", "ab_test", "timesheets", "partner_meeting",
+	"migration", "hiring_plan", "data_cleanup", "docs", "legacy_export", "client_demo", "tax_report",
+	"release", "budget", "office_move", "forecast", "retro", "perf_reviews", "dashboard",
+]
+# Size of work drawn each morning, roughly; a day never brings two cards of the same kind.
+const DAILY_LOAD := 3.4
+const ATTENTION := 3
+
+# What free people propose to do on their own, in order. Each is a small internal task; when it's
+# done, it changes the decks or the people.
+const INITIATIVES := {
+	"alex": ["tech_debt", "automate_report"],
+	"vika": ["showcase", "showcase"],
+	"dima": ["self_study", "self_study"],
+	"gena": ["write_docs", "automate_report"],
+}
+const INIT_TASKS := {
+	"tech_debt": {"cat": "tech", "size": 2},
+	"automate_report": {"cat": "routine", "size": 2},
+	"showcase": {"cat": "analytics", "size": 1},
+	"self_study": {"cat": "tech", "size": 2},
+	"write_docs": {"cat": "routine", "size": 2},
 }
 
 # Things that happen inside a task while it's being worked on. Each comes up at most once per task.
@@ -120,6 +127,7 @@ const SCHEDULE := {
 # block (days it stands still) / hours (your own time; you were involved) / learn (owner xp) /
 # mood / energy (owner) / boss / special (handled in scenes.gd).
 # check: owner skill needed; "pass" and "fail" hold the effects for each outcome.
+# Complications are drawn by weight; improvements set weights to zero.
 const COMPLICATIONS := {
 	"legacy_bug": {"cats": ["tech"], "who": "owner", "choices": {
 		"fix": {"check": 3, "pass": {"size": 0.5, "quality": 0.8}, "fail": {"size": 1.5, "quality": 0.3}},

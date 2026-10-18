@@ -54,7 +54,18 @@ var my_week_mgmt := []
 # Marina's latest team survey: {"day", "quotes": [locale keys], "verdict": "for" / "wary" / "against"}.
 var survey := {}
 var quits := 0
-var talked_today := false
+# Who you've already talked to today.
+var talked := {}
+# The task deck still to come, and complications switched off by improvements.
+var deck: Array = []
+var comp_off := {}
+# Your attention: a few tokens a day for managing. Past them you stay late, and that wears you out.
+var attention := 0
+var overtime_today := 0
+var my_energy := 10.0
+var my_sick := 0
+var sick_today := false
+var init_next := {}
 var events: Array[Dictionary] = []
 var review: Array[Dictionary] = []
 var flags := {}
@@ -96,6 +107,13 @@ func start_run(seed_value: int = -1) -> void:
 			"week_hours": _zeros(), "week_overtime": _zeros(), "week_extra": _zeros(), "week_absent": _zeros(), "week_done": _zeros(), "debts": 0, "caught_flattery": false, "done_cats": {}, "start": skills.duplicate(),
 		}
 	tasks.clear()
+	comp_off.clear()
+	flags.clear()
+	deck.clear()
+	_refill_deck()
+	my_energy = 10.0
+	my_sick = 0
+	init_next.clear()
 	boss = 0.0
 	weight_level = 1
 	weight_cause = ""
@@ -131,33 +149,88 @@ func _start_day() -> void:
 		elif st["sick"] > 0:
 			st["sick"] -= 1
 			_say(p, "absent.sick")
-	var arrivals: Array = C.SCHEDULE.get(day, []).duplicate()
-	if flags.get("relief", false):
-		for id in arrivals:
-			if not C.TASKS[id]["public"] and C.TASKS[id]["from"] != "boss":
-				arrivals.erase(id)
-				flags["relief"] = false
-				_narrate("relief", [], {"task": "@taskname." + id})
-				break
-	for id in arrivals:
+	for id in _arrivals():
 		add_task(id)
-	talked_today = false
+	talked.clear()
+	overtime_today = 0
+	attention = 0 if my_sick > 0 else C.ATTENTION
+	sick_today = my_sick > 0
+	if my_sick > 0:
+		my_sick -= 1
+	elif not queue_of("me").is_empty():
+		# Doing a task yourself takes most of your day.
+		attention = maxi(0, attention - 2)
 	_queue_events()
 	phase = "event" if not events.is_empty() else "plan"
 
 
+# This morning's work: the weekly report on Mondays (unless automated), key projects on their days,
+# and a few cards from the deck — never two of the same kind on one day.
+func _arrivals() -> Array:
+	var out: Array = []
+	if day % 5 == 1 and not flags.has("automated_report"):
+		out.append("weekly_report")
+	if C.KEY_DAYS.has(day):
+		out.append(C.KEY_DAYS[day])
+	var load := 0.0
+	for id in out:
+		load += C.TASKS[id]["size"]
+	var target: float = C.DAILY_LOAD
+	if flags.get("relief", false):
+		flags["relief"] = false
+		target -= 1.5
+	while load < target and out.size() < 3:
+		if deck.size() < 4:
+			_refill_deck()
+		var picked := -1
+		for i in deck.size():
+			var info: Dictionary = C.TASKS[deck[i]]
+			var clash := false
+			for id in out:
+				if C.TASKS[id]["cat"] == info["cat"]:
+					clash = true
+			if not clash and day + info["size"] - 1 <= C.DAYS:
+				picked = i
+				break
+		if picked < 0:
+			break
+		var id: String = deck.pop_at(picked)
+		out.append(id)
+		load += C.TASKS[id]["size"]
+	return out
+
+
+# A fresh shuffle of the base deck goes under what's left. Improvements keep their cards out.
+func _refill_deck() -> void:
+	var fresh: Array = C.DECK.duplicate()
+	if flags.has("tech_debt_done"):
+		fresh.erase("prod_fix")
+		fresh.erase("client_bug")
+	for i in range(fresh.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = fresh[i]
+		fresh[i] = fresh[j]
+		fresh[j] = tmp
+	deck.append_array(fresh)
+
+
 func add_task(id: String) -> void:
 	var info: Dictionary = C.TASKS[id]
+	# Near the end of the probation, deadlines squeeze into what's left of it.
+	add_task_raw(id, info["cat"], info["size"], mini(day + info["due"], C.DAYS), info["public"], info["from"])
+	_say(info["from"], "task.%s.ask" % id)
+
+
+func add_task_raw(id: String, cat: String, size: float, due: int, public: bool, from: String) -> void:
 	tasks.append({
-		"uid": next_uid, "id": id, "cat": info["cat"], "size": info["size"], "progress": 0.0,
-		"due": day + info["due"], "public": info["public"], "from": info["from"], "owner": "", "helper": "",
+		"uid": next_uid, "id": id, "cat": cat, "size": size, "progress": 0.0,
+		"due": due, "public": public, "from": from, "owner": "", "helper": "",
 		"q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
 		"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
 		"asked": false, "vouched": false, "flaw": false, "complicated": false, "blocked": 0, "q_bonus": 0.0, "involved": false,
-		"key": C.KEY_PROJECTS.has(id),
+		"key": C.KEY_PROJECTS.has(id), "sit_today": false,
 	})
 	next_uid += 1
-	_say(info["from"], "task.%s.ask" % id)
 
 
 func _queue_events() -> void:
@@ -452,9 +525,10 @@ func unassign_now(t: Dictionary) -> void:
 
 
 func one_on_one(p: String, approach: String) -> void:
-	if phase != "plan" or not pending.is_empty() or talked_today or not available(p) or people[p]["absent"]:
+	if not can_talk(p):
 		return
-	talked_today = true
+	talked[p] = true
+	spend_attention()
 	var st: Dictionary = people[p]
 	history.append({"who": "you", "key": "talk." + approach, "args": [], "names": {}, "to": p, "day": day})
 	match approach:
@@ -499,6 +573,111 @@ func one_on_one(p: String, approach: String) -> void:
 	st["mood"] = clampf(st["mood"], -5.0, 5.0)
 
 
+# Does this answer to a morning scene take your attention?
+func choice_costs(ev: Dictionary, choice: String) -> bool:
+	if ev.has("comp"):
+		var fx: Dictionary = C.COMPLICATIONS[ev["comp"]]["choices"].get(choice, {})
+		return fx.get("hours", 0) > 0
+	return ["dima_mistake/help", "marina_warns/listen", "vika_promise_check/do_now"].has(ev["id"] + "/" + choice)
+
+
+func can_talk(p: String) -> bool:
+	return phase == "plan" and pending.is_empty() and not talked.has(p) and available(p) and not people[p]["absent"]
+
+
+# Every bit of managing costs a token of attention; past them you're staying late.
+func spend_attention() -> void:
+	if attention > 0:
+		attention -= 1
+	else:
+		overtime_today += 1
+
+
+# Sit down with someone over their task today: it goes faster and better, they learn, and you were
+# personally involved (which makes "under my personal control" true at the review).
+func sit_with(uid: int) -> void:
+	var t := task(uid)
+	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("sit_today", false):
+		return
+	var p: String = t["owner"]
+	if not C.TEAM.has(p) or not available(p) or people[p]["absent"]:
+		return
+	spend_attention()
+	my_week_mgmt[week()] += 2
+	t["sit_today"] = true
+	t["involved"] = true
+	history.append({"who": "you", "key": "sit.say", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": p, "day": day})
+	if C.PEOPLE[p]["drive"] == "craft" and people[p]["skills"][t["cat"]] >= 3:
+		people[p]["mood"] -= 0.5
+		_say(p, "sit.micro")
+	else:
+		people[p]["mood"] += 0.5
+		_say(p, "sit.ok")
+
+
+# What a free person offers to do on their own, or "" if nothing (or they're busy).
+func initiative_offer(p: String) -> String:
+	if phase != "plan" or not available(p) or people[p]["absent"] or not queue_of(p).is_empty():
+		return ""
+	for t in tasks:
+		if t["status"] == "active" and t["helper"] == p:
+			return ""
+	var list: Array = C.INITIATIVES[p]
+	var i: int = init_next.get(p, 0)
+	while i < list.size() and _initiative_done(list[i]):
+		i += 1
+	return list[i] if i < list.size() else ""
+
+
+func _initiative_done(id: String) -> bool:
+	return id != "showcase" and id != "self_study" and flags.has("init_" + id)
+
+
+func accept_initiative(p: String) -> void:
+	var id := initiative_offer(p)
+	if id == "" or not pending.is_empty():
+		return
+	init_next[p] = C.INITIATIVES[p].find(id) + 1
+	flags["init_" + id] = true
+	var info: Dictionary = C.INIT_TASKS[id]
+	add_task_raw("init_" + id, info["cat"], info["size"], C.DAYS + 10, false, p)
+	var t: Dictionary = tasks[tasks.size() - 1]
+	t["owner"] = p
+	t["status"] = "active"
+	t["assigned_day"] = day
+	history.append({"who": "you", "key": "init.yes", "args": [], "names": {}, "to": p, "day": day})
+	var drive: String = C.PEOPLE[p]["drive"]
+	people[p]["mood"] = clampf(people[p]["mood"] + (1.5 if drive == "craft" or drive == "growth" else 1.0), -5.0, 5.0)
+	_say(p, "react.%s.pos" % p)
+
+
+# An initiative is finished: it changes the decks or the people.
+func _initiative_effect(t: Dictionary) -> void:
+	var id: String = t["id"].trim_prefix("init_")
+	var names := {"who": "@name.%s.nom" % t["owner"]}
+	match id:
+		"tech_debt":
+			flags["tech_debt_done"] = true
+			comp_off["legacy_bug"] = true
+			for card in ["prod_fix", "client_bug"]:
+				deck.erase(card)
+		"automate_report":
+			flags["automated_report"] = true
+		"showcase":
+			vika_up()
+		"self_study":
+			var weakest := "tech"
+			for cat in ["tech", "analytics", "people"]:
+				if people[t["owner"]]["skills"][cat] < people[t["owner"]]["skills"][weakest]:
+					weakest = cat
+			learn(t["owner"], weakest, 4.0)
+			names["cat"] = "@cat." + weakest
+		"write_docs":
+			comp_off["missing_docs"] = true
+			comp_off["old_system"] = true
+	_narrate("init.done." + id, [], names)
+
+
 func _next_unknown(p: String) -> String:
 	var known: Dictionary = people[p]["known"]
 	if not known.has("drive"):
@@ -539,8 +718,10 @@ func end_day() -> void:
 		_work(p)
 	_work_myself()
 	for t in tasks:
+		t["sit_today"] = false
 		if t["blocked"] > 0:
 			t["blocked"] -= 1
+	_end_of_my_day()
 	for t in tasks:
 		if t["status"] == "taras" and t["due"] <= day:
 			t["status"] = "done"
@@ -571,6 +752,35 @@ func end_day() -> void:
 		phase = "report"
 	else:
 		phase = "evening"
+
+
+# Staying late wears you down; rest days bring you back. Run yourself into the ground and you're
+# off sick tomorrow, and the team works without you.
+func _end_of_my_day() -> void:
+	if overtime_today > 0:
+		my_energy -= 2.0 * overtime_today
+	elif not queue_of("me").is_empty():
+		my_energy -= 1.0
+	else:
+		my_energy = minf(10.0, my_energy + 1.5)
+	if my_energy <= 0.0:
+		my_sick = 1
+		my_energy = 6.0
+		_narrate("you.burnout")
+	# Untouched tech debt makes itself felt: each Friday another outage goes into the deck.
+	if day % 5 == 0 and day < C.DAYS and not flags.has("tech_debt_done"):
+		deck.insert(mini(2, deck.size()), "prod_fix")
+		_narrate("deck.neglect_tech")
+
+
+func my_state() -> String:
+	if my_energy >= 7.0:
+		return "fresh"
+	if my_energy >= 4.0:
+		return "ok"
+	if my_energy > 2.0:
+		return "tired"
+	return "drained"
 
 
 # Half the time, whoever you told "the boss asked" goes and mentions it to her.
@@ -639,6 +849,7 @@ func hire_contractor(uid: int) -> void:
 	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] == "done" or t["status"] == "taras":
 		return
 	history.append({"who": "you", "key": "contractor.ask", "args": [], "names": {"task": "@taskname." + t["id"]}, "day": day})
+	spend_attention()
 	if not has_weight():
 		_say("boss", "contractor.no", [], {"task": "@taskname." + t["id"]})
 		return
@@ -666,6 +877,7 @@ func _zeros() -> Array:
 
 func add_mgmt_hours(n: int) -> void:
 	my_week_mgmt[week()] += n
+	spend_attention()
 
 
 func add_my_hours(n: int) -> void:
@@ -786,7 +998,7 @@ func _work(p: String) -> void:
 				stuck.append(t)
 				continue
 			var skill: int = st["skills"][t["cat"]]
-			var step := _speed(p, t)
+			var step := _speed(p, t) * (1.2 if t["sit_today"] else 1.0)
 			var spend := minf(time, (t["size"] - t["progress"]) / step)
 			time -= spend
 			t["progress"] += step * spend
@@ -797,6 +1009,9 @@ func _work(p: String) -> void:
 				t["helped"][h] = t["helped"].get(h, 0) + 1
 				if people[h]["skills"][t["cat"]] > skill:
 					quality += 0.5 * share
+			if t["sit_today"]:
+				quality += 0.6
+				_learn(p, t["cat"], 0.5 * spend)
 			t["q_sum"] += quality * spend
 			t["q_days"] += spend
 			_learn(p, t["cat"], spend)
@@ -864,6 +1079,14 @@ func _finish(p: String, t: Dictionary) -> void:
 	t["quality"] = "good" if avg >= GOOD_Q else ("ok" if avg >= OK_Q else ("weird" if avg >= WEIRD_Q else "poor"))
 	if t["flaw"] and (t["quality"] == "good" or t["quality"] == "ok"):
 		t["quality"] = "weird"
+	if t["id"].begins_with("init_"):
+		t["reviewed"] = true
+		_initiative_effect(t)
+	# A client who liked the work comes back with more.
+	if ["client_report", "client_demo", "angry_client", "new_feature", "partner_meeting"].has(t["id"]) and t["quality"] == "good" and flags.get("followups", 0) < 2:
+		flags["followups"] = flags.get("followups", 0) + 1
+		deck.insert(mini(rng.randi_range(0, 3), deck.size()), "client_followup")
+		_narrate("deck.followup", [], {"task": "@taskname." + t["id"]})
 	if t["public"] and (t["quality"] == "good" or t["quality"] == "ok") and day <= t["due"]:
 		merit += 0.5
 		# A key project delivered is visible as yours: you led it.
@@ -1167,7 +1390,7 @@ func _finish_run() -> void:
 
 
 const RESULTS_OK := 3.0
-const TEAM_OK := 1.5
+const TEAM_OK := 3.0
 
 
 # Key projects: done well and on time, done badly, slipped, still open, not here yet.
@@ -1298,7 +1521,7 @@ func boss_word() -> String:
 
 
 func _level_of(w: float) -> int:
-	if w >= 4.5:
+	if w >= 6.0:
 		return 3
 	if w >= 1.0:
 		return 2
