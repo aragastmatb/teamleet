@@ -14,7 +14,7 @@ const MAX_PER_MORNING := 2
 
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
-	"boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
+	"probation", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
 	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "vika_takes_task", "gena_mentor", "taras_borrow",
 ]
 
@@ -60,6 +60,17 @@ func _check_boss_deadline(r) -> Dictionary:
 		return {"who": "boss", "uid": t["uid"], "names": task_names(r, t),
 			"lines": [{"who": "boss", "key": "event.boss_deadline.ask"}], "choices": ["yes", "warn"]}
 	return {}
+
+
+# Day one: Irina explains the probation and names the key projects.
+func _check_probation(r) -> Dictionary:
+	if r.day != 1 or not once(r, "probation"):
+		return {}
+	var names := {}
+	for i in C.KEY_PROJECTS.size():
+		names["k%d" % (i + 1)] = "@taskname." + C.KEY_PROJECTS[i]
+	return {"who": "boss", "names": names, "lines": [{"who": "boss", "key": "event.probation.ask"}, {"who": "boss", "key": "event.probation.ask2"}],
+		"choices": ["ok"]}
 
 
 # You took the credit at the review; now Irina wants the details.
@@ -233,9 +244,9 @@ func _check_gena_mentor(r) -> Dictionary:
 
 # Taras needs a pair of hands for a day.
 func _check_taras_borrow(r) -> Dictionary:
-	if r.day < 3 or r.day > 8 or r.flags.has("scene_taras_borrow"):
+	if r.day < 3 or r.day > C.DAYS - 3 or r.flags.has("scene_taras_borrow"):
 		return {}
-	if r.day < 7 and r.rng.randf() > 0.3:
+	if r.day < 12 and r.rng.randf() > 0.15:
 		return {}
 	var choices := []
 	for p in C.TEAM:
@@ -389,9 +400,11 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.flags["alex_leaving"] = r.day
 
 		"vika_lie_found/sorry":
+			r.flags["lied_vika"] = true
 			r.people["vika"]["mood"] -= 2.5
 			r.people["vika"]["trust"] -= 2
 		"vika_lie_found/blame_boss":
+			r.flags["lied_vika"] = true
 			r.people["vika"]["mood"] -= 1.5
 			r.people["vika"]["trust"] -= 1
 			r.vika_standing += 1

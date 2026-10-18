@@ -4,8 +4,13 @@ extends RefCounted
 # Every number here is hidden. The player sees moods, energy and progress in words and bars,
 # and learns skills and motives through results and one-on-ones.
 
-const DAYS := 10
-const REVIEW_DAYS := [5, 10]
+# A four-week probation. Irina names three key projects on day one; Marina surveys the team
+# halfway and at the end. The final attestation weighs results against what the team says.
+const WEEKS := 4
+const DAYS := 20
+const REVIEW_DAYS := [5, 10, 15, 20]
+const SURVEY_DAYS := [10, 20]
+const KEY_PROJECTS := ["new_feature", "board_deck", "quarter_report"]
 
 const TEAM := ["alex", "vika", "dima", "gena"]
 const CATEGORIES := ["tech", "analytics", "people", "routine"]
@@ -68,6 +73,14 @@ const TASKS := {
 	"perf_reviews": {"cat": "people", "size": 1, "due": 1, "public": false, "from": "marina"},
 	"dashboard": {"cat": "analytics", "size": 1, "due": 3, "public": false, "from": "taras"},
 	"audit": {"cat": "routine", "size": 1, "due": 2, "public": true, "from": "boss"},
+	"hiring_plan": {"cat": "people", "size": 2, "due": 3, "public": false, "from": "marina"},
+	"data_cleanup": {"cat": "analytics", "size": 2, "due": 3, "public": false, "from": "taras"},
+	"release": {"cat": "tech", "size": 3, "due": 4, "public": true, "from": "boss"},
+	"partner_meeting": {"cat": "people", "size": 1, "due": 1, "public": true, "from": "boss"},
+	"office_move": {"cat": "routine", "size": 2, "due": 3, "public": false, "from": "marina"},
+	"quarter_report": {"cat": "analytics", "size": 3, "due": 4, "public": true, "from": "boss"},
+	"retro": {"cat": "people", "size": 1, "due": 2, "public": false, "from": "marina"},
+	"tax_report": {"cat": "routine", "size": 1, "due": 2, "public": false, "from": "boss"},
 }
 
 # Which tasks arrive on which morning. Ids can repeat (the weekly report, another outage).
@@ -82,6 +95,16 @@ const SCHEDULE := {
 	8: ["migration", "budget", "audit"],
 	9: ["perf_reviews"],
 	10: ["timesheets"],
+	11: ["weekly_report", "client_bug", "hiring_plan"],
+	12: ["data_cleanup", "survey"],
+	13: ["release", "timesheets"],
+	14: ["prod_fix", "partner_meeting", "office_move"],
+	15: ["quarter_report", "retro"],
+	16: ["weekly_report", "legacy_export"],
+	17: ["angry_client", "tax_report", "ab_test"],
+	18: ["security_patch", "interviews"],
+	19: ["perf_reviews", "dashboard"],
+	20: ["inventory"],
 }
 
 # Things that happen inside a task while it's being worked on. Each comes up at most once per task.

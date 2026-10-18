@@ -41,7 +41,9 @@ var tasks: Array[Dictionary] = []
 var boss := 0.0
 var vika_standing := 0
 var hours := 0
-var my_week_hours := [0, 0]
+var my_week_hours := []
+# Marina's latest team survey: {"day", "quotes": [locale keys], "verdict": "for" / "wary" / "against"}.
+var survey := {}
 var quits := 0
 var talked_today := false
 var events: Array[Dictionary] = []
@@ -82,13 +84,14 @@ func start_run(seed_value: int = -1) -> void:
 			"sick": 0, "absent": false, "absent_reason": "", "off_next": false, "pushed": 0, "promised": false, "ambition": 0,
 			"gone": false, "known": {}, "warned_mood": false, "warned_tired": false,
 			"last_done": -10, "idle_said": false, "idle_days": 0, "promised_day": 0,
-			"week_hours": [0, 0], "week_overtime": [0, 0], "week_extra": [0, 0], "week_absent": [0, 0], "week_done": [0, 0], "debts": 0, "caught_flattery": false, "done_cats": {},
+			"week_hours": _zeros(), "week_overtime": _zeros(), "week_extra": _zeros(), "week_absent": _zeros(), "week_done": _zeros(), "debts": 0, "caught_flattery": false, "done_cats": {}, "start": skills.duplicate(),
 		}
 	tasks.clear()
 	boss = 0.0
 	vika_standing = 0
 	hours = 0
-	my_week_hours = [0, 0]
+	my_week_hours = _zeros()
+	survey = {}
 	quits = 0
 	events.clear()
 	review.clear()
@@ -131,6 +134,7 @@ func _start_day() -> void:
 			"q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
 			"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
 			"asked": false, "vouched": false, "flaw": false, "complicated": false, "blocked": 0, "q_bonus": 0.0, "involved": false,
+			"key": C.KEY_PROJECTS.has(id),
 		})
 		next_uid += 1
 		_say(info["from"], "task.%s.ask" % id)
@@ -536,6 +540,8 @@ func end_day() -> void:
 	_check_lies()
 	for p in C.TEAM:
 		_check_person(p)
+	if C.SURVEY_DAYS.has(day):
+		_run_survey()
 	if C.REVIEW_DAYS.has(day):
 		_build_review()
 		if review.is_empty():
@@ -553,6 +559,7 @@ func _check_lies() -> void:
 			continue
 		people[p]["trust"] -= 2
 		people[p]["mood"] = clampf(people[p]["mood"] - 1.0, -5.0, 5.0)
+		flags["lied_" + p] = true
 		_say(p, "lie.boss_found." + p, [], {"task": "@taskname." + task(lie["uid"])["id"]})
 	lies.clear()
 
@@ -562,8 +569,8 @@ func _check_lies() -> void:
 func _late(t: Dictionary) -> void:
 	var names := {"task": "@taskname." + t["id"]}
 	if t["public"] or t["from"] == "boss":
-		boss -= 1
-		_narrate("late", [], names)
+		boss -= 2.0 if t["key"] else 1.0
+		_narrate("late.key" if t["key"] else "late", [], names)
 		return
 	var who: String = t["from"]
 	flags["complaints_" + who] = flags.get("complaints_" + who, 0) + 1
@@ -581,7 +588,14 @@ func continue_report() -> void:
 
 
 func week() -> int:
-	return clampi(int((day - 1) / 5.0), 0, 1)
+	return clampi(int((day - 1) / 5.0), 0, C.WEEKS - 1)
+
+
+func _zeros() -> Array:
+	var a := []
+	a.resize(C.WEEKS)
+	a.fill(0)
+	return a
 
 
 func add_my_hours(n: int) -> void:
@@ -1054,28 +1068,110 @@ func next() -> void:
 	_start_day()
 
 
+# The attestation: results (the boss's view, mostly the key projects) against what the team says.
 func _finish_run() -> void:
-	var trust_sum := 0
-	for p in C.TEAM:
-		trust_sum += -3 if people[p]["gone"] else people[p]["trust"]
-	var trust_avg := float(trust_sum) / C.TEAM.size()
+	var r := results_score()
+	var team := team_score()
 	if quits >= 2:
 		ending = "team_gone"
-	elif boss <= -4:
-		ending = "fired"
 	elif vika_standing >= 3 and vika_standing > boss:
 		ending = "replaced"
-	elif hours >= 24:
+	elif hours >= 60:
 		ending = "workhorse"
-	elif hours <= 8 and boss >= 1 and trust_avg < 0.0:
-		ending = "puppeteer"
-	elif trust_avg >= 1.0 and boss >= 1 and quits == 0:
+	elif r >= RESULTS_OK and team >= TEAM_OK:
 		ending = "leader"
-	elif hours <= 8 and boss >= 1.5:
+	elif r >= RESULTS_OK:
 		ending = "puppeteer"
+	elif team >= TEAM_OK:
+		ending = "beloved"
 	else:
-		ending = "middle"
+		ending = "fired"
 	phase = "end"
+
+
+const RESULTS_OK := 3.0
+const TEAM_OK := 1.5
+
+
+# Key projects: done well and on time, done badly, slipped, still open, not here yet.
+func key_status() -> Dictionary:
+	var out := {"good": 0, "bad": 0, "late": 0, "open": 0, "ahead": 0}
+	var seen := {}
+	for t in tasks:
+		if not t["key"]:
+			continue
+		seen[t["id"]] = true
+		if t["late"]:
+			out["late"] += 1
+		elif t["status"] == "done":
+			out["good" if t["quality"] == "good" or t["quality"] == "ok" else "bad"] += 1
+		else:
+			out["open"] += 1
+	out["ahead"] = C.KEY_PROJECTS.size() - seen.size()
+	return out
+
+
+func results_score() -> float:
+	var k := key_status()
+	return boss + 2.0 * k["good"] - 2.0 * (k["late"] + k["open"] + k["ahead"])
+
+
+# How the team sees you: trust, mood, and anyone who left.
+func team_score() -> float:
+	var sum := 0.0
+	for p in C.TEAM:
+		var st: Dictionary = people[p]
+		sum += -3.0 if st["gone"] else st["trust"] + clampf(st["mood"], -3.0, 3.0) / 3.0
+	return sum / C.TEAM.size()
+
+
+# Marina asks everyone anonymously. Each answer comes from what actually happened to that person.
+func _run_survey() -> void:
+	var quotes: Array = []
+	for p in C.TEAM:
+		if not people[p]["gone"]:
+			var q := _survey_quote(p)
+			# The same answer twice reads as a copy-paste; people phrase things differently.
+			for variant in [q, q + ".2", q + ".3"]:
+				if not quotes.has(variant) and L.has_key(variant):
+					q = variant
+					break
+			quotes.append(q)
+	quotes.shuffle()
+	var team := team_score()
+	survey = {"day": day, "quotes": quotes, "verdict": "for" if team >= TEAM_OK else ("wary" if team >= 0.0 else "against")}
+
+
+func _survey_quote(p: String) -> String:
+	var st: Dictionary = people[p]
+	var credit_taken := false
+	for c in flags.get("credit_taken", []):
+		if c["owner"] == p:
+			credit_taken = true
+	var extra := 0
+	for x in st["week_extra"]:
+		extra += x
+	if credit_taken and st["trust"] < 0:
+		return "survey.credit"
+	if flags.has("lied_" + p):
+		return "survey.lies"
+	if st["trust"] <= -2:
+		return "survey.distrust"
+	if st["debts"] > 0 or (st["promised"] and day - st["promised_day"] >= 5):
+		return "survey.promises"
+	if extra >= 12 or st["energy"] <= TIRED_ENERGY:
+		return "survey.overworked"
+	if st["idle_days"] >= 2:
+		return "survey.idle"
+	if not skills_grown(p).is_empty():
+		return "survey.growth"
+	if st["trust"] >= 1:
+		return "survey.trust"
+	if st["mood"] >= 2.0:
+		return "survey.happy"
+	if st["mood"] <= -2.0:
+		return "survey.unhappy"
+	return "survey.neutral"
 
 
 func broken_promises() -> Array[String]:
@@ -1089,8 +1185,7 @@ func broken_promises() -> Array[String]:
 func skills_grown(p: String) -> Array[String]:
 	var result: Array[String] = []
 	for cat in C.CATEGORIES:
-		var start: int = C.PEOPLE[p]["skills"][cat]
-		if people[p]["skills"][cat] > start + 1:
+		if people[p]["skills"][cat] > people[p]["start"][cat]:
 			result.append(cat)
 	return result
 

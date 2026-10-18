@@ -242,6 +242,8 @@ func _top_bar() -> Control:
 	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(header)
 	var word := rules.boss_word()
+	var k := rules.key_status()
+	top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": C.KEY_PROJECTS.size()}), 17, COL_ACCENT))
 	top.add_child(_label(Loc.t("boss_label", ["@boss." + word]), 17, BOSS_COLORS[word]))
 	var lang := _button(Loc.t("lang_button"), _toggle_lang, 110)
 	lang.custom_minimum_size.y = 36
@@ -432,7 +434,7 @@ func _task_chip(t: Dictionary) -> Control:
 	var v := _vbox(2)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(v)
-	v.add_child(_label(Loc.t("taskname." + t["id"]), 13, COL_INK, true))
+	v.add_child(_label(("★ " if t["key"] else "") + Loc.t("taskname." + t["id"]), 13, COL_INK, true))
 	var due := _due_text(t)
 	if t["blocked"] > 0:
 		due = Loc.t("chip_blocked") + " · " + due
@@ -505,7 +507,9 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 	var est: Dictionary = rules.estimate(t)
 	head.add_child(_chip(Loc.t("est.chip" if est["sure"] else "est.chip_guess", [_days(est["days"])]), COL_TEXT if est["sure"] else COL_MUTED))
 	head.add_child(_chip(_due_text(t), COL_DANGER if t["due"] - rules.day <= 1 else COL_MUTED))
-	if t["public"]:
+	if t["key"]:
+		head.add_child(_chip(Loc.t("chip_key"), COL_ACCENT))
+	elif t["public"]:
 		head.add_child(_chip(Loc.t("public"), COL_ACCENT))
 	v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 14, COL_MUTED, true))
 	var who := HBoxContainer.new()
@@ -655,11 +659,32 @@ func _build_report() -> void:
 		if t["late"] and int((t["late_day"] - 1) / 5.0) == w:
 			late += 1
 	v.add_child(_label(Loc.render("report.late", [], {"count": late}), 16, COL_DANGER if late > 0 else COL_MUTED))
+	v.add_child(_label(_keys_text(), 16, COL_ACCENT, true))
+	if rules.survey.get("day", -1) == rules.day:
+		_survey_block(v)
 	v.add_child(_spacer(6))
 	v.add_child(_button(Loc.t("report.to_review" if not rules.review.is_empty() else "report.next"), _continue_report, 260, true))
 
 
 # One question from Irina at a time; the answers are things you'd say, checked against the truth.
+func _keys_text() -> String:
+	var k := rules.key_status()
+	var parts := PackedStringArray()
+	for part in ["good", "bad", "late", "open", "ahead"]:
+		if k[part] > 0:
+			parts.append(Loc.render("key." + part, [], {"n": k[part]}))
+	return Loc.render("report.keys", [], {"parts": ", ".join(parts)})
+
+
+func _survey_block(v: VBoxContainer) -> void:
+	v.add_child(_spacer(4))
+	v.add_child(_label(Loc.t("survey_title"), 16, COL_MUTED))
+	for q in rules.survey["quotes"]:
+		v.add_child(_label("— " + Loc.t("quote", [Loc.t(q)]), 15, COL_TEXT, true))
+	var verdict: String = rules.survey["verdict"]
+	v.add_child(_label(Loc.t("survey.verdict." + verdict), 16, COL_GOOD if verdict == "for" else (COL_ACCENT if verdict == "wary" else COL_DANGER)))
+
+
 func _build_review() -> void:
 	var item: Dictionary = rules.review[0]
 	var t := rules.task(item["uid"])
@@ -680,7 +705,7 @@ func _build_review() -> void:
 
 func _build_end() -> void:
 	var v := _overlay(760)
-	var good := rules.ending in ["leader", "puppeteer"]
+	var good := rules.ending in ["leader", "puppeteer", "beloved"]
 	v.add_child(_label(Loc.t("ending.%s.title" % rules.ending), 30, COL_GOOD if good else COL_DANGER, true))
 	v.add_child(_label(Loc.t("ending.%s.text" % rules.ending), 18, COL_TEXT, true))
 	v.add_child(_label(Loc.t("summary.hours", [rules.hours]), 17, COL_GOOD if rules.hours == 0 else COL_DANGER))
@@ -692,7 +717,10 @@ func _build_end() -> void:
 		if t["late"]:
 			late += 1
 	v.add_child(_label(Loc.t("summary.done", [done, late]), 16))
-	v.add_child(_label(Loc.t("summary.boss", ["@boss." + rules.boss_word()]), 16))
+	var k := rules.key_status()
+	v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": C.KEY_PROJECTS.size(), "boss": "@boss." + rules.boss_word()}), 16, COL_TEXT, true))
+	if not rules.survey.is_empty():
+		_survey_block(v)
 	v.add_child(_label(Loc.t("summary.team"), 14, COL_MUTED))
 	for p in C.TEAM:
 		var parts := PackedStringArray()
