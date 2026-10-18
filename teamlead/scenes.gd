@@ -14,8 +14,8 @@ const MAX_PER_MORNING := 2
 
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
-	"probation", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
-	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "vika_takes_task", "gena_mentor", "taras_borrow",
+	"probation", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
+	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow",
 ]
 
 
@@ -71,6 +71,43 @@ func _check_probation(r) -> Dictionary:
 		names["k%d" % (i + 1)] = "@taskname." + C.KEY_PROJECTS[i]
 	return {"who": "boss", "names": names, "lines": [{"who": "boss", "key": "event.probation.ask"}, {"who": "boss", "key": "event.probation.ask2"}],
 		"choices": ["ok"]}
+
+
+# Irina drops something urgent on you. Day 2 the first time (you can't refuse yet), then now and
+# then when the team is loaded, at most once a week.
+func _check_boss_dump(r) -> Dictionary:
+	var first: bool = r.day == 2 and not r.flags.has("dump_w0")
+	var load := 0
+	for t in r.tasks:
+		if t["status"] == "active" and C.TEAM.has(t["owner"]):
+			load += 1
+	if not first and (r.day < 6 or r.flags.has("dump_w%d" % r.week()) or load < 6 or r.rng.randf() > 0.4):
+		return {}
+	r.flags["dump_w%d" % r.week()] = true
+	var used: Array = r.flags.get("dumps_used", [])
+	var id: String = C.DUMPS[0]
+	for d in C.DUMPS:
+		if not used.has(d):
+			id = d
+			break
+	used.append(id)
+	r.flags["dumps_used"] = used
+	return {"who": "boss", "dump": id, "names": {"task": "@taskname." + id},
+		"lines": [{"who": "boss", "key": "event.boss_dump.ask"}], "choices": ["take", "refuse"]}
+
+
+# Taras shows how weight is made: by being the one who presents.
+func _check_taras_brag(r) -> Dictionary:
+	if r.day < 3 or not once(r, "taras_brag"):
+		return {}
+	return {"who": "taras", "lines": [{"who": "taras", "key": "event.taras_brag.ask"}], "choices": ["noted", "who_did"]}
+
+
+# Irina lets slip that Vika is rising.
+func _check_vika_rising(r) -> Dictionary:
+	if not r.available("vika") or r.vika_standing < 2 or r.vika_standing < r.boss - 1.0 or not once(r, "vika_rising"):
+		return {}
+	return {"who": "boss", "lines": [{"who": "boss", "key": "event.vika_rising.ask"}], "choices": ["ok", "worry"]}
 
 
 # You took the credit at the review; now Irina wants the details.
@@ -313,6 +350,8 @@ func _resolve_complication(r, ev: Dictionary, c: String, t: Dictionary, names: D
 	r.people[p]["mood"] += fx.get("mood", 0.0)
 	r.people[p]["energy"] += fx.get("energy", 0.0)
 	r.boss += fx.get("boss", 0.0)
+	if fx.has("boss") or fx.get("special", "") in ["please_from", "annoy_from"]:
+		r.weight_cause = t["id"]
 	r.say(who, reply, [], names)
 
 
@@ -330,15 +369,29 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 	if ev.has("comp"):
 		_resolve_complication(r, ev, c, t, names)
 		who = ""
+	if ev["id"] == "boss_details":
+		r.weight_cause = t["id"]
 	match ev["id"] + "/" + c:
 		"boss_deadline/yes":
 			t["vouched"] = true
 		"boss_deadline/warn":
 			t["due"] += 1
+			r.weight_cause = t["id"]
 			r.flags["warned_late"] = r.flags.get("warned_late", 0) + 1
 			if r.flags["warned_late"] >= 2:
 				r.boss -= 1
 				reply = "event.boss_deadline.warn.reply_again"
+			else:
+				r.boss += 0.5
+
+		"boss_dump/take":
+			r.add_task(ev["dump"])
+		"boss_dump/refuse":
+			if r.has_weight():
+				r.boss -= 1.0
+			else:
+				r.add_task(ev["dump"])
+				reply = "event.boss_dump.refuse.weak_early" if r.day <= 5 else "event.boss_dump.refuse.weak"
 
 		"boss_details/call_owner":
 			r.boss -= 1
@@ -407,7 +460,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.flags["lied_vika"] = true
 			r.people["vika"]["mood"] -= 1.5
 			r.people["vika"]["trust"] -= 1
-			r.vika_standing += 1
+			r.vika_up()
 
 		"alex_vika_clash/both":
 			r.people["alex"]["mood"] += 0.5
@@ -418,7 +471,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.people["alex"]["trust"] += 1
 			r.people["vika"]["mood"] -= 2.0
 			r.people["vika"]["trust"] -= 1
-			r.vika_standing += 1
+			r.vika_up()
 		"alex_vika_clash/side_vika":
 			r.people["vika"]["mood"] += 1.5
 			r.people["vika"]["ambition"] += 1
@@ -463,7 +516,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.people["vika"]["mood"] += 2.0
 		"vika_raise/not_yet":
 			r.people["vika"]["mood"] -= 2.0
-			r.vika_standing += 1
+			r.vika_up()
 
 		"vika_promise_check/lie":
 			r.people["vika"]["mood"] += 1.0
@@ -476,7 +529,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.people["vika"]["promised"] = false
 			r.people["vika"]["mood"] += 2.0
 			r.people["vika"]["trust"] += 1
-			r.vika_standing += 1
+			r.vika_up()
 
 		"alex_tired/dayoff":
 			var st: Dictionary = r.people["alex"]

@@ -10,6 +10,7 @@ A four-week probation as the new lead of a team of four. On day one Irina names 
 - Roles aren't assigned: they emerge from the tasks someone ends up doing.
 - Morning scenes grow out of what's happening: Alex and Vika argue over credit after working together, Dima confesses a mistake, Gena forgets a task at the bottom of his list, Irina asks about a deadline that's slipping, Taras wants to borrow someone. Choices leave consequences that come back later.
 - Fridays: a report of hours against the 40-hour week (yours included — a lead who does the work gets told off), then Irina asks about the week's most visible success and worst failure. Answers are checked against the truth: claiming personal control only holds if you took part, blaming the owner only if they could do it and weren't overworked, "we were swamped" only if the report shows overtime.
+- Weight with Irina (shown in the top bar as how much she listens to you) grows when you're visible — key projects delivered, credit taken, honest early warnings — and drops with slips and lies. It's spent to protect the team: refusing tasks she drops on you, getting a contractor. Every change is announced with its cause; Taras and Vika show by example how weight is made. Enough of it at the end means a promotion.
 - Assessment outcomes: results and team (a leader people follow), results without the team (master of delegation), the team without results (the team's favourite, probation failed), neither (failed); plus workaholic, replaced by Vika, the team fell apart.
 
 ## Files (`teamlead/`)

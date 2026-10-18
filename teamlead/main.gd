@@ -19,7 +19,7 @@ const COL_PAPER := Color("f4efe6")
 const COL_INK_MUTED := Color("6b6b73")
 const MOOD_COLORS := {"happy": COL_GOOD, "good": COL_GOOD, "neutral": COL_TEXT, "down": COL_ACCENT, "angry": COL_DANGER}
 const ENERGY_COLORS := {"fresh": COL_GOOD, "ok": COL_TEXT, "tired": COL_ACCENT, "drained": COL_DANGER}
-const BOSS_COLORS := {"thrilled": COL_GOOD, "pleased": COL_GOOD, "watching": COL_TEXT, "doubts": COL_ACCENT, "angry": COL_DANGER}
+const BOSS_COLORS := {"w3": COL_GOOD, "w2": COL_GOOD, "w1": COL_TEXT, "w0": COL_DANGER}
 const CAT_COLORS := {"tech": Color("4a8fd9"), "analytics": Color("9b6cd6"), "people": Color("d46a9f"), "routine": Color("7d9a6a")}
 
 var rules := Rules.new()
@@ -87,6 +87,12 @@ func _helper(p: String) -> void:
 	feedback_from = rules.history.size()
 	rules.set_helper(selected, p)
 	_render()
+
+
+func _contractor() -> void:
+	feedback_from = rules.history.size()
+	rules.hire_contractor(selected)
+	_clear_selection()
 
 
 func _prioritize() -> void:
@@ -244,7 +250,7 @@ func _top_bar() -> Control:
 	var word := rules.boss_word()
 	var k := rules.key_status()
 	top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": C.KEY_PROJECTS.size()}), 17, COL_ACCENT))
-	top.add_child(_label(Loc.t("boss_label", ["@boss." + word]), 17, BOSS_COLORS[word]))
+	top.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 17, BOSS_COLORS[word]))
 	var lang := _button(Loc.t("lang_button"), _toggle_lang, 110)
 	lang.custom_minimum_size.y = 36
 	top.add_child(lang)
@@ -526,6 +532,7 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 		who.add_child(b)
 	who.add_child(_button(Loc.t("myself"), _direct.bind("me"), 0))
 	who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
+	who.add_child(_button(Loc.t("contractor") + ("" if rules.has_weight() else " " + Loc.t("needs_weight")), _contractor, 0))
 	if t["status"] == "active":
 		who.add_child(_button(Loc.t("unassign"), _unassign, 0))
 		if C.TEAM.has(t["owner"]) and rules.queue_of(t["owner"])[0]["uid"] != t["uid"]:
@@ -613,7 +620,10 @@ func _build_event() -> void:
 		var names: Dictionary = ev["names"].duplicate()
 		if parts.size() > 1:
 			names["who"] = "@name.%s.acc" % parts[1]
-		v.add_child(_button(Loc.render("event.%s.choice.%s" % [ev["id"], parts[0]], [], names), _event.bind(choice), 0))
+		var text := Loc.render("event.%s.choice.%s" % [ev["id"], parts[0]], [], names)
+		if ev["id"] == "boss_dump" and choice == "refuse" and not rules.has_weight():
+			text += " " + Loc.t("needs_weight")
+		v.add_child(_button(text, _event.bind(choice), 0))
 
 
 func _build_evening() -> void:
@@ -718,7 +728,9 @@ func _build_end() -> void:
 			late += 1
 	v.add_child(_label(Loc.t("summary.done", [done, late]), 16))
 	var k := rules.key_status()
-	v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": C.KEY_PROJECTS.size(), "boss": "@boss." + rules.boss_word()}), 16, COL_TEXT, true))
+	v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": C.KEY_PROJECTS.size(), "boss": "@weight." + rules.boss_word()}), 16, COL_TEXT, true))
+	if rules.ending in ["leader", "puppeteer"]:
+		v.add_child(_label(Loc.t("promoted.yes" if rules.promoted else "promoted.no"), 16, COL_GOOD if rules.promoted else COL_MUTED, true))
 	if not rules.survey.is_empty():
 		_survey_block(v)
 	v.add_child(_label(Loc.t("summary.team"), 14, COL_MUTED))

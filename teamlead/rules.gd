@@ -38,7 +38,14 @@ var day := 1
 var phase := "title" # plan, event, evening, report, review, end
 var people := {}
 var tasks: Array[Dictionary] = []
+# Weight with Irina: how much she listens to you. Grows when you're visible (key projects, credit
+# taken, honest warnings), drops with slips and lies, and is spent to protect the team.
 var boss := 0.0
+var weight_level := 1
+var weight_cause := ""
+# Results the boss can see: visible tasks delivered or slipped. Separate from weight, which you spend.
+var merit := 0.0
+var promoted := false
 var vika_standing := 0
 var hours := 0
 var my_week_hours := []
@@ -88,6 +95,9 @@ func start_run(seed_value: int = -1) -> void:
 		}
 	tasks.clear()
 	boss = 0.0
+	weight_level = 1
+	weight_cause = ""
+	merit = 0.0
 	vika_standing = 0
 	hours = 0
 	my_week_hours = _zeros()
@@ -127,20 +137,24 @@ func _start_day() -> void:
 				_narrate("relief", [], {"task": "@taskname." + id})
 				break
 	for id in arrivals:
-		var info: Dictionary = C.TASKS[id]
-		tasks.append({
-			"uid": next_uid, "id": id, "cat": info["cat"], "size": info["size"], "progress": 0.0,
-			"due": day + info["due"], "public": info["public"], "from": info["from"], "owner": "", "helper": "",
-			"q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
-			"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
-			"asked": false, "vouched": false, "flaw": false, "complicated": false, "blocked": 0, "q_bonus": 0.0, "involved": false,
-			"key": C.KEY_PROJECTS.has(id),
-		})
-		next_uid += 1
-		_say(info["from"], "task.%s.ask" % id)
+		add_task(id)
 	talked_today = false
 	_queue_events()
 	phase = "event" if not events.is_empty() else "plan"
+
+
+func add_task(id: String) -> void:
+	var info: Dictionary = C.TASKS[id]
+	tasks.append({
+		"uid": next_uid, "id": id, "cat": info["cat"], "size": info["size"], "progress": 0.0,
+		"due": day + info["due"], "public": info["public"], "from": info["from"], "owner": "", "helper": "",
+		"q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
+		"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
+		"asked": false, "vouched": false, "flaw": false, "complicated": false, "blocked": 0, "q_bonus": 0.0, "involved": false,
+		"key": C.KEY_PROJECTS.has(id),
+	})
+	next_uid += 1
+	_say(info["from"], "task.%s.ask" % id)
 
 
 func _queue_events() -> void:
@@ -160,6 +174,7 @@ func resolve_event(choice: String) -> void:
 	if phase != "event" or events.is_empty() or not events[0]["choices"].has(choice):
 		return
 	scenes.resolve(self, events.pop_front(), choice)
+	_weight_check()
 	if events.is_empty():
 		phase = "plan"
 	else:
@@ -524,11 +539,14 @@ func end_day() -> void:
 		if t["blocked"] > 0:
 			t["blocked"] -= 1
 	for t in tasks:
-		if t["status"] == "taras" and t["due"] == day:
+		if t["status"] == "taras" and t["due"] <= day:
 			t["status"] = "done"
 			t["quality"] = "ok"
 			t["done_day"] = day
-			_say("taras", "taras.done", [], {"task": "@taskname." + t["id"]})
+			if t["owner"] == "contractor":
+				_narrate("contractor.done", [], {"task": "@taskname." + t["id"]})
+			else:
+				_say("taras", "taras.done", [], {"task": "@taskname." + t["id"]})
 	for t in tasks:
 		if (t["status"] == "inbox" or t["status"] == "active") and t["due"] == day and not t["late"]:
 			t["late"] = true
@@ -540,6 +558,7 @@ func end_day() -> void:
 	_check_lies()
 	for p in C.TEAM:
 		_check_person(p)
+	_weight_check()
 	if C.SURVEY_DAYS.has(day):
 		_run_survey()
 	if C.REVIEW_DAYS.has(day):
@@ -570,6 +589,8 @@ func _late(t: Dictionary) -> void:
 	var names := {"task": "@taskname." + t["id"]}
 	if t["public"] or t["from"] == "boss":
 		boss -= 2.0 if t["key"] else 1.0
+		merit -= 1.0
+		weight_cause = t["id"]
 		_narrate("late.key" if t["key"] else "late", [], names)
 		return
 	var who: String = t["from"]
@@ -585,6 +606,48 @@ func continue_report() -> void:
 	if phase != "report":
 		return
 	phase = "review" if not review.is_empty() else "evening"
+
+
+# Announce when Irina starts listening to you more or less, and why.
+func _weight_check() -> void:
+	var level := _level_of(boss)
+	if level != weight_level:
+		var names := {"level": "@weight.w%d" % level, "cause": ""}
+		if weight_cause != "":
+			names["cause"] = "@weight.after"
+			names["task"] = "@taskname." + weight_cause
+		_narrate("weight.up" if level > weight_level else "weight.down", [], names)
+		weight_level = level
+	weight_cause = ""
+
+
+func has_weight() -> bool:
+	return _level_of(boss) >= 2
+
+
+func vika_up() -> void:
+	vika_standing += 1
+	_narrate("vika.visit")
+
+
+# Spend weight on an outside contractor who takes a task off the team.
+func hire_contractor(uid: int) -> void:
+	var t := task(uid)
+	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] == "done" or t["status"] == "taras":
+		return
+	history.append({"who": "you", "key": "contractor.ask", "args": [], "names": {"task": "@taskname." + t["id"]}, "day": day})
+	if not has_weight():
+		_say("boss", "contractor.no", [], {"task": "@taskname." + t["id"]})
+		return
+	if C.TEAM.has(t["owner"]) and t["progress"] > 0.0:
+		people[t["owner"]]["mood"] -= 0.5
+	t["owner"] = "contractor"
+	t["status"] = "taras"
+	t["helper"] = ""
+	boss -= 1.5
+	weight_cause = t["id"]
+	_say("boss", "contractor.yes", [], {"task": "@taskname." + t["id"]})
+	_weight_check()
 
 
 func week() -> int:
@@ -794,6 +857,12 @@ func _finish(p: String, t: Dictionary) -> void:
 	t["quality"] = "good" if avg >= GOOD_Q else ("ok" if avg >= OK_Q else ("weird" if avg >= WEIRD_Q else "poor"))
 	if t["flaw"] and (t["quality"] == "good" or t["quality"] == "ok"):
 		t["quality"] = "weird"
+	if t["public"] and (t["quality"] == "good" or t["quality"] == "ok") and day <= t["due"]:
+		merit += 0.5
+		# A key project delivered is visible as yours: you led it.
+		if t["key"]:
+			boss += 1.0
+			weight_cause = t["id"]
 	t["status"] = "done"
 	t["done_day"] = day
 	people[p]["last_done"] = day
@@ -922,14 +991,12 @@ func _build_review() -> void:
 		review.append({"uid": best["uid"], "kind": "success"})
 	if not worst.is_empty():
 		review.append({"uid": worst["uid"], "kind": "failure"})
-	# Everything else from this week: quiet credit for visible work done well.
+	# Everything else from this week she notes quietly; it counts toward results, not toward you.
 	for t in tasks:
 		if t["reviewed"] or (not best.is_empty() and t["uid"] == best["uid"]) or (not worst.is_empty() and t["uid"] == worst["uid"]):
 			continue
 		if t["status"] == "done" or t["late"]:
 			t["reviewed"] = true
-			if C.TEAM.has(t["owner"]) and t["public"] and (t["quality"] == "good" or t["quality"] == "ok") and not t["late"]:
-				boss += 0.5
 	# A lead who does the work instead of leading isn't what she hired.
 	if my_week_hours[w] >= 16:
 		boss -= 1.0
@@ -989,19 +1056,20 @@ func answer_review(choice: String) -> void:
 	var st: Dictionary = people[p]
 	var names := _review_names(t)
 	var truth := review_true(item, choice)
+	weight_cause = t["id"]
 	history.append({"who": "you", "key": "review.a." + choice, "args": [], "names": names, "day": day})
 	match choice:
 		"credit_owner":
-			boss += 1.0
+			boss += 0.3
 			st["mood"] += 1.0
 			st["trust"] += 1
 			_say("boss", "review.boss.credit_owner", [], names)
 			if st["promised"]:
 				st["promised"] = false
 			if p == "vika" and t["quality"] == "good":
-				vika_standing += 1
+				vika_up()
 		"team":
-			boss += 1.0
+			boss += 0.5
 			for q in C.TEAM:
 				if available(q):
 					people[q]["mood"] += 0.3
@@ -1023,7 +1091,7 @@ func answer_review(choice: String) -> void:
 				if p == "vika":
 					st["ambition"] += 1
 					if st["ambition"] >= 3:
-						vika_standing += 1
+						vika_up()
 						_say("vika", "review.vika_goes_to_boss", [], names)
 				else:
 					_say(p, "review.hurt", [], names)
@@ -1048,6 +1116,7 @@ func answer_review(choice: String) -> void:
 				boss -= 1.0
 				_say("boss", "review.boss.overload_false", [], names)
 	st["mood"] = clampf(st["mood"], -5.0, 5.0)
+	_weight_check()
 	if not review.is_empty():
 		_ask_review()
 	elif day >= C.DAYS:
@@ -1086,6 +1155,7 @@ func _finish_run() -> void:
 		ending = "beloved"
 	else:
 		ending = "fired"
+	promoted = _level_of(boss) >= 3 and ending in ["leader", "puppeteer"]
 	phase = "end"
 
 
@@ -1113,7 +1183,7 @@ func key_status() -> Dictionary:
 
 func results_score() -> float:
 	var k := key_status()
-	return boss + 2.0 * k["good"] - 2.0 * (k["late"] + k["open"] + k["ahead"])
+	return merit + 2.0 * k["good"] - 2.0 * (k["late"] + k["open"] + k["ahead"])
 
 
 # How the team sees you: trust, mood, and anyone who left.
@@ -1217,15 +1287,17 @@ func energy_word(p: String) -> String:
 
 
 func boss_word() -> String:
-	if boss >= 5:
-		return "thrilled"
-	if boss >= 2:
-		return "pleased"
-	if boss >= -1:
-		return "watching"
-	if boss >= -3:
-		return "doubts"
-	return "angry"
+	return "w%d" % _level_of(boss)
+
+
+func _level_of(w: float) -> int:
+	if w >= 4.0:
+		return 3
+	if w >= 1.0:
+		return 2
+	if w > -2.0:
+		return 1
+	return 0
 
 
 # ---------- helpers ----------

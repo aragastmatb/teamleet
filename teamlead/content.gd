@@ -11,6 +11,7 @@ const DAYS := 20
 const REVIEW_DAYS := [5, 10, 15, 20]
 const SURVEY_DAYS := [10, 20]
 const KEY_PROJECTS := ["new_feature", "board_deck", "quarter_report"]
+const DUMPS := ["board_memo", "slides_fix", "vip_call", "competitor_brief"]
 
 const TEAM := ["alex", "vika", "dima", "gena"]
 const CATEGORIES := ["tech", "analytics", "people", "routine"]
@@ -81,6 +82,11 @@ const TASKS := {
 	"quarter_report": {"cat": "analytics", "size": 3, "due": 4, "public": true, "from": "boss"},
 	"retro": {"cat": "people", "size": 1, "due": 2, "public": false, "from": "marina"},
 	"tax_report": {"cat": "routine", "size": 1, "due": 2, "public": false, "from": "boss"},
+	# Dropped on you by Irina outside the plan; you can try to refuse.
+	"board_memo": {"cat": "analytics", "size": 1, "due": 1, "public": true, "from": "boss"},
+	"slides_fix": {"cat": "routine", "size": 1, "due": 1, "public": true, "from": "boss"},
+	"vip_call": {"cat": "people", "size": 1, "due": 1, "public": true, "from": "boss"},
+	"competitor_brief": {"cat": "analytics", "size": 2, "due": 2, "public": true, "from": "boss"},
 }
 
 # Which tasks arrive on which morning. Ids can repeat (the weekly report, another outage).
