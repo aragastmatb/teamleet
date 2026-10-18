@@ -65,6 +65,7 @@ var overtime_today := 0
 var my_energy := 10.0
 var my_sick := 0
 var sick_today := false
+var visited_today := false
 var init_next := {}
 var events: Array[Dictionary] = []
 var review: Array[Dictionary] = []
@@ -152,6 +153,7 @@ func _start_day() -> void:
 	for id in _arrivals():
 		add_task(id)
 	talked.clear()
+	visited_today = false
 	overtime_today = 0
 	attention = 0 if my_sick > 0 else C.ATTENTION
 	sick_today = my_sick > 0
@@ -306,6 +308,7 @@ func assign(uid: int, p: String) -> void:
 	if C.TEAM.has(previous) and t["progress"] > 0.0 and not people[previous]["gone"]:
 		people[previous]["mood"] -= 0.5
 		_say(previous, "taken_away", [], names)
+	_check_commitments(t, p)
 	var reason := _objection(p, t) if p != "me" else ""
 	t["owner"] = p
 	t["status"] = "active"
@@ -326,6 +329,25 @@ func assign(uid: int, p: String) -> void:
 		_say(p, _first_key(["object.%s.%s" % [p, reason], "object.any." + reason]), [], names)
 		return
 	_accept(p, t, 0.0, "")
+
+
+# Things you promised in one-on-ones get checked when you hand out work.
+func _check_commitments(t: Dictionary, p: String) -> void:
+	var names := {"task": "@taskname." + t["id"]}
+	if t["key"]:
+		for q in C.TEAM:
+			if flags.has("stretch_" + q) and available(q):
+				flags.erase("stretch_" + q)
+				if q == p:
+					people[q]["trust"] += 1
+				else:
+					people[q]["trust"] -= 2
+					people[q]["mood"] -= 1.0
+					_say(q, "talk.stretch.broken", [], names)
+	if C.TEAM.has(p) and flags.get("calm_" + p, 0) >= day and t["due"] - day <= 1:
+		flags.erase("calm_" + p)
+		people[p]["trust"] -= 2
+		_say(p, "talk.calm.broken", [], names)
 
 
 # Why this person would push back on this task right now, or "" if they just take it.
@@ -524,53 +546,60 @@ func unassign_now(t: Dictionary) -> void:
 	t["first"] = false
 
 
-func one_on_one(p: String, approach: String) -> void:
+# A one-on-one: they come with whatever is on their mind (see scenes.gd), you answer.
+func start_talk(p: String) -> void:
 	if not can_talk(p):
 		return
 	talked[p] = true
 	spend_attention()
+	history.append({"who": "you", "key": "talk.open", "args": [], "names": {}, "to": p, "day": day})
+	_open_conversation(scenes.talk_event(self, p))
+
+
+# Going to Irina: one visit a day, one topic per visit.
+func visit_boss() -> void:
+	if phase != "plan" or not pending.is_empty() or visited_today:
+		return
+	visited_today = true
+	spend_attention()
+	history.append({"who": "you", "key": "visit.open", "args": [], "names": {}, "day": day})
+	_open_conversation(scenes.boss_visit(self))
+
+
+func _open_conversation(ev: Dictionary) -> void:
+	ev.merge({"names": {}, "uid": -1}, false)
+	events.push_front(ev)
+	_say_event_lines()
+	phase = "event"
+
+
+# Tell them what you've learned about yourself, in their own words.
+func reveal_next(p: String) -> void:
+	var key := _next_unknown(p)
+	if key == "":
+		_say(p, "talk.listen.nothing")
+		return
+	var line := "talk.listen.%s.%s" % [p, key.replace("skill.", "")]
+	_say(p, line if L.has_key(line) else "talk.listen.any")
+	_reveal(p, key)
+
+
+func give_day_off(p: String) -> void:
 	var st: Dictionary = people[p]
-	history.append({"who": "you", "key": "talk." + approach, "args": [], "names": {}, "to": p, "day": day})
-	match approach:
-		"praise":
-			if day - st["last_done"] <= 2:
-				st["mood"] += 1.0
-				st["trust"] += 1
-				_say(p, "talk.praise.ok")
-			else:
-				_say(p, "talk.praise.empty")
-		"listen":
-			st["mood"] += 0.5
-			var key := _next_unknown(p)
-			if key == "":
-				_say(p, "talk.listen.nothing")
-			else:
-				var line := "talk.listen.%s.%s" % [p, key.replace("skill.", "")]
-				_say(p, line if L.has_key(line) else "talk.listen.any")
-				_reveal(p, key)
-		"push":
-			st["pushed"] = PUSH_DAYS
-			st["mood"] -= 2.0 if C.PEOPLE[p]["drive"] == "peace" else 1.0
-			st["energy"] -= 1.0
-			_say(p, "talk.push.%s" % p)
-		"promise":
-			if st["promised"]:
-				st["trust"] -= 1
-				_say(p, "talk.promise.again")
-			else:
-				make_promise(p)
-				st["mood"] += 3.0 if p == "vika" else 2.0
-				_say(p, "talk.promise.%s" % p)
-		"dayoff":
-			st["off_next"] = true
-			st["mood"] += 1.0
-			if st["debts"] > 0:
-				st["debts"] = 0
-				st["trust"] += 1
-				_say(p, "talk.dayoff.debt")
-			else:
-				_say(p, "talk.dayoff.ok")
-	st["mood"] = clampf(st["mood"], -5.0, 5.0)
+	st["off_next"] = true
+	if st["debts"] > 0:
+		st["debts"] = 0
+		st["trust"] += 1
+
+
+# Take one non-key task off someone's plate back to the inbox; true if there was one.
+func lighten(p: String) -> bool:
+	var q := queue_of(p)
+	for i in range(q.size() - 1, -1, -1):
+		if not q[i]["key"] and q[i]["progress"] == 0.0:
+			unassign_now(q[i])
+			return true
+	return false
 
 
 # Does this answer to a morning scene take your attention?
@@ -722,6 +751,7 @@ func end_day() -> void:
 		if t["blocked"] > 0:
 			t["blocked"] -= 1
 	_end_of_my_day()
+	shares.clear()
 	for t in tasks:
 		if t["status"] == "taras" and t["due"] <= day:
 			t["status"] = "done"
@@ -846,10 +876,8 @@ func vika_up() -> void:
 # Spend weight on an outside contractor who takes a task off the team.
 func hire_contractor(uid: int) -> void:
 	var t := task(uid)
-	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] == "done" or t["status"] == "taras":
+	if t.is_empty() or t["status"] == "done" or t["status"] == "taras":
 		return
-	history.append({"who": "you", "key": "contractor.ask", "args": [], "names": {"task": "@taskname." + t["id"]}, "day": day})
-	spend_attention()
 	if not has_weight():
 		_say("boss", "contractor.no", [], {"task": "@taskname." + t["id"]})
 		return
@@ -893,7 +921,7 @@ func _speed(p: String, t: Dictionary) -> float:
 	if st["pushed"] > 0:
 		s *= 1.0 + PUSH_SPEED
 	var share: float = shares.get(t["uid"], 0.0)
-	if share > 0.0:
+	if share > 0.0 and people.has(t["helper"]):
 		var hs: int = people[t["helper"]]["skills"][t["cat"]]
 		if hs > skill:
 			s += share * 0.5 * (SPEED_BASE + SPEED_PER_SKILL * hs)
@@ -1373,7 +1401,7 @@ func _finish_run() -> void:
 	var team := team_score()
 	if quits >= 2:
 		ending = "team_gone"
-	elif vika_standing >= 3 and vika_standing > boss:
+	elif vika_standing >= 4 and vika_standing > boss:
 		ending = "replaced"
 	elif hours >= 60:
 		ending = "workhorse"
@@ -1477,7 +1505,7 @@ func _survey_quote(p: String) -> String:
 func broken_promises() -> Array[String]:
 	var result: Array[String] = []
 	for p in C.TEAM:
-		if people[p]["promised"] or people[p]["debts"] > 0:
+		if people[p]["promised"] or people[p]["debts"] > 0 or flags.has("mention_" + p) or flags.has("stretch_" + p):
 			result.append(p)
 	return result
 
@@ -1521,7 +1549,7 @@ func boss_word() -> String:
 
 
 func _level_of(w: float) -> int:
-	if w >= 6.0:
+	if w >= 8.0:
 		return 3
 	if w >= 1.0:
 		return 2

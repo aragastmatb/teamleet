@@ -37,7 +37,6 @@ const INTENT_TASTE := {
 	"peace": {"honest": 1, "flatter": 0, "boss": 1, "promise": 1, "order": -1},
 }
 
-const ONE_ON_ONE := ["praise", "listen", "push", "promise", "dayoff"]
 
 # size: days of work for someone decent at it. due: days after arrival (0 = today). public: the boss will look at it.
 # There's more work than the team can do; something will slip, and the question is what.

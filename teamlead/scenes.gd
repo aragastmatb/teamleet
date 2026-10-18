@@ -355,17 +355,304 @@ func _resolve_complication(r, ev: Dictionary, c: String, t: Dictionary, names: D
 	r.say(who, reply, [], names)
 
 
+# ---------- one-on-ones ----------
+
+# What's on their mind decides how the talk opens; the answers depend on the topic and on what you
+# know about them (a known motive adds an answer aimed right at it).
+func talk_event(r, p: String) -> Dictionary:
+	var st: Dictionary = r.people[p]
+	var topic := "fine"
+	var names := {}
+	var reason := ""
+	if st["energy"] <= 3.5:
+		topic = "tired"
+	elif st["mood"] <= -1.5:
+		topic = "upset"
+		reason = _upset_reason(r, p)
+	elif r.day - st["last_done"] <= 2 and _last_good(r, p) >= 0:
+		topic = "proud"
+		names["task"] = "@taskname." + r.task(_last_good(r, p))["id"]
+	elif C.PEOPLE[p]["drive"] in ["growth", "visibility"] and r.day >= 3 and not r.flags.has("asked_growth_" + p):
+		topic = "grow"
+		r.flags["asked_growth_" + p] = true
+	var key: String = r._first_key(["event.talk_%s.ask.%s" % [topic, p], "event.talk_%s.ask.%s" % [topic, reason], "event.talk_%s.ask" % topic])
+	var choices: Array = []
+	match topic:
+		"tired":
+			choices = ["dayoff", "push"]
+			if r.queue_of(p).size() >= 2:
+				choices.insert(1, "lighten")
+		"upset":
+			choices = ["listen"]
+			if reason == "credit":
+				choices.append("apologize")
+			elif reason != "general":
+				choices.append("fix_" + reason)
+			choices.append("dismiss")
+		"proud":
+			choices = ["praise", "critique", "mention"]
+		"grow":
+			choices = ["stretch", "promote", "not_yet"]
+		"fine":
+			choices = ["ask_about", "praise_general"]
+			if st["known"].has("drive"):
+				choices.append("gift_" + C.PEOPLE[p]["drive"])
+	return {"id": "talk_" + topic, "who": p, "target": p, "reason": reason, "names": names, "uid": _last_good(r, p) if topic == "proud" else -1,
+		"lines": [{"who": p, "key": key}], "choices": choices}
+
+
+func _upset_reason(r, p: String) -> String:
+	for c in r.flags.get("credit_taken", []):
+		if c["owner"] == p:
+			return "credit"
+	if r.queue_of(p).size() >= 3:
+		return "load"
+	if r.people[p]["idle_days"] >= 2:
+		return "bored"
+	var q: Array = r.queue_of(p)
+	if not q.is_empty() and C.PEOPLE[p]["hates"].has(q[0]["cat"]):
+		return "hate"
+	return "general"
+
+
+func _last_good(r, p: String) -> int:
+	var best := -1
+	var best_day := -1
+	for t in r.tasks:
+		if t["owner"] == p and t["status"] == "done" and (t["quality"] == "good" or t["quality"] == "ok") and t["done_day"] > best_day and not t["id"].begins_with("init_"):
+			best = t["uid"]
+			best_day = t["done_day"]
+	return best
+
+
+func _resolve_talk(r, ev: Dictionary, c: String, names: Dictionary) -> String:
+	var p: String = ev["target"]
+	var st: Dictionary = r.people[p]
+	var reply := "event.%s.%s.reply" % [ev["id"], c]
+	match c:
+		"dayoff":
+			r.give_day_off(p)
+			st["mood"] += 1.0
+		"lighten":
+			r.lighten(p)
+			st["mood"] += 1.0
+			st["trust"] += 1
+		"push":
+			st["pushed"] = r.PUSH_DAYS
+			st["mood"] -= 2.0 if C.PEOPLE[p]["drive"] == "peace" else 1.0
+			st["energy"] -= 0.5
+		"listen":
+			st["mood"] += 1.0
+			r.say(p, reply)
+			r.reveal_next(p)
+			return ""
+		"apologize":
+			st["mood"] += 1.5
+			st["trust"] += 1
+		"fix_load":
+			r.lighten(p)
+			st["mood"] += 1.0
+		"fix_bored":
+			if r.initiative_offer(p) != "":
+				r.accept_initiative(p)
+			st["mood"] += 1.0
+		"fix_hate":
+			st["mood"] += 1.0
+			r.flags["calm_" + p] = r.day + 3
+		"dismiss":
+			st["mood"] -= 0.5
+			if ev["reason"] == "credit":
+				st["trust"] -= 1
+		"praise":
+			st["mood"] += 1.0
+			st["trust"] += 1
+		"critique":
+			var t: Dictionary = r.task(ev["uid"])
+			if t.get("quality", "") == "good":
+				st["mood"] -= 1.5
+				st["trust"] -= 1
+				reply = "event.talk_proud.critique.unfair"
+			else:
+				st["mood"] -= 0.5
+				st["trust"] += 1
+				r.learn(p, t["cat"], 1.0)
+		"mention":
+			st["mood"] += 1.5
+			r.flags["mention_" + p] = ev["uid"]
+		"stretch":
+			st["mood"] += 2.0
+			r.flags["stretch_" + p] = true
+		"promote":
+			if st["promised"]:
+				st["trust"] -= 1
+				reply = "talk.promise.again"
+			else:
+				r.make_promise(p)
+				st["mood"] += 2.0
+		"not_yet":
+			st["mood"] -= 0.5
+			st["trust"] += 1
+		"ask_about":
+			st["mood"] += 0.5
+			r.reveal_next(p)
+			return ""
+		"praise_general":
+			if r.day - st["last_done"] <= 3:
+				st["mood"] += 1.0
+			else:
+				reply = "event.talk_fine.praise_general.empty"
+		"gift_craft", "gift_visibility", "gift_growth", "gift_peace":
+			st["mood"] += 1.5
+			st["trust"] += 1
+			match c:
+				"gift_visibility":
+					if p == "vika":
+						r.vika_up()
+				"gift_growth":
+					r.learn(p, "tech", 1.5)
+				"gift_peace":
+					r.flags["calm_" + p] = r.day + 4
+	return r._first_key(["event.%s.%s.reply.%s" % [ev["id"], c, p], reply])
+
+
+# ---------- going to Irina ----------
+
+# What you can bring her today. Each choice carries its own task name for the button.
+func boss_visit(r) -> Dictionary:
+	var choices: Array = []
+	var labels := {}
+	var shows := 0
+	for t in r.tasks:
+		if shows < 2 and t["status"] == "done" and t["public"] and C.TEAM.has(t["owner"]) and r.day - t["done_day"] <= 5 and not t.get("shown", false) and (t["quality"] == "good" or t["quality"] == "ok"):
+			choices.append("show:%d" % t["uid"])
+			labels["show:%d" % t["uid"]] = {"task": "@taskname." + t["id"]}
+			shows += 1
+	for p in C.TEAM:
+		if r.flags.has("mention_" + p) and r.available(p):
+			choices.append("mention:" + p)
+			labels["mention:" + p] = {"who_gen": "@name.%s.gen" % p}
+	var risky := {}
+	var near := {}
+	for t in r.tasks:
+		if t["status"] != "active" or not C.TEAM.has(t["owner"]):
+			continue
+		var left: int = t["due"] - r.day
+		if t["public"] and not t["asked"] and left >= 0 and r.days_needed(t) > left + 0.3 and (risky.is_empty() or t["key"]):
+			risky = t
+		if not t["key"] and (near.is_empty() or t["due"] < near["due"]):
+			near = t
+	if not risky.is_empty():
+		for c in ["warn", "delay"]:
+			choices.append("%s:%d" % [c, risky["uid"]])
+			labels["%s:%d" % [c, risky["uid"]]] = {"task": "@taskname." + risky["id"]}
+	if not near.is_empty():
+		choices.append("contractor:%d" % near["uid"])
+		labels["contractor:%d" % near["uid"]] = {"task": "@taskname." + near["id"]}
+	if r.people["vika"]["promised"] and r.available("vika"):
+		choices.append("vika_promo")
+	choices.append("status")
+	choices.append("leave")
+	return {"id": "boss_visit", "who": "boss", "choice_names": labels,
+		"lines": [{"who": "boss", "key": "event.boss_visit.ask.w%d" % r._level_of(r.boss)}], "choices": choices}
+
+
+func _resolve_visit(r, ev: Dictionary, c: String, arg: String, names: Dictionary) -> String:
+	var t: Dictionary = r.task(int(arg)) if arg.is_valid_int() else {}
+	var reply := "event.boss_visit.%s.reply" % c
+	match c:
+		"show":
+			t["shown"] = true
+			r.events.push_front({"id": "boss_show", "who": "boss", "uid": t["uid"], "names": names,
+				"choice_names": {"with_owner": {"owner_acc": "@name.%s.acc" % t["owner"]}},
+				"lines": [{"who": "boss", "key": "event.boss_show.ask"}], "choices": ["alone", "with_owner"]})
+			return ""
+		"mention":
+			var p := arg
+			r.flags.erase("mention_" + p)
+			r.people[p]["trust"] += 1
+			r.people[p]["mood"] += 1.0
+			if p == "vika":
+				r.vika_up()
+		"warn":
+			t["asked"] = true
+			t["due"] += 1
+			r.boss += 0.5
+			r.weight_cause = t["id"]
+		"delay":
+			t["asked"] = true
+			if r.has_weight():
+				t["due"] += 2
+				r.boss -= 1.0
+				r.weight_cause = t["id"]
+			else:
+				reply = "event.boss_visit.delay.no"
+		"contractor":
+			r.hire_contractor(t["uid"])
+			return ""
+		"status":
+			# Keeping her in the loop is worth a little, once a week.
+			if not r.flags.has("status_w%d" % r.week()):
+				r.flags["status_w%d" % r.week()] = true
+				r.boss += 0.3
+			else:
+				reply = "event.boss_visit.status.again"
+		"vika_promo":
+			r.people["vika"]["promised"] = false
+			r.people["vika"]["trust"] += 1
+			r.people["vika"]["mood"] += 2.0
+			r.vika_up()
+	return reply
+
+
+func _resolve_show(r, ev: Dictionary, c: String) -> String:
+	var t: Dictionary = r.task(ev["uid"])
+	var p: String = t["owner"]
+	r.weight_cause = t["id"]
+	if c == "alone":
+		r.boss += 0.7
+		if not r.flags.has("credit_taken"):
+			r.flags["credit_taken"] = []
+		r.flags["credit_taken"].append({"uid": t["uid"], "owner": p, "day": r.day})
+		# Word gets around sometimes.
+		if r.available(p) and r.rng.randf() < 0.35:
+			r.people[p]["trust"] -= 1
+			r.people[p]["mood"] -= 1.0
+			r.say(p, "event.boss_show.heard", [], {"task": "@taskname." + t["id"]})
+	else:
+		r.boss += 0.25
+		r.people[p]["mood"] += 1.0
+		r.people[p]["trust"] += 1
+		if p == "vika" and t["key"]:
+			r.vika_up()
+	return "event.boss_show.%s.reply" % c
+
+
 func resolve(r, ev: Dictionary, choice: String) -> void:
 	var parts := choice.split(":")
 	var c: String = parts[0]
 	var arg: String = parts[1] if parts.size() > 1 else ""
 	var t: Dictionary = r.task(ev["uid"]) if ev["uid"] >= 0 else {}
 	var names: Dictionary = ev["names"].duplicate()
-	if arg != "":
+	if ev.has("choice_names"):
+		names.merge(ev["choice_names"].get(choice, {}), true)
+	elif arg != "":
 		names["who"] = "@name.%s.acc" % arg
 	r.history.append({"who": "you", "key": "event.%s.choice.%s" % [ev["id"], c], "args": [], "names": names, "day": r.day})
 	var who: String = ev["who"]
 	var reply := "event.%s.%s.reply" % [ev["id"], c]
+	var routed := ""
+	if ev["id"].begins_with("talk_"):
+		routed = _resolve_talk(r, ev, c, names)
+	elif ev["id"] == "boss_visit":
+		routed = _resolve_visit(r, ev, c, arg, names)
+	elif ev["id"] == "boss_show":
+		routed = _resolve_show(r, ev, c)
+	if ev["id"].begins_with("talk_") or ev["id"] == "boss_visit" or ev["id"] == "boss_show":
+		if routed != "":
+			r.say(who, routed, [], names)
+		for q in C.TEAM:
+			r.people[q]["mood"] = clampf(r.people[q]["mood"], -5.0, 5.0)
+		return
 	if ev.has("comp"):
 		_resolve_complication(r, ev, c, t, names)
 		who = ""

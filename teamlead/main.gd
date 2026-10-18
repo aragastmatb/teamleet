@@ -27,7 +27,6 @@ var ui: Control
 var selected := -1
 # Replies to your last action, shown in the bottom panel where you're looking.
 var feedback_from := -1
-var talk_with := ""
 
 
 func _ready() -> void:
@@ -60,7 +59,6 @@ func _fit_window() -> void:
 
 func _select(uid: int) -> void:
 	selected = -1 if selected == uid else uid
-	talk_with = ""
 	_render()
 
 
@@ -89,12 +87,6 @@ func _helper(p: String) -> void:
 	_render()
 
 
-func _contractor() -> void:
-	feedback_from = rules.history.size()
-	rules.hire_contractor(selected)
-	_clear_selection()
-
-
 func _accept_initiative(p: String) -> void:
 	feedback_from = rules.history.size()
 	rules.accept_initiative(p)
@@ -119,22 +111,22 @@ func _unassign() -> void:
 
 
 func _talk_to(p: String) -> void:
-	talk_with = p
-	selected = -1
+	feedback_from = rules.history.size()
+	_clear_selection()
+	rules.start_talk(p)
 	_render()
 
 
-func _talk(approach: String) -> void:
+func _visit_boss() -> void:
 	feedback_from = rules.history.size()
-	rules.one_on_one(talk_with, approach)
-	talk_with = ""
+	_clear_selection()
+	rules.visit_boss()
 	_render()
 
 
 func _end_day() -> void:
 	feedback_from = -1
 	_clear_selection()
-	talk_with = ""
 	rules.end_day()
 	_render()
 
@@ -189,6 +181,8 @@ func _render() -> void:
 		_build_title()
 		return
 	_build_office()
+	if rules.phase == "plan" and not rules.pending.is_empty():
+		_build_objection()
 	match rules.phase:
 		"event":
 			_build_event()
@@ -289,7 +283,7 @@ func _cost_mark() -> String:
 func _person_row(p: String) -> Control:
 	var st: Dictionary = rules.people[p]
 	var row := PanelContainer.new()
-	var highlight: bool = talk_with == p or rules.pending.get("p", "") == p
+	var highlight: bool = rules.pending.get("p", "") == p
 	row.add_theme_stylebox_override("panel", _box(COL_PANEL, COL_ACCENT if highlight else COL_PANEL_BORDER, 2 if highlight else 1, 8))
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
@@ -526,11 +520,7 @@ func _action_panel() -> Control:
 	var v := _vbox(8)
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(v)
-	if not rules.pending.is_empty():
-		_objection_actions(v)
-	elif talk_with != "":
-		_talk_actions(v)
-	elif selected >= 0 and not rules.task(selected).is_empty() and rules.task(selected)["status"] in ["inbox", "active"]:
+	if selected >= 0 and not rules.task(selected).is_empty() and rules.task(selected)["status"] in ["inbox", "active"]:
 		_task_actions(v, rules.task(selected))
 	else:
 		var replies := _feedback_lines()
@@ -538,6 +528,10 @@ func _action_panel() -> Control:
 			v.add_child(_label(line, 18, COL_TEXT, true))
 		if replies.is_empty():
 			v.add_child(_label(Loc.t("pick_task"), 16, COL_MUTED, true))
+		var visit := _button(Loc.t("visit_button") + _cost_mark(), _visit_boss, 0)
+		visit.disabled = rules.phase != "plan" or rules.visited_today
+		visit.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		v.add_child(visit)
 
 	var end := _button(Loc.t("end_day"), _end_day, 220, true)
 	end.disabled = rules.phase != "plan" or not rules.pending.is_empty()
@@ -575,7 +569,6 @@ func _task_actions(v: VBoxContainer, t: Dictionary) -> void:
 		who.add_child(b)
 	who.add_child(_button(Loc.t("myself"), _direct.bind("me"), 0))
 	who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
-	who.add_child(_button(Loc.t("contractor") + _cost_mark() + ("" if rules.has_weight() else " " + Loc.t("needs_weight")), _contractor, 0))
 	if t["status"] == "active":
 		who.add_child(_button(Loc.t("unassign"), _unassign, 0))
 		if C.TEAM.has(t["owner"]) and rules.queue_of(t["owner"])[0]["uid"] != t["uid"]:
@@ -610,7 +603,8 @@ func _feedback_lines() -> PackedStringArray:
 
 
 # Someone pushed back: their words, then how you answer.
-func _objection_actions(v: VBoxContainer) -> void:
+func _build_objection() -> void:
+	var v := _overlay(720)
 	var p: String = rules.pending["p"]
 	var t := rules.task(rules.pending["uid"])
 	v.add_child(_label(Loc.render("objection_title", [], {"who": Loc.person(p)}) + " · " + Loc.t("taskname." + t["id"]), 16, COL_ACCENT))
@@ -623,18 +617,6 @@ func _objection_actions(v: VBoxContainer) -> void:
 		row.add_child(_button(Loc.t("intent." + intent), _persuade.bind(intent), 0))
 	v.add_child(_label(Loc.t("objection_hint"), 12, COL_MUTED, true))
 
-
-func _talk_actions(v: VBoxContainer) -> void:
-	v.add_child(_label(Loc.t("talk_title", [Loc.person(talk_with)]), 18, COL_ACCENT))
-	var options := HFlowContainer.new()
-	options.add_theme_constant_override("h_separation", 6)
-	options.add_theme_constant_override("v_separation", 6)
-	v.add_child(options)
-	for approach in C.ONE_ON_ONE:
-		options.add_child(_button(Loc.t("talk." + approach), _talk.bind(approach), 0))
-
-
-# ---------- overlays ----------
 
 func _overlay(width: int) -> VBoxContainer:
 	var dim := ColorRect.new()
@@ -656,6 +638,10 @@ func _overlay(width: int) -> VBoxContainer:
 func _build_event() -> void:
 	var ev: Dictionary = rules.events[0]
 	var v := _overlay(700)
+	if ev["id"].begins_with("talk_"):
+		v.add_child(_label(Loc.render("talk_title", [], {"who": "@name.%s.ins" % ev["target"]}), 14, COL_ACCENT))
+	elif ev["id"].begins_with("boss_visit") or ev["id"] == "boss_show":
+		v.add_child(_label(Loc.t("visit_title"), 14, COL_ACCENT))
 	for line in ev["lines"]:
 		v.add_child(_label(Loc.person(line["who"]), 15, COL_MUTED))
 		v.add_child(_label(Loc.t("quote", [Loc.render(line["key"], [], ev["names"])]), 21, COL_TEXT, true))
@@ -663,13 +649,17 @@ func _build_event() -> void:
 	for choice in ev["choices"]:
 		var parts: PackedStringArray = choice.split(":")
 		var names: Dictionary = ev["names"].duplicate()
-		if parts.size() > 1:
+		if ev.has("choice_names"):
+			names.merge(ev["choice_names"].get(choice, {}), true)
+		elif parts.size() > 1:
 			names["who"] = "@name.%s.acc" % parts[1]
 		var text := Loc.render("event.%s.choice.%s" % [ev["id"], parts[0]], [], names)
 		if ev["id"] == "boss_dump" and choice == "refuse" and not rules.has_weight():
 			text += " " + Loc.t("needs_weight")
 		if rules.choice_costs(ev, choice):
 			text += _cost_mark()
+		if ev["id"] == "boss_visit" and (parts[0] == "delay" or parts[0] == "contractor") and not rules.has_weight():
+			text += " " + Loc.t("needs_weight")
 		v.add_child(_button(text, _event.bind(choice), 0))
 
 
