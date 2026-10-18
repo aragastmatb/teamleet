@@ -663,7 +663,7 @@ func _build_report() -> void:
 		var color := COL_DANGER if extra >= 6 else (COL_ACCENT if hours * 2 <= norm else COL_TEXT)
 		v.add_child(_label(line, 18, color, true))
 	var mine: int = rules.my_week_hours[w]
-	v.add_child(_label(Loc.render("report.me", [], {"hours": mine}), 18, COL_GOOD if mine < 8 else (COL_ACCENT if mine < 16 else COL_DANGER), true))
+	v.add_child(_label(Loc.render("report.me", [], {"hours": mine, "mgmt": rules.my_week_mgmt[w]}), 18, COL_GOOD if mine < 8 else (COL_ACCENT if mine < 16 else COL_DANGER), true))
 	var late := 0
 	for t in rules.tasks:
 		if t["late"] and int((t["late_day"] - 1) / 5.0) == w:

@@ -343,7 +343,7 @@ func _resolve_complication(r, ev: Dictionary, c: String, t: Dictionary, names: D
 	t["progress"] -= t["progress"] * fx.get("rework", 0.0)
 	t["blocked"] = maxi(t["blocked"], fx.get("block", 0))
 	if fx.get("hours", 0) > 0:
-		r.add_my_hours(fx["hours"])
+		r.add_mgmt_hours(fx["hours"])
 		t["involved"] = true
 	if fx.has("learn"):
 		r.learn(p, t["cat"], fx["learn"])
@@ -414,7 +414,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 
 		"marina_warns/listen":
 			r.people[ev["target"]]["mood"] += 1.5
-			r.add_my_hours(1)
+			r.add_mgmt_hours(1)
 		"marina_warns/dismiss":
 			r.boss -= 1
 			r.people[ev["target"]]["mood"] -= 1.0
@@ -496,7 +496,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			t["first"] = true
 
 		"dima_mistake/help":
-			r.add_my_hours(3)
+			r.add_mgmt_hours(3)
 			t["involved"] = true
 			t["q_sum"] += 1.2 * t["q_days"]
 			r.people["dima"]["mood"] += 1.0
@@ -525,7 +525,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.people["vika"]["mood"] -= 1.0
 			r.people["vika"]["trust"] += 1
 		"vika_promise_check/do_now":
-			r.add_my_hours(2)
+			r.add_mgmt_hours(2)
 			r.people["vika"]["promised"] = false
 			r.people["vika"]["mood"] += 2.0
 			r.people["vika"]["trust"] += 1

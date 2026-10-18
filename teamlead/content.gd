@@ -90,27 +90,28 @@ const TASKS := {
 }
 
 # Which tasks arrive on which morning. Ids can repeat (the weekly report, another outage).
+# Which tasks arrive on which morning. Each week carries about the same load with a mix of all four
+# kinds of work, and a day never brings two of the same kind. Ids can repeat (weekly report, outages).
 const SCHEDULE := {
-	1: ["client_report", "minutes", "weekly_report"],
-	2: ["integration", "corporate", "security_patch"],
-	3: ["onboarding", "okr", "ab_test"],
-	4: ["prod_fix", "pricing", "survey"],
-	5: ["new_feature", "angry_client", "vendor_contract"],
-	6: ["board_deck", "weekly_report", "legacy_export", "interviews"],
-	7: ["client_bug", "docs", "client_demo", "inventory"],
-	8: ["migration", "budget", "audit"],
-	9: ["perf_reviews"],
-	10: ["timesheets"],
-	11: ["weekly_report", "client_bug", "hiring_plan"],
-	12: ["data_cleanup", "survey"],
-	13: ["release", "timesheets"],
-	14: ["prod_fix", "partner_meeting", "office_move"],
-	15: ["quarter_report", "retro"],
-	16: ["weekly_report", "legacy_export"],
-	17: ["angry_client", "tax_report", "ab_test"],
-	18: ["security_patch", "interviews"],
+	1: ["client_report", "weekly_report", "integration"],
+	2: ["corporate", "security_patch"],
+	3: ["okr", "survey"],
+	4: ["prod_fix", "minutes"],
+	5: ["new_feature", "angry_client"],
+	6: ["board_deck", "weekly_report", "interviews"],
+	7: ["client_bug", "inventory"],
+	8: ["pricing", "onboarding"],
+	9: ["audit", "ab_test"],
+	10: ["timesheets", "partner_meeting"],
+	11: ["weekly_report", "migration", "hiring_plan"],
+	12: ["data_cleanup", "docs"],
+	13: ["legacy_export", "security_patch"],
+	14: ["prod_fix", "client_demo"],
+	15: ["quarter_report", "tax_report"],
+	16: ["weekly_report", "release", "budget"],
+	17: ["office_move", "angry_client"],
+	18: ["client_bug", "forecast", "retro"],
 	19: ["perf_reviews", "dashboard"],
-	20: ["inventory"],
 }
 
 # Things that happen inside a task while it's being worked on. Each comes up at most once per task.

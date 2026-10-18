@@ -49,6 +49,8 @@ var promoted := false
 var vika_standing := 0
 var hours := 0
 var my_week_hours := []
+# Hours you spent helping the team through their problems: managing, not doing.
+var my_week_mgmt := []
 # Marina's latest team survey: {"day", "quotes": [locale keys], "verdict": "for" / "wary" / "against"}.
 var survey := {}
 var quits := 0
@@ -101,6 +103,7 @@ func start_run(seed_value: int = -1) -> void:
 	vika_standing = 0
 	hours = 0
 	my_week_hours = _zeros()
+	my_week_mgmt = _zeros()
 	survey = {}
 	quits = 0
 	events.clear()
@@ -659,6 +662,10 @@ func _zeros() -> Array:
 	a.resize(C.WEEKS)
 	a.fill(0)
 	return a
+
+
+func add_mgmt_hours(n: int) -> void:
+	my_week_mgmt[week()] += n
 
 
 func add_my_hours(n: int) -> void:
@@ -1291,7 +1298,7 @@ func boss_word() -> String:
 
 
 func _level_of(w: float) -> int:
-	if w >= 4.0:
+	if w >= 4.5:
 		return 3
 	if w >= 1.0:
 		return 2
