@@ -57,6 +57,15 @@ var font_bold: Font
 # Scroll positions survive a re-render; the chat always jumps to the newest line.
 var scroll_memory := {}
 var scrolls := {}
+# Sound: one cue per change on screen, the most important one wins. CC0 sounds by Kenney, sounds/.
+const SOUNDS := ["click", "select", "assign", "message", "question", "day_end", "report", "weight_up", "weight_down", "trouble", "ending_good", "ending_bad"]
+const SETTINGS_PATH := "user://settings.cfg"
+var player: AudioStreamPlayer
+var streams := {}
+var sound_on := true
+var heard := 0
+var last_phase := "title"
+var cue := ""
 
 
 func _ready() -> void:
@@ -72,6 +81,14 @@ func _ready() -> void:
 	ui_theme.set_color("font_color", "TooltipLabel", COL_SURFACE)
 	theme = ui_theme
 	_fit_window()
+	player = AudioStreamPlayer.new()
+	player.volume_db = -6.0
+	add_child(player)
+	for name in SOUNDS:
+		streams[name] = load("res://sounds/%s.ogg" % name)
+	var settings := ConfigFile.new()
+	if settings.load(SETTINGS_PATH) == OK:
+		sound_on = settings.get_value("audio", "sound_on", true)
 	var bg := ColorRect.new()
 	bg.color = COL_BG
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -197,6 +214,59 @@ func _clear_selection() -> void:
 	_render()
 
 
+func _toggle_sound() -> void:
+	sound_on = not sound_on
+	var settings := ConfigFile.new()
+	settings.load(SETTINGS_PATH)
+	settings.set_value("audio", "sound_on", sound_on)
+	settings.save(SETTINGS_PATH)
+	_render()
+
+
+# What just happened, by what's new in the chat and where the game moved; the loudest thing wins.
+func _sound_for_changes() -> String:
+	if heard > rules.history.size():
+		heard = 0
+	var found := {}
+	for i in range(heard, rules.history.size()):
+		var e: Dictionary = rules.history[i]
+		var key: String = e["key"]
+		if key.begins_with("sick.") or key.begins_with("quit.") or key == "you.burnout":
+			found["trouble"] = true
+		elif key == "weight.up" or key == "weight.down":
+			found[key.replace(".", "_")] = true
+		elif key == "assign.say":
+			found["assign"] = true
+		elif e["who"] != "you" and e["who"] != "":
+			found["message"] = true
+	var grew := rules.history.size() > heard
+	heard = rules.history.size()
+	var phase: String = rules.phase
+	var moved := phase != last_phase
+	last_phase = phase
+	if moved and phase == "end":
+		return "ending_good" if rules.ending in ["leader", "puppeteer", "beloved"] else "ending_bad"
+	if moved and phase == "report":
+		return "report"
+	for name in ["trouble", "weight_down", "weight_up"]:
+		if found.has(name):
+			return name
+	if (grew or moved) and _waiting_for_answer():
+		return "question"
+	if moved and phase == "evening":
+		return "day_end"
+	for name in ["assign", "message"]:
+		if found.has(name):
+			return name
+	return cue
+
+
+func _play(name: String) -> void:
+	if sound_on and name != "" and streams.has(name):
+		player.stream = streams[name]
+		player.play()
+
+
 func _toggle_lang() -> void:
 	Loc.lang = "en" if Loc.lang == "ru" else "ru"
 	_render()
@@ -205,6 +275,9 @@ func _toggle_lang() -> void:
 # ---------- screens ----------
 
 func _render() -> void:
+	if rules.phase != "title":
+		_play(_sound_for_changes())
+	cue = ""
 	for key in scrolls:
 		if is_instance_valid(scrolls[key]):
 			scroll_memory[key] = scrolls[key].scroll_vertical
@@ -307,6 +380,7 @@ func _top_bar() -> Control:
 	top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": C.KEY_PROJECTS.size()}), 15, COL_ON_TOP))
 	var word := rules.boss_word()
 	top.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 15, BOSS_COLORS[word]))
+	top.add_child(_button(Loc.t("sound_on" if sound_on else "sound_off"), _toggle_sound, 0, "on_top"))
 	top.add_child(_button(Loc.t("lang_button"), _toggle_lang, 0, "on_top"))
 	return bar
 
@@ -604,6 +678,7 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 
 func _on_card_input(event: InputEvent, uid: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		cue = "select"
 		_select.call_deferred(uid)
 
 
@@ -1220,6 +1295,7 @@ func _button(text_value: String, action: Callable, min_width: int, look: String 
 	for state in ["font_color", "font_hover_color", "font_pressed_color"]:
 		b.add_theme_color_override(state, text_color)
 	b.add_theme_color_override("font_disabled_color", COL_PRIMARY if look == "chosen" else COL_FAINT)
+	b.pressed.connect(func(): cue = "click")
 	b.pressed.connect(action)
 	return b
 
