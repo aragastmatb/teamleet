@@ -1,6 +1,8 @@
 # TeamLeet — a team lead simulator
 
-Godot 4.6, Russian and English (switch in-game). No assets, all UI built in code. Run with F5.
+Godot 4.6, Russian and English (switch in-game). All UI built in code; the only assets are the Inter font (OFL, `fonts/`). Run with F5.
+
+Play in the browser: https://aragastmatb.github.io/teamleet/ — every push to `main` rebuilds it (`.github/workflows/pages.yml`, single-threaded web export so it runs without special server headers).
 
 A four-week probation as the new lead of a team of four. On day one Irina names three key projects; at the end comes an assessment that weighs results (mostly those projects) against an anonymous team survey Marina runs halfway and at the end. Tasks come from a shuffled deck each morning (key projects on fixed days); events add and remove cards. You assign them with a click and pair people up. You have three tokens of attention a day for managing — a one-on-one (they come with whatever's on their mind: exhaustion, a grievance, pride in their work, wanting to grow), dropping in on Irina (show a result alone or with whoever did it, warn about a slip, ask for a deadline move or a contractor), sitting with someone over their task, helping with a complication; past that you stay late and wear yourself out. Free people propose their own initiatives (tech debt, docs, automating the weekly report, studying, Vika's showcase), which change the decks or the people. People with a reason to refuse push back, and you pick how to talk them round: tell it straight, flatter, cite the boss, promise a breather, or insist. Flattery and citing the boss only work when true; a lie about the boss may come out that evening. Ending the day simulates the work: progress, quality, fatigue, mood and skill growth.
 

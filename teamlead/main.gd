@@ -61,13 +61,9 @@ var scrolls := {}
 
 func _ready() -> void:
 	Loc.lang = "ru" if OS.get_locale_language() == "ru" else "en"
-	var names := PackedStringArray(["Inter", "Helvetica Neue", "Segoe UI", "Roboto", "Arial"])
-	var regular := SystemFont.new()
-	regular.font_names = names
-	var bold := SystemFont.new()
-	bold.font_names = names
-	bold.font_weight = 700
-	font_bold = bold
+	# Bundled fonts: the web build has no system fonts.
+	var regular: Font = load("res://fonts/Inter-Regular.ttf")
+	font_bold = load("res://fonts/Inter-Bold.ttf")
 	var ui_theme := Theme.new()
 	ui_theme.default_font = regular
 	ui_theme.default_font_size = BASE_FONT
@@ -85,6 +81,8 @@ func _ready() -> void:
 
 # On Retina screens the window opens at physical pixels and looks tiny; scale it up to fit the screen.
 func _fit_window() -> void:
+	if OS.has_feature("web"):
+		return # the page sizes the canvas
 	var w := get_window()
 	var screen := w.current_screen
 	var hidpi := DisplayServer.screen_get_scale(screen)
