@@ -1090,7 +1090,8 @@ func _chat() -> Control:
 			last = ""
 			continue
 		var speaker: String = e["who"] + ">" + e.get("to", "")
-		if speaker != last:
+		# A new task always starts its own message, even from someone who was just talking.
+		if speaker != last or key.begins_with("task."):
 			list.add_child(_spacer(4))
 			list.add_child(_message_head(e))
 		last = speaker

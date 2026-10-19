@@ -79,6 +79,8 @@ var boss_type: String = C.DEFAULT_BOSS
 var style := {}
 var week_style := {}
 var events: Array[Dictionary] = []
+# The morning's cards, held back until the morning scenes are answered.
+var arriving: Array = []
 var review: Array[Dictionary] = []
 var flags := {}
 var ending := ""
@@ -165,8 +167,8 @@ func _start_day() -> void:
 		elif st["sick"] > 0:
 			st["sick"] -= 1
 			_say(p, "absent.sick")
-	for id in _arrivals():
-		add_task(id)
+	# Today's cards come in once the morning's questions are answered, so the chat reads in order.
+	arriving = _arrivals()
 	talked.clear()
 	offer_today.clear()
 	for p in C.TEAM:
@@ -182,7 +184,17 @@ func _start_day() -> void:
 		# Doing a task yourself takes most of your day.
 		attention = maxi(0, attention - 2)
 	_queue_events()
-	phase = "event" if not events.is_empty() else "plan"
+	if events.is_empty():
+		_deliver_arrivals()
+		phase = "plan"
+	else:
+		phase = "event"
+
+
+func _deliver_arrivals() -> void:
+	for id in arriving:
+		add_task(id)
+	arriving = []
 
 
 # This morning's work: the weekly report on Mondays (unless automated), key projects on their days,
@@ -272,6 +284,7 @@ func resolve_event(choice: String) -> void:
 	scenes.resolve(self, events.pop_front(), choice)
 	_weight_check()
 	if events.is_empty():
+		_deliver_arrivals()
 		phase = "plan"
 	else:
 		_say_event_lines()
