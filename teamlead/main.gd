@@ -133,6 +133,13 @@ func _sit() -> void:
 	_render()
 
 
+func _intervene() -> void:
+	var uid := selected
+	_clear_selection()
+	rules.intervene(uid)
+	_render()
+
+
 func _prioritize() -> void:
 	rules.prioritize(selected)
 	_render()
@@ -350,6 +357,7 @@ func _team_sidebar() -> Control:
 	var v := _vbox(8)
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_padded(v, 12, 12))
+	v.add_child(_me_card())
 	v.add_child(_section(Loc.t("team_header")))
 	for p in C.TEAM:
 		v.add_child(_person_card(p))
@@ -409,6 +417,29 @@ func _person_card(p: String) -> Control:
 	talk.disabled = not rules.can_talk(p)
 	talk.custom_minimum_size.y = 30
 	v.add_child(talk)
+	return card
+
+
+# You know your own strengths; they matter when you do the work or step into someone's.
+func _me_card() -> Control:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 10))
+	var v := _vbox(6)
+	card.add_child(v)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	v.add_child(head)
+	head.add_child(_avatar("me", 32))
+	var names := _vbox(0)
+	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(names)
+	names.add_child(_label(Loc.t("me_card"), 15, COL_TEXT, false, true))
+	names.add_child(_label(Loc.t("me_profile." + C.ME["profile"]), 12, COL_MUTED))
+	var skills := _flow(4, 4)
+	v.add_child(skills)
+	for cat in C.CATEGORIES:
+		var colors: Array = CAT_COLORS[cat]
+		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % C.ME["skills"][cat])], colors[0], colors[1]))
 	return card
 
 
@@ -634,7 +665,7 @@ func _task_detail(t: Dictionary) -> Control:
 		var b := _button(label, _pick.bind(p), 0, "chosen" if t["owner"] == p else "")
 		b.disabled = t["owner"] == p
 		who.add_child(b)
-	who.add_child(_button(Loc.t("myself"), _direct.bind("me"), 0))
+	who.add_child(_button("%s  ~%s" % [Loc.t("myself"), _days(rules.estimate(t, "me")["days"])], _direct.bind("me"), 0))
 	who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
 	if t["status"] == "active":
 		var acts := _flow(6, 6)
@@ -644,6 +675,10 @@ func _task_detail(t: Dictionary) -> Control:
 			acts.add_child(_button(Loc.t("prioritize"), _prioritize, 0, "subtle"))
 		if C.TEAM.has(t["owner"]) and not t["sit_today"]:
 			acts.add_child(_button(Loc.t("sit.button") + _cost_mark(), _sit, 0, "subtle"))
+		if C.TEAM.has(t["owner"]):
+			var step := _button(Loc.t("intervene_button") + _cost_mark(), _intervene, 0, "subtle")
+			step.disabled = not rules.can_intervene(t)
+			acts.add_child(step)
 	if t["status"] == "active" and C.TEAM.has(t["owner"]):
 		var pair := _flow(6, 6)
 		v.add_child(pair)
@@ -802,6 +837,8 @@ func _event_prompt(list: VBoxContainer, ev: Dictionary) -> void:
 		title = Loc.render("talk_title", [], {"who": "@name.%s.ins" % ev["target"]})
 	elif ev["id"].begins_with("boss_visit") or ev["id"] == "boss_show":
 		title = Loc.t("visit_title")
+	elif ev["id"] == "intervene":
+		title = Loc.render("intervene_title", [], ev["names"]) + " — " + Loc.person(ev["target"])
 	var v := _prompt_box(list, title)
 	for choice in ev["choices"]:
 		var parts: PackedStringArray = choice.split(":")

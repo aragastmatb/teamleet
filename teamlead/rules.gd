@@ -25,7 +25,6 @@ const SICK_DAYS := 2
 const QUIT_MOOD := -5.0
 const UNHAPPY_MOOD := -3.0
 const TIRED_ENERGY := 2.0
-const MY_SPEED := 1.0
 const MY_HOURS := 8
 const XP_BASE := 3.0
 const XP_PER_SKILL := 2.0
@@ -671,6 +670,36 @@ func sit_with(uid: int) -> void:
 		_say(p, "sit.ok")
 
 
+# Step into someone's task: ask how it's going and steer it (see scenes.gd intervene). Once a day per task.
+func intervene(uid: int) -> void:
+	var t := task(uid)
+	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("checked_day", 0) == day:
+		return
+	var p: String = t["owner"]
+	if not C.TEAM.has(p) or not available(p) or people[p]["absent"]:
+		return
+	t["checked_day"] = day
+	spend_attention()
+	history.append({"who": "you", "key": "intervene.open", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": p, "day": day})
+	_open_conversation(scenes.intervene_event(self, t))
+
+
+func can_intervene(t: Dictionary) -> bool:
+	return phase == "plan" and pending.is_empty() and t["status"] == "active" and C.TEAM.has(t["owner"]) and available(t["owner"]) \
+		and not people[t["owner"]]["absent"] and t.get("checked_day", 0) != day
+
+
+# You take it off their hands mid-way. Getting into someone else's half-done work loses half of it.
+func take_over(t: Dictionary) -> void:
+	t["progress"] *= 0.5
+	t["owner"] = "me"
+	t["helper"] = ""
+	t["first"] = false
+	t["involved"] = true
+	t["pace"] = 1.0
+	t["assigned_day"] = day
+
+
 # What a free person offers to do on their own, or "" if nothing (or they're busy).
 func initiative_offer(p: String) -> String:
 	if phase != "plan" or not offer_today.has(p) or not available(p) or people[p]["absent"] or not queue_of(p).is_empty():
@@ -952,6 +981,8 @@ func _speed(p: String, t: Dictionary) -> float:
 		s *= 1.0 + PUSH_SPEED
 	if leans("P"):
 		s *= 1.05
+	# Told to hurry or to take care when you stepped in.
+	s *= t.get("pace", 1.0)
 	var share: float = shares.get(t["uid"], 0.0)
 	if share > 0.0 and people.has(t["helper"]):
 		var hs: int = people[t["helper"]]["skills"][t["cat"]]
@@ -1005,7 +1036,7 @@ func estimate(t: Dictionary, p: String = "") -> Dictionary:
 	var who: String = p if p != "" else t["owner"]
 	var left: float = maxf(0.0, t["size"] - t["progress"])
 	if who == "me":
-		return {"days": left / MY_SPEED + t["blocked"], "sure": true}
+		return {"days": left / my_speed(t["cat"]) + t["blocked"], "sure": true}
 	var sure := true
 	var skill := 2
 	if C.TEAM.has(who) and people[who]["known"].has("skill." + t["cat"]):
@@ -1137,10 +1168,7 @@ func _learn(p: String, cat: String, amount: float) -> void:
 
 
 func _finish(p: String, t: Dictionary) -> void:
-	var avg: float = t["q_sum"] / maxf(0.01, t["q_days"]) + t["q_bonus"]
-	t["quality"] = "good" if avg >= GOOD_Q else ("ok" if avg >= OK_Q else ("weird" if avg >= WEIRD_Q else "poor"))
-	if t["flaw"] and (t["quality"] == "good" or t["quality"] == "ok"):
-		t["quality"] = "weird"
+	t["quality"] = _quality_of(t)
 	if t["id"].begins_with("init_"):
 		t["reviewed"] = true
 		_initiative_effect(t)
@@ -1171,6 +1199,22 @@ func _finish(p: String, t: Dictionary) -> void:
 	_reveal(p, "skill." + t["cat"])
 
 
+# How it turned out: the average over the days of work, plus whatever happened along the way.
+# A hidden flaw spoils it; a task cut down to the minimum can't come out better than "ok".
+func _quality_of(t: Dictionary) -> String:
+	var avg: float = t["q_sum"] / maxf(0.01, t["q_days"]) + t["q_bonus"]
+	var q := "good" if avg >= GOOD_Q else ("ok" if avg >= OK_Q else ("weird" if avg >= WEIRD_Q else "poor"))
+	if t["flaw"] and (q == "good" or q == "ok"):
+		q = "weird"
+	if t.get("cut", false) and q == "good":
+		q = "ok"
+	return q
+
+
+func my_speed(cat: String) -> float:
+	return SPEED_BASE + SPEED_PER_SKILL * C.ME["skills"][cat]
+
+
 func _result_line(p: String, id: String, quality: String) -> String:
 	for k in ["result.%s.%s.%s" % [p, id, quality], "result.%s.%s" % [p, quality]]:
 		if L.has_key(k):
@@ -1183,12 +1227,15 @@ func _work_myself() -> void:
 	if q.is_empty():
 		return
 	var t: Dictionary = q[0]
-	t["progress"] += MY_SPEED
+	var skill: int = C.ME["skills"][t["cat"]]
+	t["progress"] += my_speed(t["cat"])
+	t["q_sum"] += skill + rng.randf_range(-0.7, 0.7)
+	t["q_days"] += 1.0
 	add_my_hours(MY_HOURS)
 	if t["progress"] >= t["size"]:
 		t["status"] = "done"
 		t["done_day"] = day
-		t["quality"] = "good" if rng.randf() < 0.5 else "ok"
+		t["quality"] = _quality_of(t)
 		_narrate("result.mine", [], {"task": "@taskname." + t["id"]})
 
 

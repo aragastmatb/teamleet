@@ -26,6 +26,8 @@ const STYLE := {
 	"boss_show/alone": [["P", 0.5], ["I", -0.3]], "boss_show/with_owner": [["I", 0.5]],
 	"boss_dump/take": [["P", 0.3]], "boss_dump/refuse": [["E", 1.0]],
 	"boss_deadline/warn": [["A", 0.5]], "boss_deadline/yes": [["P", 0.3]],
+	"intervene/faster": [["P", 0.7]], "intervene/careful": [["A", 0.7]], "intervene/cut": [["E", 0.5]],
+	"intervene/my_way": [["P", 0.5], ["E", 0.3]], "intervene/take_over": [["P", 2.0]], "intervene/trust": [["I", 0.5]],
 }
 # Calls on complications, by what they do: push through, keep order, find another way, lean on people.
 const COMP_STYLE := {
@@ -542,6 +544,92 @@ func _resolve_talk(r, ev: Dictionary, c: String, names: Dictionary) -> String:
 	return r._first_key(["event.%s.%s.reply.%s" % [ev["id"], c, p], reply])
 
 
+# ---------- stepping into a task ----------
+
+# They tell you how it's going. Most say it straight; Alex won't admit he's behind until it's obvious.
+func intervene_event(r, t: Dictionary) -> Dictionary:
+	var p: String = t["owner"]
+	var state := "on_track"
+	if t["blocked"] > 0:
+		state = "blocked"
+	elif t["progress"] >= 0.75 * t["size"]:
+		state = "almost"
+	elif r.days_needed(t) > t["due"] - r.day + 1.3:
+		state = "behind"
+	var said := state
+	if state == "behind" and C.PEOPLE[p].get("workaholic", false) and r.days_needed(t) < t["due"] - r.day + 3.0:
+		said = "on_track"
+	return {"id": "intervene", "who": p, "target": p, "uid": t["uid"], "state": state, "names": task_names(r, t),
+		"lines": [{"who": p, "key": "event.intervene.ask." + said}],
+		"choices": ["trust", "faster", "careful", "cut", "my_way", "take_over"]}
+
+
+func _resolve_intervene(r, ev: Dictionary, c: String) -> String:
+	var t: Dictionary = r.task(ev["uid"])
+	var p: String = ev["target"]
+	var st: Dictionary = r.people[p]
+	var info: Dictionary = C.PEOPLE[p]
+	var reply := "event.intervene.%s.reply" % c
+	match c:
+		"trust":
+			# Fine when it is going well; when they're behind, nothing changes and you'll find out later.
+			if ev["state"] != "behind":
+				st["mood"] += 0.3
+				st["trust"] += 1 if info["drive"] == "craft" else 0
+		"faster":
+			t["pace"] = 1.3
+			t["q_bonus"] -= 0.6
+			if info["drive"] == "craft" or info["drive"] == "peace":
+				st["mood"] -= 1.0
+				reply = "event.intervene.faster.reply.unhappy"
+			else:
+				st["mood"] -= 0.3
+		"careful":
+			t["pace"] = 0.85
+			t["q_bonus"] += 0.6
+			if info["drive"] == "craft" or info["drive"] == "peace":
+				st["mood"] += 0.5
+		"cut":
+			t["size"] = maxf(t["progress"] + 0.3, t["size"] * 0.6)
+			t["cut"] = true
+			if t["from"] == "boss":
+				r.boss -= 0.3
+		"my_way":
+			# Your way only helps if you actually know this better than they do.
+			t["involved"] = true
+			var mine: int = C.ME["skills"][t["cat"]]
+			var theirs: int = st["skills"][t["cat"]]
+			if mine > theirs:
+				t["q_bonus"] += 0.8
+				r.learn(p, t["cat"], 1.0)
+				if info["drive"] == "craft" and theirs >= 3:
+					st["mood"] -= 0.7
+					reply = "event.intervene.my_way.right_proud"
+				else:
+					st["mood"] += 0.5 if info["drive"] == "growth" else 0.0
+					reply = "event.intervene.my_way.right"
+			else:
+				t["q_bonus"] -= 0.5
+				st["mood"] -= 1.0
+				st["trust"] -= 1
+				reply = "event.intervene.my_way.wrong"
+		"take_over":
+			# Some are glad to be rid of it, some feel you didn't trust them.
+			var swamped: bool = r._feels_tired(p) or r.queue_of(p).size() >= r.OVERLOAD_AT or ev["state"] == "behind"
+			r.take_over(t)
+			if swamped:
+				st["mood"] += 0.5
+				reply = "event.intervene.take_over.relief"
+			elif info["drive"] == "peace":
+				st["mood"] -= 0.3
+				reply = "event.intervene.take_over.calm"
+			else:
+				st["mood"] -= 1.5 if info.get("touchy", false) else 1.0
+				st["trust"] -= 1
+				reply = "event.intervene.take_over.hurt"
+	return r._first_key(["%s.%s" % [reply, p], reply])
+
+
 # ---------- going to Irina ----------
 
 # What you can bring her today. Each choice carries its own task name for the button.
@@ -676,7 +764,9 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 		routed = _resolve_visit(r, ev, c, arg, names)
 	elif ev["id"] == "boss_show":
 		routed = _resolve_show(r, ev, c)
-	if ev["id"].begins_with("talk_") or ev["id"] == "boss_visit" or ev["id"] == "boss_show":
+	elif ev["id"] == "intervene":
+		routed = _resolve_intervene(r, ev, c)
+	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene"]:
 		if routed != "":
 			r.say(who, routed, [], names)
 		for q in C.TEAM:

@@ -47,6 +47,10 @@ const BOSSES := {
 }
 const DEFAULT_BOSS := "A"
 
+# You, when you do the work yourself or step into someone's: a former engineer. Same 0..4 scale
+# as the team, and you know your own strengths. Picking a background comes later, with Irina.
+const ME := {"profile": "techie", "skills": {"tech": 3, "analytics": 2, "people": 1, "routine": 2}}
+
 # When someone pushes back on a task, you answer with an intent. Each motive takes each intent
 # differently (mood change on top of grudgingly accepting). Some intents only work when true:
 # flattery when they really are good at it, the boss when she really asked or will look.
