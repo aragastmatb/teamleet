@@ -10,11 +10,9 @@ const WEEKS := 4
 const DAYS := 20
 const REVIEW_DAYS := [5, 10, 15, 20]
 const SURVEY_DAYS := [10, 20]
-const KEY_PROJECTS := ["new_feature", "board_deck", "quarter_report"]
-const DUMPS := ["board_memo", "slides_fix", "vip_call", "competitor_brief"]
 
 const TEAM := ["alex", "vika", "dima", "gena"]
-const CATEGORIES := ["tech", "analytics", "people", "routine"]
+const CATEGORIES := ["pipelines", "infra", "portal", "support"]
 
 # skills 0..4 (each run jitters them by up to ±1). drive: what motivates them.
 # likes / hates: task categories that lift or sink their mood while they work on them.
@@ -24,13 +22,13 @@ const CATEGORIES := ["tech", "analytics", "people", "routine"]
 # Traits: workaholic (ignores tiredness until it drops them), guards_energy (says no early when tired),
 # needs_approval (only volunteers after praise), touchy (takes hits harder).
 const PEOPLE := {
-	"alex": {"skills": {"tech": 4, "analytics": 1, "people": 0, "routine": 2}, "drive": "craft", "likes": ["tech"], "hates": ["people"], "idle": 0.0, "stamina": 9,
+	"alex": {"skills": {"pipelines": 3, "infra": 4, "portal": 1, "support": 0}, "drive": "craft", "likes": ["infra"], "hates": ["support"], "idle": 0.0, "stamina": 9,
 		"paei": "P", "rest_at": 0.25, "initiative": 0.6, "workaholic": true},
-	"vika": {"skills": {"tech": 1, "analytics": 3, "people": 3, "routine": 0}, "drive": "visibility", "likes": ["analytics"], "hates": ["routine"], "idle": -0.6, "stamina": 8,
+	"vika": {"skills": {"pipelines": 1, "infra": 0, "portal": 2, "support": 3}, "drive": "visibility", "likes": ["portal"], "hates": ["infra"], "idle": -0.6, "stamina": 8,
 		"paei": "E", "rest_at": 0.35, "initiative": 0.7},
-	"dima": {"skills": {"tech": 1, "analytics": 0, "people": 1, "routine": 1}, "drive": "growth", "likes": [], "hates": [], "idle": -0.4, "stamina": 10, "fast_learner": true,
+	"dima": {"skills": {"pipelines": 1, "infra": 1, "portal": 2, "support": 1}, "drive": "growth", "likes": [], "hates": [], "idle": -0.4, "stamina": 10, "fast_learner": true,
 		"paei": "I", "rest_at": 0.5, "initiative": 0.6, "needs_approval": true, "touchy": true},
-	"gena": {"skills": {"tech": 2, "analytics": 0, "people": 1, "routine": 4}, "drive": "peace", "likes": ["routine"], "hates": ["people"], "idle": 0.3, "stamina": 7,
+	"gena": {"skills": {"pipelines": 4, "infra": 2, "portal": 0, "support": 1}, "drive": "peace", "likes": ["pipelines"], "hates": ["support"], "idle": 0.3, "stamina": 7,
 		"paei": "A", "rest_at": 0.75, "initiative": 0.35, "guards_energy": true},
 }
 
@@ -49,7 +47,7 @@ const DEFAULT_BOSS := "A"
 
 # You, when you do the work yourself or step into someone's: a former engineer. Same 0..4 scale
 # as the team, and you know your own strengths. Picking a background comes later, with Irina.
-const ME := {"profile": "techie", "skills": {"tech": 3, "analytics": 2, "people": 1, "routine": 2}}
+const ME := {"profile": "techie", "skills": {"pipelines": 3, "infra": 3, "portal": 2, "support": 1}}
 
 # When someone pushes back on a task, you answer with an intent. Each motive takes each intent
 # differently (mood change on top of grudgingly accepting). Some intents only work when true:
@@ -63,68 +61,62 @@ const INTENT_TASTE := {
 }
 
 
-# size: days of work for someone decent at it. due: days after arrival (0 = today). public: the boss will look at it.
-# There's more work than the team can do; something will slip, and the question is what.
-const TASKS := {
-	"client_report": {"cat": "analytics", "size": 3, "due": 4, "public": true, "from": "boss"},
-	"minutes": {"cat": "routine", "size": 1, "due": 2, "public": false, "from": "boss"},
-	"corporate": {"cat": "people", "size": 2, "due": 5, "public": false, "from": "marina"},
-	"weekly_report": {"cat": "routine", "size": 1, "due": 1, "public": true, "from": "boss"},
-	"integration": {"cat": "tech", "size": 2, "due": 5, "public": false, "from": "taras"},
-	"timesheets": {"cat": "routine", "size": 1, "due": 2, "public": false, "from": "marina"},
-	"security_patch": {"cat": "tech", "size": 1, "due": 2, "public": false, "from": "taras"},
-	"onboarding": {"cat": "people", "size": 2, "due": 3, "public": false, "from": "marina"},
-	"okr": {"cat": "analytics", "size": 2, "due": 3, "public": true, "from": "boss"},
-	"ab_test": {"cat": "analytics", "size": 1, "due": 2, "public": false, "from": "taras"},
-	"inventory": {"cat": "routine", "size": 1, "due": 2, "public": false, "from": "marina"},
-	"prod_fix": {"cat": "tech", "size": 1, "due": 1, "public": true, "from": "boss"},
-	"pricing": {"cat": "analytics", "size": 2, "due": 3, "public": true, "from": "boss"},
-	"newsletter": {"cat": "people", "size": 1, "due": 3, "public": false, "from": "marina"},
-	"survey": {"cat": "people", "size": 1, "due": 3, "public": false, "from": "marina"},
-	"new_feature": {"cat": "tech", "size": 3, "due": 5, "public": true, "from": "boss"},
-	"angry_client": {"cat": "people", "size": 1, "due": 1, "public": true, "from": "boss"},
-	"vendor_contract": {"cat": "routine", "size": 1, "due": 3, "public": false, "from": "boss"},
-	"board_deck": {"cat": "analytics", "size": 3, "due": 4, "public": true, "from": "boss"},
-	"legacy_export": {"cat": "routine", "size": 2, "due": 3, "public": false, "from": "boss"},
-	"forecast": {"cat": "analytics", "size": 1, "due": 3, "public": false, "from": "taras"},
-	"client_bug": {"cat": "tech", "size": 2, "due": 2, "public": true, "from": "boss"},
-	"docs": {"cat": "routine", "size": 1, "due": 3, "public": false, "from": "taras"},
-	"client_demo": {"cat": "people", "size": 2, "due": 3, "public": true, "from": "boss"},
-	"budget": {"cat": "analytics", "size": 2, "due": 2, "public": true, "from": "boss"},
-	"migration": {"cat": "tech", "size": 3, "due": 2, "public": false, "from": "taras"},
-	"interviews": {"cat": "people", "size": 2, "due": 3, "public": false, "from": "marina"},
-	"load_test": {"cat": "tech", "size": 2, "due": 3, "public": false, "from": "taras"},
-	"mentoring": {"cat": "people", "size": 1, "due": 1, "public": false, "from": "marina"},
-	"perf_reviews": {"cat": "people", "size": 1, "due": 1, "public": false, "from": "marina"},
-	"dashboard": {"cat": "analytics", "size": 1, "due": 3, "public": false, "from": "taras"},
-	"audit": {"cat": "routine", "size": 1, "due": 2, "public": true, "from": "boss"},
-	"hiring_plan": {"cat": "people", "size": 2, "due": 3, "public": false, "from": "marina"},
-	"data_cleanup": {"cat": "analytics", "size": 2, "due": 3, "public": false, "from": "taras"},
-	"release": {"cat": "tech", "size": 3, "due": 4, "public": true, "from": "boss"},
-	"partner_meeting": {"cat": "people", "size": 1, "due": 1, "public": true, "from": "boss"},
-	"office_move": {"cat": "routine", "size": 2, "due": 3, "public": false, "from": "marina"},
-	"quarter_report": {"cat": "analytics", "size": 3, "due": 4, "public": true, "from": "boss"},
-	"retro": {"cat": "people", "size": 1, "due": 2, "public": false, "from": "marina"},
-	"tax_report": {"cat": "routine", "size": 1, "due": 2, "public": false, "from": "boss"},
-	"client_followup": {"cat": "people", "size": 2, "due": 3, "public": true, "from": "boss"},
-	# Dropped on you by Irina outside the plan; you can try to refuse.
-	"board_memo": {"cat": "analytics", "size": 1, "due": 1, "public": true, "from": "boss"},
-	"slides_fix": {"cat": "routine", "size": 1, "due": 1, "public": true, "from": "boss"},
-	"vip_call": {"cat": "people", "size": 1, "due": 1, "public": true, "from": "boss"},
-	"competitor_brief": {"cat": "analytics", "size": 2, "due": 2, "public": true, "from": "boss"},
-}
+# The task deck lives in data/tasks.tsv, a table anyone can edit (Excel, Google Sheets, a text editor).
+# Columns: id, kind, category, from, size, due, public, copies, key_day, tags, name_ru, ask_ru, name_en, ask_en.
+# size: days of work for someone decent at it. due: days after arrival (0 = today). public: the boss will look.
+# kind: key (key project, arrives on key_day), weekly (Monday report), deck (shuffled, `copies` of it),
+# followup (a client coming back for more), dump (Irina drops it on you). tags: debt (fires that cleaning up
+# tech debt removes and neglect brings back), client (good work here brings the client back for more).
+const TASKS_PATH := "res://data/tasks.tsv"
+static var TASKS := {}
+static var DECK: Array = []
+static var KEY_DAYS := {}
+static var KEY_PROJECTS: Array = []
+static var DUMPS: Array = []
+static var TASK_TEXT := {"ru": {}, "en": {}}
 
-# Key projects arrive on fixed days; everything else comes from a shuffled deck, a few cards each
-# morning. Events add and remove cards: neglect adds trouble, improvements take it away, good work
-# brings more work.
-const KEY_DAYS := {5: "new_feature", 6: "board_deck", 15: "quarter_report"}
-const DECK := [
-	"client_report", "integration", "corporate", "security_patch", "security_patch", "okr", "survey",
-	"prod_fix", "prod_fix", "minutes", "angry_client", "angry_client", "interviews", "client_bug",
-	"client_bug", "inventory", "pricing", "onboarding", "audit", "ab_test", "timesheets", "partner_meeting",
-	"migration", "hiring_plan", "data_cleanup", "docs", "legacy_export", "client_demo", "tax_report",
-	"release", "budget", "office_move", "forecast", "retro", "perf_reviews", "dashboard",
-]
+
+static func _static_init() -> void:
+	var f := FileAccess.open(TASKS_PATH, FileAccess.READ)
+	if f == null:
+		push_error("Can't read " + TASKS_PATH)
+		return
+	var header := f.get_csv_line("\t")
+	while not f.eof_reached():
+		var cells := f.get_csv_line("\t")
+		if cells.size() < header.size() or cells[0].strip_edges() == "":
+			continue
+		var row := {}
+		for i in header.size():
+			row[header[i]] = cells[i].strip_edges()
+		var id: String = row["id"]
+		var tags: Array = Array(row["tags"].split(",", false)).map(func(x): return x.strip_edges())
+		TASKS[id] = {"cat": row["category"], "size": float(row["size"]), "due": int(row["due"]), "public": row["public"] == "1",
+			"from": row["from"], "kind": row["kind"], "tags": tags}
+		match row["kind"]:
+			"deck":
+				for i in maxi(1, int(row["copies"])):
+					DECK.append(id)
+			"key":
+				KEY_DAYS[int(row["key_day"])] = id
+				KEY_PROJECTS.append(id)
+			"dump":
+				DUMPS.append(id)
+		for lang in ["ru", "en"]:
+			TASK_TEXT[lang]["taskname." + id] = row["name_" + lang]
+			TASK_TEXT[lang]["task.%s.ask" % id] = row["ask_" + lang]
+
+
+# Cards of a kind or with a tag, e.g. the weekly report or the fires tech debt brings.
+static func tasks_with(field: String, value: String) -> Array:
+	var out: Array = []
+	for id in TASKS:
+		var info: Dictionary = TASKS[id]
+		if (field == "tag" and info["tags"].has(value)) or (field == "kind" and info["kind"] == value):
+			out.append(id)
+	return out
+
+
 # Size of work drawn each morning, roughly; a day never brings two cards of the same kind.
 const DAILY_LOAD := 3.4
 const ATTENTION := 3
@@ -138,11 +130,11 @@ const INITIATIVES := {
 	"gena": ["write_docs", "automate_report"],
 }
 const INIT_TASKS := {
-	"tech_debt": {"cat": "tech", "size": 2},
-	"automate_report": {"cat": "routine", "size": 2},
-	"showcase": {"cat": "analytics", "size": 1},
-	"self_study": {"cat": "tech", "size": 2},
-	"write_docs": {"cat": "routine", "size": 2},
+	"tech_debt": {"cat": "pipelines", "size": 2},
+	"automate_report": {"cat": "support", "size": 2},
+	"showcase": {"cat": "portal", "size": 1},
+	"self_study": {"cat": "infra", "size": 2},
+	"write_docs": {"cat": "pipelines", "size": 2},
 }
 
 # Things that happen inside a task while it's being worked on. Each comes up at most once per task.
@@ -153,40 +145,46 @@ const INIT_TASKS := {
 # check: owner skill needed; "pass" and "fail" hold the effects for each outcome.
 # Complications are drawn by weight; improvements set weights to zero.
 const COMPLICATIONS := {
-	"legacy_bug": {"cats": ["tech"], "who": "owner", "choices": {
+	"legacy_bug": {"cats": ["pipelines"], "who": "owner", "choices": {
 		"fix": {"check": 3, "pass": {"size": 0.5, "quality": 0.8}, "fail": {"size": 1.5, "quality": 0.3}},
 		"hack": {"quality": -1.0},
 		"together": {"hours": 3, "size": 0.5, "quality": 0.5, "learn": 1.0}}},
-	"needs_access": {"cats": ["tech"], "who": "owner", "choices": {
+	"needs_access": {"cats": ["infra", "pipelines"], "who": "owner", "choices": {
 		"ask_taras": {"special": "taras"},
 		"escalate": {"boss": -0.5, "special": "grudge"},
 		"wait": {"block": 1}}},
-	"scope_creep": {"cats": ["tech", "analytics", "people", "routine"], "who": "from", "choices": {
+	"scope_creep": {"cats": ["pipelines", "infra", "portal", "support"], "who": "from", "choices": {
 		"accept": {"size": 1.0, "special": "please_from"},
 		"deadline": {"size": 1.0, "due": 1},
 		"push_back": {"special": "annoy_from"}}},
-	"bad_data": {"cats": ["analytics"], "who": "owner", "choices": {
+	"bad_data": {"cats": ["pipelines"], "who": "owner", "choices": {
 		"clean": {"check": 3, "pass": {"size": 0.5, "quality": 0.6}, "fail": {"size": 1.5, "quality": 0.3}},
 		"as_is": {"quality": -1.0},
 		"together": {"hours": 2, "size": 0.5, "quality": 0.4, "learn": 1.0}}},
-	"client_changes": {"cats": ["analytics", "people"], "who": "owner", "choices": {
+	"client_changes": {"cats": ["infra", "support"], "who": "owner", "choices": {
 		"redo": {"rework": 0.4},
 		"negotiate": {"hours": 2, "special": "negotiate"},
 		"ignore": {"quality": -1.0}}},
-	"no_reply": {"cats": ["people"], "who": "owner", "choices": {
+	"no_reply": {"cats": ["support"], "who": "owner", "choices": {
 		"wait": {"block": 1},
 		"push": {"energy": -1.0, "mood": -0.5},
 		"you_call": {"hours": 2}}},
-	"conflict": {"cats": ["people"], "who": "owner", "choices": {
+	"conflict": {"cats": ["support"], "who": "owner", "choices": {
 		"owner_handles": {"check": 3, "pass": {"learn": 1.5, "mood": 0.5}, "fail": {"block": 1, "mood": -1.0}},
 		"mediate": {"hours": 2},
 		"escalate": {"block": 1}}},
-	"old_system": {"cats": ["routine"], "who": "owner", "choices": {
+	"old_system": {"cats": ["infra"], "who": "owner", "choices": {
 		"manual": {"size": 1.0, "mood": -0.5},
 		"ask_gena": {"special": "gena"},
 		"corners": {"quality": -0.8}}},
-	"missing_docs": {"cats": ["routine", "tech"], "who": "owner", "choices": {
+	"missing_docs": {"cats": ["portal", "infra"], "who": "owner", "choices": {
 		"dig": {"check": 2, "pass": {"size": 0.3, "learn": 1.0}, "fail": {"size": 1.0, "learn": 1.0}},
 		"together": {"hours": 2},
 		"corners": {"quality": -0.6}}},
+	# One user can't press a button and nothing shows up in the logs. Only digging finds it (a character
+	# in their name the old Python can't read); the obvious fixes change nothing.
+	"one_user_bug": {"cats": ["portal"], "who": "owner", "choices": {
+		"dig": {"check": 3, "pass": {"size": 0.3, "quality": 0.6, "learn": 1.0}, "fail": {"block": 1, "mood": -0.5}},
+		"restart": {"quality": -1.0},
+		"together": {"hours": 2, "size": 0.3, "quality": 0.5, "learn": 1.0}}},
 }

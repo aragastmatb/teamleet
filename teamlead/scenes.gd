@@ -26,6 +26,10 @@ const STYLE := {
 	"boss_show/alone": [["P", 0.5], ["I", -0.3]], "boss_show/with_owner": [["I", 0.5]],
 	"boss_dump/take": [["P", 0.3]], "boss_dump/refuse": [["E", 1.0]],
 	"boss_deadline/warn": [["A", 0.5]], "boss_deadline/yes": [["P", 0.3]],
+	"boris_drunk/take": [["P", 0.3]], "boris_drunk/irina": [["A", 0.5]], "boris_drunk/refuse": [["E", 0.5]],
+	"friday_deploy/allow": [["E", 0.3]], "friday_deploy/forbid": [["A", 0.7]], "friday_deploy/on_call": [["P", 0.5]],
+	"weekend_fire/own": [["A", 0.3], ["I", 0.3]], "weekend_fire/postmortem": [["A", 0.7]], "weekend_fire/blame": [["P", 0.3], ["I", -0.5]],
+	"chaos_meeting/all_go": [["I", 0.3]], "chaos_meeting/me_only": [["P", 0.3]], "chaos_meeting/later": [["A", 0.3]],
 	"intervene/faster": [["P", 0.7]], "intervene/careful": [["A", 0.7]], "intervene/cut": [["E", 0.5]],
 	"intervene/my_way": [["P", 0.5], ["E", 0.3]], "intervene/take_over": [["P", 2.0]], "intervene/trust": [["I", 0.5]],
 }
@@ -39,8 +43,8 @@ const COMP_STYLE := {
 
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
-	"probation", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
-	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow",
+	"probation", "weekend_fire", "chaos_meeting", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
+	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow", "boris_drunk", "friday_deploy",
 ]
 
 
@@ -64,6 +68,21 @@ func once(r, id: String) -> bool:
 		return false
 	r.flags["scene_" + id] = true
 	return true
+
+
+# Scenes add cards by tag (data/tasks.tsv), so the table can rename or replace them freely.
+func _add_tagged(r, tag: String) -> void:
+	for id in C.tasks_with("tag", tag).slice(0, 1):
+		r.add_task(id)
+
+
+# Who's best at this kind of work and here today (falls back to you).
+func _strongest(r, cat: String) -> String:
+	var best := "me"
+	for p in C.TEAM:
+		if here(r, p) and (best == "me" or r.people[p]["skills"][cat] > r.people[best]["skills"][cat]):
+			best = p
+	return best
 
 
 func task_names(r, t: Dictionary) -> Dictionary:
@@ -119,6 +138,50 @@ func _check_boss_dump(r) -> Dictionary:
 	r.flags["dumps_used"] = used
 	return {"who": "boss", "dump": id, "names": {"task": "@taskname." + id},
 		"lines": [{"who": "boss", "key": "event.boss_dump.ask"}], "choices": ["take", "refuse"]}
+
+
+# Boris from Regulatory Reporting bursts in after lunch, merry, having promised a bank something in your name.
+func _check_boris_drunk(r) -> Dictionary:
+	if r.day < 7 or r.rng.randf() > 0.3 or not once(r, "boris_drunk"):
+		return {}
+	return {"who": "boris", "lines": [{"who": "boris", "key": "event.boris_drunk.ask"}], "choices": ["take", "irina", "refuse"]}
+
+
+# Friday: Stas wants to ship tonight.
+func _check_friday_deploy(r) -> Dictionary:
+	if r.day % 5 != 0 or r.day < 5 or r.day >= C.DAYS or r.flags.has("no_friday_deploys") or r.flags.get("friday_asks", 0) >= 2 or r.rng.randf() > 0.6:
+		return {}
+	r.flags["friday_asks"] = r.flags.get("friday_asks", 0) + 1
+	return {"who": "stas", "lines": [{"who": "stas", "key": "event.friday_deploy.ask"}], "choices": ["allow", "forbid", "on_call"]}
+
+
+# Monday after a Friday deploy went wrong: someone spent the weekend fixing prod, and Irina wants to know.
+func _check_weekend_fire(r) -> Dictionary:
+	if not r.flags.has("weekend_fire") or r.day % 5 != 1:
+		return {}
+	var fixer: String = r.flags["weekend_fire"]
+	r.flags.erase("weekend_fire")
+	r.flags["last_fixer"] = fixer
+	var names := {}
+	if fixer == "me":
+		r.my_energy -= 2.0
+		r.my_week_hours[r.week()] += 8
+		names["who"] = "@you"
+	elif r.available(fixer):
+		r.people[fixer]["energy"] -= 3.0
+		r.people[fixer]["mood"] -= 1.0
+		r.people[fixer]["week_extra"][r.week()] += 8
+		names["who"] = "@name.%s.nom" % fixer
+	r.say("", "event.weekend_fire.story", [], names)
+	return {"who": "boss", "names": names, "lines": [{"who": "boss", "key": "event.weekend_fire.ask"}], "choices": ["own", "postmortem", "blame"]}
+
+
+# The chaotic Irina: rushes in mid-day and wants everyone in the meeting room, now.
+func _check_chaos_meeting(r) -> Dictionary:
+	if r.boss_type != "E" or r.day < 3 or r.flags.has("chaos_w%d" % r.week()) or r.rng.randf() > 0.35:
+		return {}
+	r.flags["chaos_w%d" % r.week()] = true
+	return {"who": "boss", "lines": [{"who": "boss", "key": "event.chaos_meeting.ask"}], "choices": ["all_go", "me_only", "later"]}
 
 
 # Taras shows how weight is made: by being the one who presents.
@@ -538,7 +601,7 @@ func _resolve_talk(r, ev: Dictionary, c: String, names: Dictionary) -> String:
 					if p == "vika":
 						r.vika_up()
 				"gift_growth":
-					r.learn(p, "tech", 1.5)
+					r.learn(p, "infra", 1.5)
 				"gift_peace":
 					r.flags["calm_" + p] = r.day + 4
 	return r._first_key(["event.%s.%s.reply.%s" % [ev["id"], c, p], reply])
@@ -550,7 +613,9 @@ func _resolve_talk(r, ev: Dictionary, c: String, names: Dictionary) -> String:
 func intervene_event(r, t: Dictionary) -> Dictionary:
 	var p: String = t["owner"]
 	var state := "on_track"
-	if t["blocked"] > 0:
+	if t.get("stuck", 0) > 0:
+		state = "stuck"
+	elif t["blocked"] > 0:
 		state = "blocked"
 	elif t["progress"] >= 0.75 * t["size"]:
 		state = "almost"
@@ -570,6 +635,10 @@ func _resolve_intervene(r, ev: Dictionary, c: String) -> String:
 	var st: Dictionary = r.people[p]
 	var info: Dictionary = C.PEOPLE[p]
 	var reply := "event.intervene.%s.reply" % c
+	# Any real question gets them out of the wrong place; a pat on the back doesn't.
+	if t.get("stuck", 0) > 0 and c != "trust":
+		t["stuck"] = 0
+		r.say(p, "event.intervene.unstuck", [], task_names(r, t))
 	match c:
 		"trust":
 			# Fine when it is going well; when they're behind, nothing changes and you'll find out later.
@@ -956,7 +1025,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 		"dima_bored/wait":
 			r.people["dima"]["mood"] -= 1.0
 		"dima_bored/study":
-			r.learn("dima", "tech", 2.0)
+			r.learn("dima", "pipelines", 2.0)
 			r.people["dima"]["mood"] += 0.5
 			r.say("dima", reply)
 			reply = "event.dima_bored.study.reply_gena"
@@ -967,11 +1036,61 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			st["absent"] = true
 			st["absent_reason"] = "taras"
 			st["mood"] += {"alex": 0.5, "vika": -0.5, "dima": 1.0, "gena": -1.5}[arg]
-			r.learn(arg, "tech", 2.0)
+			r.learn(arg, "pipelines", 2.0)
 			r.flags["taras_owes"] = true
 			r.say(arg, "event.taras_borrow.lent." + arg)
 		"taras_borrow/refuse":
 			r.flags["taras_grudge"] = true
+
+		"boris_drunk/take":
+			_add_tagged(r, "boris_promise")
+		"boris_drunk/irina":
+			r.spend_attention()
+			if r.has_weight():
+				r.boss += r.boss_like("A", 0.3)
+				reply = "event.boris_drunk.irina.ok"
+				who = "boss"
+			else:
+				_add_tagged(r, "boris_promise")
+				reply = "event.boris_drunk.irina.no"
+				who = "boss"
+		"boris_drunk/refuse":
+			r.boss -= 0.5
+
+		"friday_deploy/allow":
+			if r.rng.randf() < 0.5:
+				r.flags["weekend_fire"] = _strongest(r, "infra")
+		"friday_deploy/forbid":
+			r.flags["no_friday_deploys"] = true
+		"friday_deploy/on_call":
+			r.spend_attention()
+			if r.rng.randf() < 0.25:
+				r.flags["weekend_fire"] = "me"
+
+		"weekend_fire/own":
+			# You take it on yourself; whoever spent the weekend fixing it remembers.
+			r.boss -= 0.3
+			var fixer: String = r.flags.get("last_fixer", "")
+			if C.TEAM.has(fixer) and r.available(fixer):
+				r.people[fixer]["trust"] += 1
+		"weekend_fire/postmortem":
+			for id in C.tasks_with("tag", "postmortem").slice(0, 1):
+				r.add_task(id)
+			r.boss += r.boss_like("A", 0.3)
+		"weekend_fire/blame":
+			r.boss += 0.2
+
+		"chaos_meeting/all_go":
+			r.flags["meeting_day"] = r.day
+			r.boss += 0.3
+			for q in C.TEAM:
+				if r.available(q):
+					r.people[q]["mood"] -= 0.3
+		"chaos_meeting/me_only":
+			r.spend_attention()
+			r.boss -= 0.2
+		"chaos_meeting/later":
+			r.boss -= 0.4
 	for p in C.TEAM:
 		r.people[p]["mood"] = clampf(r.people[p]["mood"], -5.0, 5.0)
 	if who != "":

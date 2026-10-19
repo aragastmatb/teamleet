@@ -32,6 +32,10 @@ const PUSH_DAYS := 2
 const PUSH_SPEED := 0.2
 # Below this much leaning overall you haven't really led at all (Adizes' "deadwood").
 const STYLE_MIN := 6.0
+# Getting stuck on a new task: chance on its first day, by how sure they are of it, and days until they see it.
+const STUCK_CHANCE_WEAK := 0.3
+const STUCK_CHANCE := 0.15
+const STUCK_DAYS := 3
 
 var rng := RandomNumberGenerator.new()
 var scenes := Scenes.new()
@@ -186,7 +190,7 @@ func _start_day() -> void:
 func _arrivals() -> Array:
 	var out: Array = []
 	if day % 5 == 1 and not flags.has("automated_report"):
-		out.append("weekly_report")
+		out.append_array(C.tasks_with("kind", "weekly"))
 	if C.KEY_DAYS.has(day):
 		out.append(C.KEY_DAYS[day])
 	var load := 0.0
@@ -221,8 +225,7 @@ func _arrivals() -> Array:
 func _refill_deck() -> void:
 	var fresh: Array = C.DECK.duplicate()
 	if flags.has("tech_debt_done"):
-		fresh.erase("prod_fix")
-		fresh.erase("client_bug")
+		fresh = fresh.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
 	for i in range(fresh.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
 		var tmp = fresh[i]
@@ -469,10 +472,10 @@ func _accept(p: String, t: Dictionary, delta: float, reply: String) -> void:
 		delta *= 1.3
 	var terms_line := ""
 	if p == "alex" and flags.has("alex_terms"):
-		if t["cat"] == "people":
+		if t["cat"] == "support":
 			delta -= 1.0
 			terms_line = "alex.terms_broken"
-		elif t["cat"] == "tech":
+		elif t["cat"] == "infra":
 			delta += 0.5
 	st["mood"] = clampf(st["mood"] + delta, -5.0, 5.0)
 	if reply == "":
@@ -746,15 +749,14 @@ func _initiative_effect(t: Dictionary) -> void:
 		"tech_debt":
 			flags["tech_debt_done"] = true
 			comp_off["legacy_bug"] = true
-			for card in ["prod_fix", "client_bug"]:
-				deck.erase(card)
+			deck = deck.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
 		"automate_report":
 			flags["automated_report"] = true
 		"showcase":
 			vika_up()
 		"self_study":
-			var weakest := "tech"
-			for cat in ["tech", "analytics", "people"]:
+			var weakest: String = C.CATEGORIES[0]
+			for cat in C.CATEGORIES:
 				if people[t["owner"]]["skills"][cat] < people[t["owner"]]["skills"][weakest]:
 					weakest = cat
 			learn(t["owner"], weakest, 4.0)
@@ -858,7 +860,9 @@ func _end_of_my_day() -> void:
 		_narrate("you.burnout")
 	# Untouched tech debt makes itself felt: each Friday another outage goes into the deck.
 	if day % 5 == 0 and day < C.DAYS and not flags.has("tech_debt_done"):
-		deck.insert(mini(2, deck.size()), "prod_fix")
+		var fires := C.tasks_with("tag", "debt")
+		if not fires.is_empty():
+			deck.insert(mini(2, deck.size()), fires[rng.randi() % fires.size()])
 		_narrate("deck.neglect_tech")
 
 
@@ -1076,11 +1080,13 @@ func _work(p: String) -> void:
 	var q := queue_of(p)
 	var helping := _helping_task(p)
 	var help_part: float = shares.get(helping["uid"], 0.0) if not helping.is_empty() else 0.0
+	# Half the day went on the boss's urgent meeting.
+	var meeting: float = 0.5 if flags.get("meeting_day", -1) == day else 1.0
 	if not q.is_empty():
 		# The day is spent down the queue: whatever's left after finishing one task goes to the next.
 		# Half of it goes to the pair if they're helping someone.
 		var first: Dictionary = q[0]
-		var time := 1.0 - help_part
+		var time := (1.0 - help_part) * meeting
 		var stuck: Array = []
 		for t in q:
 			if time < 0.05:
@@ -1089,6 +1095,9 @@ func _work(p: String) -> void:
 				stuck.append(t)
 				continue
 			var skill: int = st["skills"][t["cat"]]
+			if _stuck_today(p, t, skill):
+				time = 0.0
+				continue
 			var step := _speed(p, t) * (1.2 if t["sit_today"] else 1.0)
 			var spend := minf(time, (t["size"] - t["progress"]) / step)
 			time -= spend
@@ -1153,6 +1162,31 @@ func _work(p: String) -> void:
 	st["mood"] = clampf(st["mood"], -5.0, 5.0)
 
 
+# Looking in the wrong place: on the first day of a task someone unsure of it may get stuck. The day goes
+# by with nothing to show, and they say they're working on it. Someone stronger sitting with them, or
+# stepping in and asking, gets them out; on their own they find it after a few days.
+func _stuck_today(p: String, t: Dictionary, skill: int) -> bool:
+	var names := {"who": "@name.%s.nom" % p, "task": "@taskname." + t["id"]}
+	if t["q_days"] == 0.0 and not t.has("stuck"):
+		t["stuck"] = 0
+		if rng.randf() < (STUCK_CHANCE_WEAK if skill <= 1 else (STUCK_CHANCE if skill == 2 else 0.0)):
+			t["stuck"] = 1
+	if t.get("stuck", 0) <= 0:
+		return false
+	var h: String = t["helper"]
+	if t["sit_today"] or (shares.get(t["uid"], 0.0) > 0.0 and people.has(h) and people[h]["skills"][t["cat"]] > skill):
+		t["stuck"] = 0
+		_narrate("stuck.found_help", [], names)
+		return false
+	t["stuck"] += 1
+	if t["stuck"] > STUCK_DAYS:
+		t["stuck"] = 0
+		_narrate("stuck.found_self", [], names)
+	else:
+		_narrate("pace.stuck", [], names)
+	return true
+
+
 func _learn(p: String, cat: String, amount: float) -> void:
 	var st: Dictionary = people[p]
 	if C.PEOPLE[p].get("fast_learner", false):
@@ -1173,9 +1207,10 @@ func _finish(p: String, t: Dictionary) -> void:
 		t["reviewed"] = true
 		_initiative_effect(t)
 	# A client who liked the work comes back with more.
-	if ["client_report", "client_demo", "angry_client", "new_feature", "partner_meeting"].has(t["id"]) and t["quality"] == "good" and flags.get("followups", 0) < 2:
+	var followups := C.tasks_with("kind", "followup")
+	if C.TASKS.get(t["id"], {}).get("tags", []).has("client") and t["quality"] == "good" and flags.get("followups", 0) < 2 and not followups.is_empty():
 		flags["followups"] = flags.get("followups", 0) + 1
-		deck.insert(mini(rng.randi_range(0, 3), deck.size()), "client_followup")
+		deck.insert(mini(rng.randi_range(0, 3), deck.size()), followups[0])
 		_narrate("deck.followup", [], {"task": "@taskname." + t["id"]})
 	if t["public"] and (t["quality"] == "good" or t["quality"] == "ok") and day <= t["due"]:
 		merit += 0.5
@@ -1340,7 +1375,8 @@ func _build_review() -> void:
 	# A lead who does the work instead of leading isn't what she hired.
 	if my_week_hours[w] >= 16:
 		boss -= 1.0
-		_say("boss", "review.boss.workaholic", [], {"hours": my_week_hours[w]})
+		# The chaotic one somehow never notices you were there all week.
+		_say("boss", "review.boss.workaholic.E" if boss_type == "E" else "review.boss.workaholic", [], {"hours": my_week_hours[w]})
 	if not review.is_empty():
 		_ask_review()
 

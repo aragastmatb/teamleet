@@ -43,15 +43,15 @@ const ENERGY_COLORS := {"fresh": COL_GOOD, "ok": COL_MUTED, "tired": COL_WARN, "
 const BOSS_COLORS := {"w3": COL_ON_TOP_GOOD, "w2": COL_ON_TOP_GOOD, "w1": COL_ON_TOP, "w0": COL_ON_TOP_DANGER}
 # Category labels: text colour and fill, like tracker labels.
 const CAT_COLORS := {
-	"tech": [Color("0747a6"), Color("deebff")],
-	"analytics": [Color("403294"), Color("eae6ff")],
-	"people": [Color("a3195b"), Color("ffe3f1")],
-	"routine": [Color("006644"), Color("e3fcef")],
+	"pipelines": [Color("006644"), Color("e3fcef")],
+	"infra": [Color("0747a6"), Color("deebff")],
+	"portal": [Color("403294"), Color("eae6ff")],
+	"support": [Color("a3195b"), Color("ffe3f1")],
 }
 const AVATAR_COLORS := {
 	"alex": Color("0065ff"), "vika": Color("ff5630"), "gena": Color("36b37e"), "dima": Color("6554c0"),
 	"boss": Color("253858"), "marina": Color("00a3bf"), "taras": Color("ff8b00"), "me": Color("0747a6"),
-	"contractor": Color("7a869a"),
+	"contractor": Color("7a869a"), "stas": Color("de350b"), "olga": Color("8777d9"), "boris": Color("5e6c84"),
 }
 
 var rules := Rules.new()
