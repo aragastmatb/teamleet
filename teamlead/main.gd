@@ -60,8 +60,9 @@ var scrolls := {}
 # Sound: one cue per change on screen, the most important one wins. CC0 sounds by Kenney, sounds/.
 const SOUNDS := ["click", "select", "assign", "message", "question", "day_end", "report", "weight_up", "weight_down", "trouble", "ending_good", "ending_bad"]
 const SETTINGS_PATH := "user://settings.cfg"
-var player: AudioStreamPlayer
-var streams := {}
+# One player per sound, each with its stream set once: the web build plays sounds as samples and
+# doesn't pick up a stream swapped on a player that's already been used.
+var players := {}
 var sound_on := true
 var heard := 0
 var last_phase := "title"
@@ -81,11 +82,11 @@ func _ready() -> void:
 	ui_theme.set_color("font_color", "TooltipLabel", COL_SURFACE)
 	theme = ui_theme
 	_fit_window()
-	player = AudioStreamPlayer.new()
-	player.volume_db = -6.0
-	add_child(player)
 	for name in SOUNDS:
-		streams[name] = load("res://sounds/%s.ogg" % name)
+		var p := AudioStreamPlayer.new()
+		p.stream = load("res://sounds/%s.ogg" % name)
+		add_child(p)
+		players[name] = p
 	var settings := ConfigFile.new()
 	if settings.load(SETTINGS_PATH) == OK:
 		sound_on = settings.get_value("audio", "sound_on", true)
@@ -262,9 +263,8 @@ func _sound_for_changes() -> String:
 
 
 func _play(name: String) -> void:
-	if sound_on and name != "" and streams.has(name):
-		player.stream = streams[name]
-		player.play()
+	if sound_on and players.has(name):
+		players[name].play()
 
 
 func _toggle_lang() -> void:
