@@ -11,6 +11,10 @@ const BASE_FONT := 15
 const SIDEBAR_W := 250
 const CHAT_W := 350
 const TOP_H := 50
+# Base sizes the screen is laid out for: a landscape desktop, or a phone held upright.
+const DESKTOP_SIZE := Vector2i(1280, 800)
+const PHONE_SIZE := Vector2i(430, 860)
+const PHONE_TOP_H := 64
 
 const COL_BG := Color("f4f5f7")
 const COL_SURFACE := Color("ffffff")
@@ -67,6 +71,14 @@ var sound_on := true
 var heard := 0
 var last_phase := "title"
 var cue := ""
+# Phone layout: one screen at a time (board, team or chat) with tabs at the bottom.
+var mobile := false
+var tab := "board"
+var tab_before_chat := "board"
+var lane := "inbox"
+var chat_read := 0
+var was_waiting := false
+var press_pos := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -90,6 +102,8 @@ func _ready() -> void:
 	var settings := ConfigFile.new()
 	if settings.load(SETTINGS_PATH) == OK:
 		sound_on = settings.get_value("audio", "sound_on", true)
+	_apply_layout_mode()
+	get_viewport().size_changed.connect(_on_resize)
 	var bg := ColorRect.new()
 	bg.color = COL_BG
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -109,6 +123,34 @@ func _fit_window() -> void:
 	var fit: float = minf(1.0, minf(usable.x * 0.95 / target.x, usable.y * 0.9 / target.y))
 	w.size = Vector2i(target * fit)
 	w.move_to_center()
+
+
+# An upright window (a phone) gets the phone layout; the base size changes with it so text stays readable.
+func _apply_layout_mode() -> bool:
+	var size := get_window().size
+	var phone := size.x < size.y
+	if phone == mobile and get_window().content_scale_size == (PHONE_SIZE if phone else DESKTOP_SIZE):
+		return false
+	mobile = phone
+	get_window().content_scale_size = PHONE_SIZE if phone else DESKTOP_SIZE
+	return true
+
+
+func _on_resize() -> void:
+	if _apply_layout_mode() and ui:
+		_render()
+
+
+func _go_tab(name: String) -> void:
+	tab = name
+	if name != "board":
+		selected = -1
+	_render()
+
+
+func _pick_lane(name: String) -> void:
+	lane = name
+	_render()
 
 
 # ---------- actions ----------
@@ -290,16 +332,31 @@ func _render() -> void:
 	add_child(ui)
 	if rules.phase == "title":
 		_build_title()
+		_let_touches_through(ui)
 		return
-	_build_office()
-	if _waiting_for_answer():
-		_block_board()
+	if mobile:
+		_build_phone()
+	else:
+		_build_office()
+		if _waiting_for_answer():
+			_block_board()
 	match rules.phase:
 		"report":
 			_build_report()
 		"end":
 			_build_end()
+	_let_touches_through(ui)
 	_restore_scrolls()
+
+
+# Panels, buttons and rich text stop presses by default, so a finger that lands on them can't scroll
+# the list they're in. Let presses through to the scroll container; a button whose press turns into
+# a scroll cancels itself (Godot sends it NOTIFICATION_SCROLL_BEGIN).
+func _let_touches_through(node: Node) -> void:
+	for child in node.get_children():
+		if (child is PanelContainer or child is BaseButton or child is RichTextLabel) and child.mouse_filter == Control.MOUSE_FILTER_STOP:
+			child.mouse_filter = Control.MOUSE_FILTER_PASS
+		_let_touches_through(child)
 
 
 # The chat holds a question you have to answer before anything else happens.
@@ -315,7 +372,7 @@ func _build_title() -> void:
 	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 32))
 	center.add_child(card)
 	var v := _vbox(16)
-	v.custom_minimum_size.x = 860
+	v.custom_minimum_size.x = mini(860, int(_view_width()) - 80)
 	card.add_child(v)
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 12)
@@ -325,7 +382,7 @@ func _build_title() -> void:
 	v.add_child(_label(Loc.t("tagline"), 19, COL_MUTED, true))
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.custom_minimum_size.y = 380
+	scroll.custom_minimum_size.y = 460 if mobile else 380
 	v.add_child(scroll)
 	var text := RichTextLabel.new()
 	text.bbcode_enabled = true
@@ -340,8 +397,8 @@ func _build_title() -> void:
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 12)
 	v.add_child(buttons)
-	buttons.add_child(_button(Loc.t("start"), _start_run, 260, "primary"))
-	buttons.add_child(_button(Loc.t("lang_button"), _toggle_lang, 140))
+	buttons.add_child(_button(Loc.t("start"), _start_run, 160 if mobile else 260, "primary"))
+	buttons.add_child(_button(Loc.t("lang_button"), _toggle_lang, 110 if mobile else 140))
 
 
 func _build_office() -> void:
@@ -419,7 +476,8 @@ func _cost_mark() -> String:
 
 func _team_sidebar() -> Control:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = SIDEBAR_W
+	panel.custom_minimum_size.x = 0 if mobile else SIDEBAR_W
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL if mobile else Control.SIZE_FILL
 	var style := _flat(COL_SURFACE)
 	style.border_color = COL_BORDER
 	style.border_width_right = 1
@@ -436,6 +494,15 @@ func _team_sidebar() -> Control:
 	v.add_child(_spacer(4))
 	v.add_child(_section(Loc.t("boss_header")))
 	v.add_child(_boss_card())
+	if mobile:
+		# On the phone the top bar has no room for these.
+		v.add_child(_spacer(4))
+		v.add_child(_section(Loc.t("settings_header")))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		v.add_child(row)
+		row.add_child(_button(Loc.t("sound_on" if sound_on else "sound_off"), _toggle_sound, 0))
+		row.add_child(_button(Loc.t("lang_button"), _toggle_lang, 0))
 	return panel
 
 
@@ -676,10 +743,14 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 	return card
 
 
+# A card is picked on release, and only if the finger didn't move: dragging scrolls the list instead.
 func _on_card_input(event: InputEvent, uid: int) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		cue = "select"
-		_select.call_deferred(uid)
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			press_pos = event.global_position
+		elif event.global_position.distance_to(press_pos) < 12.0:
+			cue = "select"
+			_select.call_deferred(uid)
 
 
 func _due_text(t: Dictionary) -> String:
@@ -795,11 +866,186 @@ func _block_board() -> void:
 	center.add_child(pill)
 
 
+# ---------- the phone layout ----------
+
+func _view_width() -> float:
+	return get_viewport().get_visible_rect().size.x
+
+
+# One screen at a time. When someone needs an answer the chat opens by itself, and the game
+# goes back to where you were once you've answered.
+func _build_phone() -> void:
+	var waiting := _waiting_for_answer() or rules.phase == "evening"
+	if waiting and not was_waiting and tab != "chat":
+		tab_before_chat = tab
+		tab = "chat"
+	elif not waiting and was_waiting and tab == "chat":
+		tab = tab_before_chat
+	was_waiting = waiting
+	if tab == "chat":
+		chat_read = rules.history.size()
+	var v := _vbox(0)
+	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(v)
+	v.add_child(_phone_top())
+	var body: Control
+	match tab:
+		"team":
+			body = _team_sidebar()
+		"chat":
+			body = _chat()
+		_:
+			body = _phone_board()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(body)
+	v.add_child(_phone_tabs())
+	if tab == "board" and selected >= 0 and rules.phase == "plan":
+		var t := rules.task(selected)
+		if not t.is_empty() and t["status"] in ["inbox", "active"]:
+			_task_sheet(t)
+	if _waiting_for_answer() and tab != "chat":
+		_phone_block()
+
+
+func _phone_top() -> Control:
+	var bar := PanelContainer.new()
+	bar.custom_minimum_size.y = PHONE_TOP_H
+	var style := _box(COL_TOPBAR, COL_TOPBAR, 0, 0)
+	style.set_corner_radius_all(0)
+	style.content_margin_left = 12
+	style.content_margin_right = 12
+	style.content_margin_top = 6
+	style.content_margin_bottom = 6
+	bar.add_theme_stylebox_override("panel", style)
+	var v := _vbox(2)
+	bar.add_child(v)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	v.add_child(row)
+	row.add_child(_logo(22))
+	var day := _label(Loc.t("day.%d" % rules.day), 15, COL_ON_TOP, false, true)
+	day.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(day)
+	var k := rules.key_status()
+	row.add_child(_label(Loc.render("keys_short", [], {"good": k["good"], "total": C.KEY_PROJECTS.size()}), 15, COL_ON_TOP))
+	var info := _flow(12, 0)
+	v.add_child(info)
+	info.add_child(_label(_attention_text(), 13, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
+	var word := rules.boss_word()
+	info.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 13, BOSS_COLORS[word]))
+	return bar
+
+
+func _phone_tabs() -> Control:
+	var bar := PanelContainer.new()
+	var style := _flat(COL_SURFACE)
+	style.border_color = COL_BORDER
+	style.border_width_top = 1
+	style.content_margin_left = 6
+	style.content_margin_right = 6
+	style.content_margin_top = 6
+	style.content_margin_bottom = 10
+	bar.add_theme_stylebox_override("panel", style)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	bar.add_child(row)
+	var unread := 0
+	for i in range(chat_read, rules.history.size()):
+		if rules.history[i]["who"] != "you":
+			unread += 1
+	for name in ["board", "team", "chat"]:
+		var text := Loc.t("tab." + name)
+		if name == "chat" and unread > 0 and tab != "chat":
+			text += " (%d)" % unread
+		var b := _button(text, _go_tab.bind(name), 0, "chosen" if tab == name else "subtle")
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(b)
+	return bar
+
+
+func _phone_board() -> Control:
+	var v := _vbox(8)
+	var lanes := _lanes()
+	var switcher := HBoxContainer.new()
+	switcher.add_theme_constant_override("separation", 4)
+	v.add_child(switcher)
+	for name in ["inbox", "queued", "active", "done"]:
+		var b := _button("%s %d" % [Loc.t("col_short." + name), lanes[name].size()], _pick_lane.bind(name), 0, "chosen" if lane == name else "subtle")
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.add_theme_font_size_override("font_size", 13)
+		switcher.add_child(b)
+	var hint := Loc.t("you.busy") if not rules.queue_of("me").is_empty() else Loc.t("pick_task")
+	v.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
+	var scroll := _scroll("phone_" + lane)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(scroll)
+	var list := _vbox(8)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+	if lanes[lane].is_empty():
+		list.add_child(_label(Loc.t("col_empty." + lane), 14, COL_FAINT, true))
+	for t in lanes[lane]:
+		list.add_child(_task_card(t, lane))
+	if rules.phase == "evening":
+		v.add_child(_button(Loc.t("to_end" if rules.day >= C.DAYS else "next_day"), _next, 0, "primary"))
+	else:
+		var end := _button(Loc.t("end_day"), _end_day, 0, "primary")
+		end.disabled = rules.phase != "plan" or not rules.pending.is_empty()
+		v.add_child(end)
+	return _padded(v, 10, 10)
+
+
+# The open card slides up from the bottom; tapping outside closes it.
+func _task_sheet(t: Dictionary) -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(0.035, 0.118, 0.259, 0.45)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and not event.pressed:
+			_clear_selection.call_deferred())
+	ui.add_child(dim)
+	# Pinned to the bottom and as tall as what's in it.
+	var panel := PanelContainer.new()
+	panel.anchor_right = 1.0
+	panel.anchor_top = 1.0
+	panel.anchor_bottom = 1.0
+	panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	var style := _flat(COL_SURFACE)
+	style.corner_radius_top_left = 14
+	style.corner_radius_top_right = 14
+	style.content_margin_left = 8
+	style.content_margin_right = 8
+	style.content_margin_top = 8
+	style.content_margin_bottom = 12
+	panel.add_theme_stylebox_override("panel", style)
+	ui.add_child(panel)
+	panel.add_child(_task_detail(t))
+
+
+# While the chat waits for an answer, the other screens point you there.
+func _phone_block() -> void:
+	var shade := ColorRect.new()
+	shade.color = Color(COL_BG, 0.6)
+	shade.anchor_right = 1.0
+	shade.anchor_bottom = 1.0
+	shade.offset_top = PHONE_TOP_H
+	shade.offset_bottom = -70
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	ui.add_child(shade)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shade.add_child(center)
+	var b := _button(Loc.t("answer_in_chat"), _go_tab.bind("chat"), 0, "primary")
+	center.add_child(b)
+
+
 # ---------- the chat ----------
 
 func _chat() -> Control:
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = CHAT_W
+	panel.custom_minimum_size.x = 0 if mobile else CHAT_W
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL if mobile else Control.SIZE_FILL
 	var style := _flat(COL_SURFACE)
 	style.border_color = COL_BORDER
 	style.border_width_left = 1
@@ -994,13 +1240,15 @@ func _document(width: int) -> VBoxContainer:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
 	var panel := PanelContainer.new()
+	var w := minf(width, _view_width() - 16.0)
+	var margin := 8.0 if mobile else 32.0
 	panel.anchor_left = 0.5
 	panel.anchor_right = 0.5
 	panel.anchor_bottom = 1.0
-	panel.offset_left = -width / 2.0
-	panel.offset_right = width / 2.0
-	panel.offset_top = 32
-	panel.offset_bottom = -32
+	panel.offset_left = -w / 2.0
+	panel.offset_right = w / 2.0
+	panel.offset_top = margin
+	panel.offset_bottom = -margin
 	panel.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 0))
 	ui.add_child(panel)
 	var scroll := ScrollContainer.new()
@@ -1008,7 +1256,7 @@ func _document(width: int) -> VBoxContainer:
 	panel.add_child(scroll)
 	var v := _vbox(10)
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_padded(v, 28, 24))
+	scroll.add_child(_padded(v, 16 if mobile else 28, 16 if mobile else 24))
 	return v
 
 
@@ -1266,7 +1514,7 @@ func _button(text_value: String, action: Callable, min_width: int, look: String 
 	var b := Button.new()
 	b.text = text_value
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(min_width, 34)
+	b.custom_minimum_size = Vector2(min_width, 44 if mobile else 34)
 	b.add_theme_font_size_override("font_size", 14)
 	var fill := COL_COLUMN
 	var hover := COL_BORDER
