@@ -103,6 +103,8 @@ var shares := {}
 # Chat entries: {"who": speaker id, "you" or "" for narration; "key"; "args": [] for %s; "names": {} for {placeholders}; "day"}.
 # Values starting with "@" are locale keys.
 var history: Array = []
+# Gena's first-steps tips in the chat (see update_tips).
+var tips := true
 
 
 # ---------- run and day flow ----------
@@ -347,6 +349,7 @@ func assign(uid: int, p: String) -> void:
 	var t := task(uid)
 	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] == "done" or t["status"] == "taras" or p == t["owner"]:
 		return
+	_tip_used("inbox")
 	var previous: String = t["owner"]
 	if p == "taras":
 		_hand_to_taras(t)
@@ -610,6 +613,7 @@ func start_talk(p: String) -> void:
 	if not can_talk(p):
 		return
 	talked[p] = true
+	_tip_used("talk")
 	lead("I", 0.3)
 	spend_attention()
 	history.append({"who": "you", "key": "talk.open", "args": [], "names": {}, "to": p, "day": day})
@@ -711,6 +715,7 @@ func intervene(uid: int) -> void:
 	var t := task(uid)
 	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("checked_day", 0) == day:
 		return
+	_tip_used("active")
 	var p: String = t["owner"]
 	if not C.TEAM.has(p) or not available(p) or people[p]["absent"]:
 		return
@@ -829,6 +834,7 @@ func _reveal(p: String, key: String) -> void:
 func end_day() -> void:
 	if phase != "plan" or not pending.is_empty():
 		return
+	flags.erase("tip_hl")
 	evening_from = history.size()
 	_narrate("log.evening")
 	shares.clear()
@@ -1210,6 +1216,7 @@ func decline(uid: int) -> void:
 	var t := task(uid)
 	if t.is_empty() or not can_decline(t):
 		return
+	_tip_used("inbox")
 	history.append({"who": "you", "key": "decline.open", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": t["from"], "day": day})
 	_open_conversation(scenes.decline_event(self, t))
 
@@ -1657,6 +1664,64 @@ func answer_review(choice: String) -> void:
 		_finish_chapter()
 	else:
 		phase = "evening"
+
+
+# ---------- first steps ----------
+
+# In the first chapter Gena, who has seen leads come and go, shows the new one around: one line in the chat
+# at the moment it's needed, and the board lights up where to look until you've used it. Each tip once a run.
+const TIP_TARGETS := {"assign": "inbox", "end_day": "end_day", "talk": "talk", "decline": "inbox", "intervene": "active"}
+
+
+func update_tips() -> void:
+	if not tips or chapter != 1:
+		return
+	var id := _next_tip()
+	if id == "":
+		return
+	flags["tip_" + id] = true
+	flags["tip_last"] = id
+	flags["tip_day"] = day
+	flags["tip_hl"] = TIP_TARGETS.get(id, "")
+	_say("gena", "tip." + id)
+
+
+func _next_tip() -> String:
+	var due: Array = []
+	match phase:
+		"plan":
+			if not pending.is_empty():
+				due.append("pushback")
+			elif day == 1:
+				due.append("assign")
+				if C.TEAM.any(func(p): return not queue_of(p).is_empty()):
+					due.append("end_day")
+			elif flags.get("tip_day", 0) != day: # after day one, one tip a day at most
+				due.append("talk")
+				if day >= 3 and not inbox().is_empty():
+					due.append("decline")
+				if tasks.any(func(t): return can_intervene(t)):
+					due.append("intervene")
+				if C.TEAM.any(func(p): return available(p) and late_hours(p) > 0):
+					due.append("overtime")
+		"evening":
+			due.append("evening")
+		"report":
+			due.append("friday")
+	for id in due:
+		if not flags.has("tip_" + id):
+			return id
+	return ""
+
+
+# The board element a tip pointed at, lit until you use it.
+func tip_target() -> String:
+	return flags.get("tip_hl", "")
+
+
+func _tip_used(target: String) -> void:
+	if flags.get("tip_hl", "") == target:
+		flags.erase("tip_hl")
 
 
 # ---------- saving ----------

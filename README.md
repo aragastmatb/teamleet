@@ -26,6 +26,7 @@ Play in the browser: https://aragastmatb.github.io/teamleet/ — every push to `
 
 ## Content you can edit without code
 - Before a run you pick Irina (results, order, ideas, people, the chaotic one, or a surprise) and who you were: a former engineer (strong hands), a former manager (more attention, better at talking people round) or someone who grew up in this team (knows everyone's skills, but old colleagues resent orders). The run saves itself after every step; Continue on the title picks it up.
+- No rules screen: in the first week Gena, the old-timer, explains things in the chat right when they come up, and the board lights up where to look (switch it off on the setup screen). The "?" button at the top is a short reference.
 - The game is four month-long chapters; only the first, the probation, is playable so far. Passing it shows the chapter's results and what comes next.
 - `data/tasks.tsv` — the task deck: one row per task (chapter, category, who brings it, size, deadline, whether the boss sees it, copies in the deck, Russian and English text). Open it in Excel or Google Sheets, or any text editor; the game reads it on start.
 - `docs/lore.md` — the world (2Leet, the Chainer platform team) and what's agreed; `docs/plan.md` — the expansion plan.

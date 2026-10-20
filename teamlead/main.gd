@@ -83,6 +83,10 @@ var press_pos := Vector2.ZERO
 var setup_open := false
 var pick_boss := "random"
 var pick_profile: String = C.DEFAULT_PROFILE
+var pick_tips := true
+# The short reference behind "?", and the last of Gena's tips the phone banner was closed on.
+var help_open := false
+var tip_closed := ""
 
 
 func _ready() -> void:
@@ -108,6 +112,7 @@ func _ready() -> void:
 		sound_on = settings.get_value("audio", "sound_on", true)
 		pick_boss = settings.get_value("setup", "boss", pick_boss)
 		pick_profile = settings.get_value("setup", "profile", pick_profile)
+		pick_tips = settings.get_value("setup", "tips", pick_tips)
 	if not (pick_boss == "random" or C.BOSSES.has(pick_boss)):
 		pick_boss = "random"
 	if not C.PROFILES.has(pick_profile):
@@ -274,8 +279,11 @@ func _start_run() -> void:
 	settings.load(SETTINGS_PATH)
 	settings.set_value("setup", "boss", pick_boss)
 	settings.set_value("setup", "profile", pick_profile)
+	settings.set_value("setup", "tips", pick_tips)
 	settings.save(SETTINGS_PATH)
 	rules.start_run(-1, C.BOSS_KINDS.pick_random() if pick_boss == "random" else pick_boss, pick_profile)
+	rules.tips = pick_tips
+	tip_closed = ""
 	_clear_selection()
 	_render()
 
@@ -283,6 +291,69 @@ func _start_run() -> void:
 func _open_setup(open: bool) -> void:
 	setup_open = open
 	_render()
+
+
+func _toggle_tips() -> void:
+	pick_tips = not pick_tips
+	_render()
+
+
+func _toggle_help() -> void:
+	help_open = not help_open
+	_render()
+
+
+# The short reference: what the first week teaches, in one place.
+func _build_help() -> void:
+	var v := _document(780)
+	var text := RichTextLabel.new()
+	text.bbcode_enabled = true
+	text.fit_content = true
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.text = Loc.t("rules")
+	text.add_theme_font_override("bold_font", font_bold)
+	text.add_theme_font_size_override("normal_font_size", 16)
+	text.add_theme_font_size_override("bold_font_size", 18)
+	text.add_theme_color_override("default_color", COL_TEXT)
+	v.add_child(text)
+	var b := _button(Loc.t("help_close"), _toggle_help, 200, "primary")
+	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	v.add_child(b)
+
+
+# Gena's tip lights up what it's about: a thicker orange edge on the panel or button.
+func _lit(c: Control, target: String) -> void:
+	if rules.tip_target() != target or rules.phase != "plan":
+		return
+	for name in (["panel"] if c is PanelContainer else ["normal", "hover", "disabled"]):
+		var box = c.get_theme_stylebox(name)
+		if box is StyleBoxFlat:
+			box = box.duplicate()
+			box.border_color = COL_STAR
+			box.set_border_width_all(3)
+			c.add_theme_stylebox_override(name, box)
+
+
+# On a phone the chat is a tab away, so Gena's latest tip also shows above the board until closed.
+func _tip_banner() -> Control:
+	var id: String = rules.flags.get("tip_last", "")
+	if id == "" or id == tip_closed or tab == "chat" or rules.phase != "plan" or rules.flags.get("tip_day", 0) != rules.day:
+		return null
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _box(Color("fffae6"), COL_STAR, 1, 10))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	card.add_child(row)
+	row.add_child(_avatar("gena", 28))
+	var text := _label(Loc.t("tip." + id), 13, COL_TEXT, true)
+	text.custom_minimum_size.x = _view_width() - 120.0
+	row.add_child(text)
+	var close := _button("✕", func(): tip_closed = id; _render(), 36, "subtle")
+	close.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(close)
+	var wrap := _padded(card, 8, 6)
+	wrap.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	return wrap
 
 
 func _pick_option(kind: String, value: String) -> void:
@@ -370,6 +441,7 @@ func _toggle_lang() -> void:
 
 func _render() -> void:
 	if rules.phase != "title":
+		rules.update_tips()
 		_play(_sound_for_changes())
 	# Every action ends in a render, so this keeps the save one step behind the player at most.
 	if rules.phase == "end" or (rules.phase == "chapter_end" and not rules.next_chapter_ready()):
@@ -405,6 +477,8 @@ func _render() -> void:
 			_build_report()
 		"end", "chapter_end":
 			_build_end()
+	if help_open:
+		_build_help()
 	_let_touches_through(ui)
 	_restore_scrolls()
 
@@ -440,20 +514,7 @@ func _build_title() -> void:
 	head.add_child(_logo(40))
 	head.add_child(_label(Loc.t("title"), 34, COL_TEXT, false, true))
 	v.add_child(_label(Loc.t("tagline"), 19, COL_MUTED, true))
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.custom_minimum_size.y = 460 if mobile else 380
-	v.add_child(scroll)
-	var text := RichTextLabel.new()
-	text.bbcode_enabled = true
-	text.fit_content = true
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text.text = Loc.t("rules")
-	text.add_theme_font_override("bold_font", font_bold)
-	text.add_theme_font_size_override("normal_font_size", 16)
-	text.add_theme_font_size_override("bold_font_size", 16)
-	text.add_theme_color_override("default_color", COL_TEXT)
-	scroll.add_child(text)
+	v.add_child(_spacer(4))
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 12)
 	v.add_child(buttons)
@@ -489,6 +550,12 @@ func _build_setup() -> void:
 	v.add_child(_spacer(6))
 	v.add_child(_label(Loc.t("setup.me_head"), 17, COL_TEXT, true, true))
 	v.add_child(_option_grid("me", C.PROFILE_KINDS, pick_profile, width))
+	v.add_child(_spacer(2))
+	var tips_row := HBoxContainer.new()
+	tips_row.add_theme_constant_override("separation", 12)
+	v.add_child(tips_row)
+	tips_row.add_child(_button(Loc.t("setup.tips_on" if pick_tips else "setup.tips_off"), _toggle_tips, 0, "chosen" if pick_tips else ""))
+	tips_row.add_child(_label(Loc.t("setup.tips_hint"), 13, COL_MUTED, true))
 	v.add_child(_spacer(6))
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 12)
@@ -566,6 +633,7 @@ func _top_bar() -> Control:
 	top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
 	var word := rules.boss_word()
 	top.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 15, BOSS_COLORS[word]))
+	top.add_child(_button("?", _toggle_help, 36, "on_top"))
 	top.add_child(_button(Loc.t("sound_on" if sound_on else "sound_off"), _toggle_sound, 0, "on_top"))
 	top.add_child(_button(Loc.t("lang_button"), _toggle_lang, 0, "on_top"))
 	return bar
@@ -687,6 +755,8 @@ func _person_card(p: String) -> Control:
 	var talk := _button(Loc.t("talk_button") + _cost_mark(), _talk_to.bind(p), 0, "subtle")
 	talk.disabled = not rules.can_talk(p)
 	talk.custom_minimum_size.y = 30
+	if talk.disabled == false:
+		_lit(talk, "talk")
 	v.add_child(talk)
 	return card
 
@@ -758,6 +828,7 @@ func _board_area() -> Control:
 	else:
 		var end := _button(Loc.t("end_day"), _end_day, 200, "primary")
 		end.disabled = rules.phase != "plan" or not rules.pending.is_empty()
+		_lit(end, "end_day")
 		head.add_child(end)
 	var columns := HBoxContainer.new()
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -765,7 +836,9 @@ func _board_area() -> Control:
 	v.add_child(columns)
 	var lanes := _lanes()
 	for lane in ["inbox", "queued", "active", "done"]:
-		columns.add_child(_column(lane, lanes[lane]))
+		var column := _column(lane, lanes[lane])
+		_lit(column, lane)
+		columns.add_child(column)
 	if selected >= 0 and rules.phase == "plan":
 		var t := rules.task(selected)
 		if not t.is_empty() and t["status"] in ["inbox", "active"]:
@@ -1025,6 +1098,9 @@ func _build_phone() -> void:
 	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(v)
 	v.add_child(_phone_top())
+	var banner := _tip_banner()
+	if banner:
+		v.add_child(banner)
 	var body: Control
 	match tab:
 		"team":
@@ -1065,6 +1141,9 @@ func _phone_top() -> Control:
 	row.add_child(day)
 	var k := rules.key_status()
 	row.add_child(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
+	var help := _button("?", _toggle_help, 32, "on_top")
+	help.custom_minimum_size.y = 28
+	row.add_child(help)
 	var info := _flow(12, 0)
 	v.add_child(info)
 	info.add_child(_label(_attention_text(), 13, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
@@ -1096,6 +1175,8 @@ func _phone_tabs() -> Control:
 			text += " (%d)" % unread
 		var b := _button(text, _go_tab.bind(name), 0, "chosen" if tab == name else "subtle")
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if name == "team" and tab != "team":
+			_lit(b, "talk")
 		row.add_child(b)
 	return bar
 
@@ -1110,6 +1191,7 @@ func _phone_board() -> Control:
 		var b := _button("%s %d" % [Loc.t("col_short." + name), lanes[name].size()], _pick_lane.bind(name), 0, "chosen" if lane == name else "subtle")
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.add_theme_font_size_override("font_size", 13)
+		_lit(b, name)
 		switcher.add_child(b)
 	var hint := Loc.t("you.busy") if not rules.queue_of("me").is_empty() else Loc.t("pick_task")
 	v.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
@@ -1128,6 +1210,7 @@ func _phone_board() -> Control:
 	else:
 		var end := _button(Loc.t("end_day"), _end_day, 0, "primary")
 		end.disabled = rules.phase != "plan" or not rules.pending.is_empty()
+		_lit(end, "end_day")
 		v.add_child(end)
 	return _padded(v, 10, 10)
 
