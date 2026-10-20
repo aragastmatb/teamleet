@@ -381,6 +381,12 @@ static func tasks_with(field: String, value: String) -> Array:
 # and the rest on top, this brings in about one and a half times that. Not everything is meant to get done.
 const DAILY_LOAD := 7.5
 const MAX_CARDS_A_DAY := 5
+# Work ramps up week by week: the probation starts gently so there's room to learn, later chapters only ease
+# the first week. Per week of the chapter: share of DAILY_LOAD, most cards a day, extra days on deadlines.
+const RAMP := {
+	1: [{"load": 0.55, "cards": 3, "slack": 2}, {"load": 0.7, "cards": 4, "slack": 1}, {"load": 0.85, "cards": 4, "slack": 0}, {"load": 0.95, "cards": 5, "slack": 0}],
+	0: [{"load": 0.8, "cards": 4, "slack": 1}],
+}
 const MAX_SAME_KIND := 2
 const BANK_LOAD := 0.7 # more work a day for each bank past the third
 const REPEAT_GAP := 5 # working days before the same card can come again

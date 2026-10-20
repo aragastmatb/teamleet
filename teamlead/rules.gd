@@ -10,7 +10,7 @@ const C = preload("res://teamlead/content.gd")
 const L = preload("res://teamlead/locale.gd")
 const Scenes = preload("res://teamlead/scenes.gd")
 
-const SPEED_BASE := 0.5
+const SPEED_BASE := 0.65
 const SPEED_PER_SKILL := 0.35
 const GOOD_Q := 2.6
 const OK_Q := 1.6
@@ -268,11 +268,12 @@ func _arrivals() -> Array:
 	for id in out:
 		load += C.TASKS[id]["size"]
 	# More banks than chapter one's three bring more work.
-	var target: float = C.DAILY_LOAD + C.BANK_LOAD * maxi(0, banks.size() - 3)
+	var ramp := ramp_now()
+	var target: float = C.DAILY_LOAD * ramp["load"] + C.BANK_LOAD * maxi(0, banks.size() - 3)
 	if flags.get("relief", false):
 		flags["relief"] = false
 		target -= 1.5
-	while load < target and out.size() < C.MAX_CARDS_A_DAY:
+	while load < target and out.size() < ramp["cards"]:
 		if deck.size() < 4:
 			_refill_deck()
 		var picked := -1
@@ -291,6 +292,13 @@ func _arrivals() -> Array:
 		out.append(id)
 		load += C.TASKS[id]["size"]
 	return out
+
+
+# How hard this week of the chapter pushes (C.RAMP): past the listed weeks, full load.
+func ramp_now() -> Dictionary:
+	var weeks: Array = C.RAMP.get(chapter, C.RAMP[0])
+	var w := (chapter_day() - 1) / 5
+	return weeks[w] if w < weeks.size() else {"load": 1.0, "cards": C.MAX_CARDS_A_DAY, "slack": 0}
 
 
 # The same card doesn't come back while it's still on the board, nor within REPEAT_GAP working days.
@@ -335,7 +343,7 @@ func add_task(id: String) -> void:
 			if e["kind"] == "shrink":
 				size *= e["factor"]
 	# Near the end of the probation, deadlines squeeze into what's left of it.
-	add_task_raw(id, info["cat"], maxf(0.5, size), mini(day + info["due"], last_day()), info["public"], info["from"])
+	add_task_raw(id, info["cat"], maxf(0.5, size), mini(day + info["due"] + ramp_now()["slack"], last_day()), info["public"], info["from"])
 	_say(info["from"], "task.%s.ask" % id)
 
 
@@ -748,7 +756,7 @@ func add_task_raw(id: String, cat: String, size: float, due: int, public: bool, 
 		"q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
 		"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
 		"asked": false, "vouched": false, "flaw": false, "complicated": false, "blocked": 0, "q_bonus": 0.0, "involved": false,
-		"key": chapter_keys().has(id), "sit_today": false, "again": seen_day.has(id),
+		"key": chapter_keys().has(id), "sit_today": false, "again": seen_day.has(id), "day": day,
 	})
 	seen_day[id] = day
 	seen_day[C.TASKS.get(id, {}).get("tpl", id)] = day
@@ -1669,7 +1677,7 @@ func _work(p: String) -> void:
 			if info(p)["likes"].has(t["cat"]):
 				st["mood"] += 0.3 * spend
 			if info(p)["hates"].has(t["cat"]):
-				st["mood"] -= 0.4 * spend
+				st["mood"] -= 0.25 * spend
 			if t["progress"] >= t["size"] - 0.001:
 				_finish(p, t)
 			else:
@@ -1683,7 +1691,7 @@ func _work(p: String) -> void:
 		if st["skills"][first["cat"]] < 2:
 			drain += HARD_DRAIN
 		if q.size() >= OVERLOAD_AT:
-			st["mood"] -= 0.3
+			st["mood"] -= 0.2
 		# The late hours are what wear people down.
 		st["week_hours"][week()] += 8
 		if late > 0:
