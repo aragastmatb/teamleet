@@ -781,7 +781,7 @@ func _team_sidebar() -> Control:
 	scroll.add_child(_padded(v, 12, 12))
 	v.add_child(_me_card())
 	v.add_child(_section(Loc.t("team_header")))
-	for p in C.TEAM:
+	for p in rules.team:
 		v.add_child(_person_card(p))
 	v.add_child(_spacer(4))
 	v.add_child(_section(Loc.t("boss_header")))
@@ -838,7 +838,7 @@ func _person_card(p: String) -> Control:
 	if trust != "":
 		state.add_child(_label("· " + Loc.t("trust." + trust), 13, COL_GOOD if trust == "trusts" else COL_DANGER))
 	var known: Dictionary = st["known"]
-	var drive_text: String = Loc.t("drive." + C.PEOPLE[p]["drive"]) if known.has("drive") else Loc.t("unknown")
+	var drive_text: String = Loc.t("drive." + rules.info(p)["drive"]) if known.has("drive") else Loc.t("unknown")
 	v.add_child(_label(Loc.t("known.drive", [drive_text]), 12, COL_MUTED, true))
 	var skills := _flow(4, 4)
 	v.add_child(skills)
@@ -979,7 +979,7 @@ func _board_area() -> Control:
 func _lanes() -> Dictionary:
 	var lanes := {"inbox": rules.inbox(), "queued": [], "active": [], "done": []}
 	lanes["inbox"].sort_custom(func(a, b): return a["due"] < b["due"])
-	for p in C.TEAM + ["me"]:
+	for p in rules.team + ["me"]:
 		var q := rules.queue_of(p)
 		for i in q.size():
 			lanes["active" if i == 0 else "queued"].append(q[i])
@@ -1167,7 +1167,7 @@ func _task_detail(t: Dictionary) -> Control:
 	var who := _flow(6, 6)
 	v.add_child(who)
 	who.add_child(_row_label(Loc.t("to_whom")))
-	for p in C.TEAM:
+	for p in rules.team:
 		if not rules.available(p):
 			continue
 		var pe: Dictionary = rules.estimate(t, p)
@@ -1184,22 +1184,22 @@ func _task_detail(t: Dictionary) -> Control:
 		var acts := _flow(6, 6)
 		v.add_child(acts)
 		acts.add_child(_button(Loc.t("unassign"), _unassign, 0, "subtle"))
-		if C.TEAM.has(t["owner"]) and rules.queue_of(t["owner"])[0]["uid"] != t["uid"]:
+		if rules.team.has(t["owner"]) and rules.queue_of(t["owner"])[0]["uid"] != t["uid"]:
 			acts.add_child(_button(Loc.t("prioritize"), _prioritize, 0, "subtle"))
-		if C.TEAM.has(t["owner"]) and not t["sit_today"]:
+		if rules.team.has(t["owner"]) and not t["sit_today"]:
 			acts.add_child(_button(Loc.t("sit.button") + _cost_mark(), _sit, 0, "subtle"))
-		if C.TEAM.has(t["owner"]):
+		if rules.team.has(t["owner"]):
 			var stay := _button(Loc.t("stay_button"), _ask_stay, 0, "subtle")
 			stay.disabled = t.get("stay_asked", -1) == rules.day
 			acts.add_child(stay)
 			var step := _button(Loc.t("intervene_button") + _cost_mark(), _intervene, 0, "subtle")
 			step.disabled = not rules.can_intervene(t)
 			acts.add_child(step)
-	if t["status"] == "active" and C.TEAM.has(t["owner"]):
+	if t["status"] == "active" and rules.team.has(t["owner"]):
 		var pair := _flow(6, 6)
 		v.add_child(pair)
 		pair.add_child(_row_label(Loc.t("helper_optional")))
-		for p in C.TEAM:
+		for p in rules.team:
 			if p != t["owner"] and rules.available(p):
 				pair.add_child(_button(Loc.person(p), _helper.bind(p), 0, "chosen" if t["helper"] == p else ""))
 		pair.add_child(_button(Loc.t("no_helper"), _helper.bind(""), 0, "chosen" if t["helper"] == "" else ""))
@@ -1558,7 +1558,7 @@ func _chat_prompt(list: VBoxContainer) -> void:
 		var b := _button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 0, "primary")
 		list.add_child(b)
 	elif rules.phase == "plan":
-		for p in C.TEAM:
+		for p in rules.team:
 			var offer := rules.initiative_offer(p)
 			if offer != "":
 				list.add_child(_offer_card(p, offer))
@@ -1694,7 +1694,7 @@ func _build_report() -> void:
 	v.add_child(_label(Loc.t("report_title", [w + 1 - (C.chapter_first_day(rules.chapter) - 1) / 5]), 24, COL_TEXT, true, true))
 	v.add_child(_label(Loc.t("report_hint"), 14, COL_MUTED, true))
 	v.add_child(_spacer(4))
-	for p in C.TEAM:
+	for p in rules.team:
 		var st: Dictionary = rules.people[p]
 		var hours: int = st["week_hours"][w]
 		var norm: int = 8 * (5 - st["week_absent"][w])
@@ -1785,7 +1785,7 @@ func _build_end() -> void:
 		_survey_block(v)
 	v.add_child(_spacer(4))
 	v.add_child(_section(Loc.t("summary.team")))
-	for p in C.TEAM:
+	for p in rules.team:
 		var parts := PackedStringArray()
 		if rules.people[p]["gone"]:
 			parts.append(Loc.t("gone_label"))

@@ -82,7 +82,7 @@ func _add_tagged(r, tag: String) -> void:
 # Who's best at this kind of work and here today (falls back to you).
 func _strongest(r, cat: String) -> String:
 	var best := "me"
-	for p in C.TEAM:
+	for p in r.team:
 		if here(r, p) and (best == "me" or r.people[p]["skills"][cat] > r.people[best]["skills"][cat]):
 			best = p
 	return best
@@ -98,7 +98,7 @@ func task_names(r, t: Dictionary) -> Dictionary:
 # Irina checks on a public task that's clearly not going to make it.
 func _check_boss_deadline(r) -> Dictionary:
 	for t in r.tasks:
-		if t["status"] != "active" or not t["public"] or t["asked"] or not C.TEAM.has(t["owner"]):
+		if t["status"] != "active" or not t["public"] or t["asked"] or not r.team.has(t["owner"]):
 			continue
 		var left: int = t["due"] - r.day
 		if left < 1 or left > 2 or r.days_needed(t) <= left + 0.3:
@@ -137,7 +137,7 @@ func _check_boss_dump(r) -> Dictionary:
 	var first: bool = r.day == 2 and not r.flags.has("dump_w0")
 	var load := 0
 	for t in r.tasks:
-		if t["status"] == "active" and C.TEAM.has(t["owner"]):
+		if t["status"] == "active" and r.team.has(t["owner"]):
 			load += 1
 	if not first and (r.day < 6 or r.flags.has("dump_w%d" % r.week()) or load < 6 or r.rng.randf() > 0.4):
 		return {}
@@ -232,7 +232,7 @@ func _check_boss_details(r) -> Dictionary:
 func _check_complication(r) -> Dictionary:
 	var candidates: Array = []
 	for t in r.tasks:
-		if t["status"] != "active" or t["complicated"] or t["id"].begins_with("init_") or not C.TEAM.has(t["owner"]) or not here(r, t["owner"]):
+		if t["status"] != "active" or t["complicated"] or t["id"].begins_with("init_") or not r.team.has(t["owner"]) or not here(r, t["owner"]):
 			continue
 		if t["progress"] < 0.2 * t["size"] or t["size"] - t["progress"] < 0.6:
 			continue
@@ -263,7 +263,7 @@ func _check_complication(r) -> Dictionary:
 
 # Someone unhappy went to HR; Marina passes it on.
 func _check_marina_warns(r) -> Dictionary:
-	for p in C.TEAM:
+	for p in r.team:
 		if here(r, p) and r.people[p]["mood"] <= -3.0 and once(r, "marina_" + p):
 			return {"who": "marina", "target": p, "names": {"who": "@name.%s.nom" % p, "who_ins": "@name.%s.ins" % p},
 				"lines": [{"who": "marina", "key": "event.marina_warns.ask." + p}], "choices": ["listen", "dismiss"]}
@@ -365,7 +365,7 @@ func _check_vika_takes_task(r) -> Dictionary:
 	if not here(r, "vika") or r.queue_of("vika").size() > 1 or r.flags.has("scene_vika_takes_task"):
 		return {}
 	for t in r.tasks:
-		if t["status"] == "active" and t["public"] and t["progress"] == 0.0 and C.TEAM.has(t["owner"]) and t["owner"] != "vika":
+		if t["status"] == "active" and t["public"] and t["progress"] == 0.0 and r.team.has(t["owner"]) and t["owner"] != "vika":
 			once(r, "vika_takes_task")
 			return {"who": "vika", "uid": t["uid"], "names": task_names(r, t),
 				"lines": [{"who": "vika", "key": "event.vika_takes_task.ask"}], "choices": ["give", "refuse"]}
@@ -390,7 +390,7 @@ func _check_taras_borrow(r) -> Dictionary:
 	if r.day < 12 and r.rng.randf() > 0.15:
 		return {}
 	var choices := []
-	for p in C.TEAM:
+	for p in r.team:
 		if here(r, p):
 			choices.append("lend:" + p)
 	if choices.is_empty():
@@ -406,7 +406,7 @@ func _resolve_complication(r, ev: Dictionary, c: String, t: Dictionary, names: D
 	var cid: String = ev["comp"]
 	var fx: Dictionary = C.COMPLICATIONS[cid]["choices"][c]
 	var p: String = t["owner"]
-	if not C.TEAM.has(p) or t["status"] != "active":
+	if not r.team.has(p) or t["status"] != "active":
 		return
 	var reply := "event.comp_%s.%s.reply" % [cid, c]
 	if COMP_STYLE.has(c):
@@ -478,7 +478,7 @@ func talk_event(r, p: String) -> Dictionary:
 	elif r.day - st["last_done"] <= 2 and _last_good(r, p) >= 0:
 		topic = "proud"
 		names["task"] = "@taskname." + r.task(_last_good(r, p))["id"]
-	elif C.PEOPLE[p]["drive"] in ["growth", "visibility"] and r.day >= 3 and not r.flags.has("asked_growth_" + p):
+	elif r.info(p)["drive"] in ["growth", "visibility"] and r.day >= 3 and not r.flags.has("asked_growth_" + p):
 		topic = "grow"
 		r.flags["asked_growth_" + p] = true
 	var key: String = r._first_key(["event.talk_%s.ask.%s" % [topic, p], "event.talk_%s.ask.%s" % [topic, reason], "event.talk_%s.ask" % topic])
@@ -502,7 +502,7 @@ func talk_event(r, p: String) -> Dictionary:
 		"fine":
 			choices = ["ask_about", "praise_general"]
 			if st["known"].has("drive"):
-				choices.append("gift_" + C.PEOPLE[p]["drive"])
+				choices.append("gift_" + r.info(p)["drive"])
 	return {"id": "talk_" + topic, "who": p, "target": p, "reason": reason, "names": names, "uid": _last_good(r, p) if topic == "proud" else -1,
 		"lines": [{"who": p, "key": key}], "choices": choices}
 
@@ -516,7 +516,7 @@ func _upset_reason(r, p: String) -> String:
 	if r.people[p]["idle_days"] >= 2:
 		return "bored"
 	var q: Array = r.queue_of(p)
-	if not q.is_empty() and C.PEOPLE[p]["hates"].has(q[0]["cat"]):
+	if not q.is_empty() and r.info(p)["hates"].has(q[0]["cat"]):
 		return "hate"
 	return "general"
 
@@ -545,7 +545,7 @@ func _resolve_talk(r, ev: Dictionary, c: String, names: Dictionary) -> String:
 			st["trust"] += 1
 		"push":
 			st["pushed"] = r.PUSH_DAYS
-			st["mood"] -= 2.0 if C.PEOPLE[p]["drive"] == "peace" else 1.0
+			st["mood"] -= 2.0 if r.info(p)["drive"] == "peace" else 1.0
 			st["energy"] -= 0.5
 		"listen":
 			st["mood"] += 1.0
@@ -637,7 +637,7 @@ func intervene_event(r, t: Dictionary) -> Dictionary:
 	elif r.days_needed(t) > t["due"] - r.day + 1.3:
 		state = "behind"
 	var said := state
-	if state == "behind" and C.PEOPLE[p].get("workaholic", false) and r.days_needed(t) < t["due"] - r.day + 3.0:
+	if state == "behind" and r.info(p).get("workaholic", false) and r.days_needed(t) < t["due"] - r.day + 3.0:
 		said = "on_track"
 	return {"id": "intervene", "who": p, "target": p, "uid": t["uid"], "state": state, "names": task_names(r, t),
 		"lines": [{"who": p, "key": "event.intervene.ask." + said}],
@@ -648,7 +648,7 @@ func _resolve_intervene(r, ev: Dictionary, c: String) -> String:
 	var t: Dictionary = r.task(ev["uid"])
 	var p: String = ev["target"]
 	var st: Dictionary = r.people[p]
-	var info: Dictionary = C.PEOPLE[p]
+	var info: Dictionary = r.info(p)
 	var reply := "event.intervene.%s.reply" % c
 	# Any real question gets them out of the wrong place; a pat on the back doesn't.
 	if t.get("stuck", 0) > 0 and c != "trust":
@@ -772,18 +772,18 @@ func boss_visit(r) -> Dictionary:
 	var labels := {}
 	var shows := 0
 	for t in r.tasks:
-		if shows < 2 and t["status"] == "done" and t["public"] and C.TEAM.has(t["owner"]) and r.day - t["done_day"] <= 5 and not t.get("shown", false) and (t["quality"] == "good" or t["quality"] == "ok"):
+		if shows < 2 and t["status"] == "done" and t["public"] and r.team.has(t["owner"]) and r.day - t["done_day"] <= 5 and not t.get("shown", false) and (t["quality"] == "good" or t["quality"] == "ok"):
 			choices.append("show:%d" % t["uid"])
 			labels["show:%d" % t["uid"]] = {"task": "@taskname." + t["id"]}
 			shows += 1
-	for p in C.TEAM:
+	for p in r.team:
 		if r.flags.has("mention_" + p) and r.available(p):
 			choices.append("mention:" + p)
 			labels["mention:" + p] = {"who_gen": "@name.%s.gen" % p}
 	var risky := {}
 	var near := {}
 	for t in r.tasks:
-		if t["status"] != "active" or not C.TEAM.has(t["owner"]):
+		if t["status"] != "active" or not r.team.has(t["owner"]):
 			continue
 		var left: int = t["due"] - r.day
 		if t["public"] and not t["asked"] and left >= 0 and r.days_needed(t) > left + 0.3 and (risky.is_empty() or t["key"]):
@@ -905,7 +905,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene", "decline"]:
 		if routed != "":
 			r.say(who, routed, [], names)
-		for q in C.TEAM:
+		for q in r.team:
 			r.people[q]["mood"] = clampf(r.people[q]["mood"], -5.0, 5.0)
 		return
 	if ev.has("comp"):
@@ -964,14 +964,14 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 
 		"vika_takes_task/give":
 			var prev: String = t["owner"]
-			if not C.TEAM.has(prev) or t["status"] != "active":
+			if not r.team.has(prev) or t["status"] != "active":
 				r.say("vika", reply, [], names)
 				return
 			t["owner"] = "vika"
 			t["helper"] = "" if t["helper"] == "vika" else t["helper"]
 			r.people["vika"]["mood"] += 1.0
 			r.people["vika"]["ambition"] += 1
-			var keen: bool = C.PEOPLE[prev]["likes"].has(t["cat"])
+			var keen: bool = r.info(prev)["likes"].has(t["cat"])
 			r.people[prev]["mood"] += -1.0 if keen else 0.5
 			r.say(prev, "event.vika_takes_task.given_" + ("keen" if keen else "glad"), [], names)
 		"vika_takes_task/refuse":
@@ -1138,7 +1138,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			# You take it on yourself; whoever spent the weekend fixing it remembers.
 			r.boss -= 0.3
 			var fixer: String = r.flags.get("last_fixer", "")
-			if C.TEAM.has(fixer) and r.available(fixer):
+			if r.team.has(fixer) and r.available(fixer):
 				r.people[fixer]["trust"] += 1
 		"weekend_fire/postmortem":
 			for id in C.tasks_with("tag", "postmortem").slice(0, 1):
@@ -1150,7 +1150,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 		"chaos_meeting/all_go":
 			r.flags["meeting_day"] = r.day
 			r.boss += 0.3
-			for q in C.TEAM:
+			for q in r.team:
 				if r.available(q):
 					r.people[q]["mood"] -= 0.3
 		"chaos_meeting/me_only":
@@ -1158,7 +1158,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.boss -= 0.2
 		"chaos_meeting/later":
 			r.boss -= 0.4
-	for p in C.TEAM:
+	for p in r.team:
 		r.people[p]["mood"] = clampf(r.people[p]["mood"], -5.0, 5.0)
 	if who != "":
 		r.say(who, reply, [], names)

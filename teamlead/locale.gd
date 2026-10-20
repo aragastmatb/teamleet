@@ -2346,12 +2346,38 @@ const S := {
 
 
 static func has_key(key: String) -> bool:
-	return S["en"].has(key) or C.TASK_TEXT["en"].has(key)
+	return _find(key, "en") != null
+
+
+# People hired during a run: their names, filled in by the rules (EXTRA), and, for lines written per
+# person, who to read instead: STAND_IN["hire3"] = ["hire_faker", "hire"] (their kind, then any hire).
+static var EXTRA := {"ru": {}, "en": {}}
+static var STAND_IN := {}
+
+
+static func _find(key: String, in_lang: String):
+	for table in [C.TASK_TEXT[in_lang], EXTRA[in_lang], S[in_lang]]:
+		if table.has(key):
+			return table[key]
+	for id in STAND_IN:
+		var parts := key.split(".")
+		if parts.has(id):
+			for other in STAND_IN[id]:
+				var i := parts.find(id)
+				parts[i] = other
+				var alt := ".".join(parts)
+				for table in [EXTRA[in_lang], S[in_lang]]:
+					if table.has(alt):
+						return table[alt]
+	return null
 
 
 # Task names and requests come from data/tasks.tsv (C.TASK_TEXT); everything else from S.
 static func t(key: String, args: Array = []) -> String:
-	var s: String = C.TASK_TEXT[lang].get(key, S[lang].get(key, C.TASK_TEXT["en"].get(key, S["en"].get(key, key))))
+	var found = _find(key, lang)
+	if found == null:
+		found = _find(key, "en")
+	var s: String = found if found != null else key
 	if args.is_empty():
 		return s
 	return s % _resolve(args)

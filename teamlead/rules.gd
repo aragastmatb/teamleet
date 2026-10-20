@@ -48,6 +48,10 @@ var day := 1
 var chapter := 1
 var phase := "title" # plan, event, evening, report, review, end
 var people := {}
+# Everyone who has been on the team this run, the first four and those hired since; people[p]["gone"]
+# marks who has left (quit or let go). hires[p]: the made-up person behind a hire (see info()).
+var team: Array = []
+var hires := {}
 var tasks: Array[Dictionary] = []
 # Weight with Irina: how much she listens to you. Grows when you're visible (key projects, credit
 # taken, honest warnings), drops with slips and lies, and is spent to protect the team.
@@ -127,8 +131,10 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	day = 1
 	chapter = 1
 	people.clear()
-	for p in C.TEAM:
-		var base: Dictionary = C.PEOPLE[p]
+	team = C.TEAM.duplicate()
+	hires.clear()
+	for p in team:
+		var base: Dictionary = info(p)
 		var skills := {}
 		var xp := {}
 		for cat in C.CATEGORIES:
@@ -159,7 +165,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	boss_type = boss_kind
 	profile = profile_kind
 	if C.PROFILES[profile].get("knows_team", false):
-		for p in C.TEAM:
+		for p in team:
 			for cat in C.CATEGORIES:
 				people[p]["known"]["skill." + cat] = true
 	for x in C.PAEI:
@@ -191,7 +197,7 @@ func _start_day() -> void:
 	var monday := day % 5 == 1 and day > 1
 	if monday:
 		my_energy = minf(10.0, my_energy + MY_WEEKEND_REST)
-	for p in C.TEAM:
+	for p in team:
 		var st: Dictionary = people[p]
 		if st["gone"]:
 			continue
@@ -210,7 +216,7 @@ func _start_day() -> void:
 	arriving = _arrivals()
 	talked.clear()
 	offer_today.clear()
-	for p in C.TEAM:
+	for p in team:
 		if day > 1 and available(p) and not people[p]["absent"] and _wants_to_volunteer(p):
 			offer_today[p] = true
 	visited_today = false
@@ -326,6 +332,13 @@ func add_task(id: String) -> void:
 	# Near the end of the probation, deadlines squeeze into what's left of it.
 	add_task_raw(id, info["cat"], maxf(0.5, size), mini(day + info["due"], last_day()), info["public"], info["from"])
 	_say(info["from"], "task.%s.ask" % id)
+
+
+# ---------- people ----------
+
+# What someone is like: the four from content.gd, or a hire made up at hiring time (same keys).
+func info(p: String) -> Dictionary:
+	return hires[p] if hires.has(p) else C.PEOPLE[p]
 
 
 # ---------- banks ----------
@@ -513,7 +526,7 @@ func queue_of(p: String) -> Array[Dictionary]:
 
 
 func available(p: String) -> bool:
-	return C.TEAM.has(p) and not people[p]["gone"]
+	return team.has(p) and not people[p]["gone"]
 
 
 func assign(uid: int, p: String) -> void:
@@ -530,7 +543,7 @@ func assign(uid: int, p: String) -> void:
 	var names := {"task": "@taskname." + t["id"]}
 	if p != "me":
 		history.append({"who": "you", "key": "assign.say", "args": [], "names": names, "to": p, "day": day})
-	if C.TEAM.has(previous) and t["progress"] > 0.0 and not people[previous]["gone"]:
+	if team.has(previous) and t["progress"] > 0.0 and not people[previous]["gone"]:
 		people[previous]["mood"] -= 0.5
 		_say(previous, "taken_away", [], names)
 	_check_commitments(t, p)
@@ -544,7 +557,7 @@ func assign(uid: int, p: String) -> void:
 	if p == "me":
 		lead("P", 2.0)
 		_say("", "you.myself_note", [], names)
-		for q in C.TEAM:
+		for q in team:
 			if available(q) and not people[q]["absent"] and people[q]["skills"][t["cat"]] >= 3 and queue_of(q).size() <= 1:
 				people[q]["mood"] = clampf(people[q]["mood"] - 0.7, -5.0, 5.0)
 				_say(q, "slighted", [], names)
@@ -561,7 +574,7 @@ func assign(uid: int, p: String) -> void:
 func _check_commitments(t: Dictionary, p: String) -> void:
 	var names := {"task": "@taskname." + t["id"]}
 	if t["key"]:
-		for q in C.TEAM:
+		for q in team:
 			if flags.has("stretch_" + q) and available(q):
 				flags.erase("stretch_" + q)
 				if q == p:
@@ -570,7 +583,7 @@ func _check_commitments(t: Dictionary, p: String) -> void:
 					people[q]["trust"] -= 2
 					people[q]["mood"] -= 1.0
 					_say(q, "talk.stretch.broken", [], names)
-	if C.TEAM.has(p) and flags.get("calm_" + p, 0) >= day and t["due"] - day <= 1:
+	if team.has(p) and flags.get("calm_" + p, 0) >= day and t["due"] - day <= 1:
 		flags.erase("calm_" + p)
 		people[p]["trust"] -= 2
 		_say(p, "talk.calm.broken", [], names)
@@ -589,11 +602,11 @@ func _objection(p: String, t: Dictionary) -> String:
 		return "tired"
 	if count >= 2 and load >= 2.5:
 		return "overload"
-	if C.PEOPLE[p]["hates"].has(t["cat"]):
+	if info(p)["hates"].has(t["cat"]):
 		return "hates"
-	if C.PEOPLE[p]["drive"] == "peace" and t["due"] - day <= 1:
+	if info(p)["drive"] == "peace" and t["due"] - day <= 1:
 		return "rush"
-	if st["skills"][t["cat"]] <= 1 and C.PEOPLE[p]["drive"] != "growth":
+	if st["skills"][t["cat"]] <= 1 and info(p)["drive"] != "growth":
 		return "weak"
 	if st["mood"] <= -2.0:
 		return "mood"
@@ -630,7 +643,7 @@ func persuade(intent: String) -> void:
 		st["mood"] = clampf(st["mood"] + 0.3, -5.0, 5.0)
 		_say(p, "persuade.back_off.reply")
 		return
-	var drive: String = C.PEOPLE[p]["drive"]
+	var drive: String = info(p)["drive"]
 	var taste: int = C.INTENT_TASTE[drive][intent]
 	var delta: float = -1.0 + taste + C.PROFILES[profile]["talk"]
 	var reply := ""
@@ -667,15 +680,15 @@ func persuade(intent: String) -> void:
 # They take the task. Mood moves with what it is and how you got them to take it.
 func _accept(p: String, t: Dictionary, delta: float, reply: String) -> void:
 	var st: Dictionary = people[p]
-	if C.PEOPLE[p]["likes"].has(t["cat"]):
+	if info(p)["likes"].has(t["cat"]):
 		delta += 1.0
-	if C.PEOPLE[p]["hates"].has(t["cat"]):
+	if info(p)["hates"].has(t["cat"]):
 		delta -= 1.0
 	if p == "vika" and t["public"]:
 		delta += 1.0
 	if leans("I"):
 		delta += 0.4
-	if delta < 0.0 and C.PEOPLE[p].get("touchy", false):
+	if delta < 0.0 and info(p).get("touchy", false):
 		delta *= 1.3
 	var terms_line := ""
 	if p == "alex" and flags.has("alex_terms"):
@@ -736,7 +749,7 @@ func _hand_to_taras(t: Dictionary) -> void:
 # Move a task to the front of its owner's queue. Dropping something half-done costs a little mood.
 func prioritize(uid: int) -> void:
 	var t := task(uid)
-	if phase != "plan" or t.is_empty() or t["status"] != "active" or not C.TEAM.has(t["owner"]):
+	if phase != "plan" or t.is_empty() or t["status"] != "active" or not team.has(t["owner"]):
 		return
 	var p: String = t["owner"]
 	var head: Dictionary = queue_of(p)[0]
@@ -864,7 +877,7 @@ func sit_with(uid: int) -> void:
 	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("sit_today", false):
 		return
 	var p: String = t["owner"]
-	if not C.TEAM.has(p) or not available(p) or people[p]["absent"]:
+	if not team.has(p) or not available(p) or people[p]["absent"]:
 		return
 	spend_attention()
 	lead("P", 0.5)
@@ -873,7 +886,7 @@ func sit_with(uid: int) -> void:
 	t["sit_today"] = true
 	t["involved"] = true
 	history.append({"who": "you", "key": "sit.say", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": p, "day": day})
-	if C.PEOPLE[p]["drive"] == "craft" and people[p]["skills"][t["cat"]] >= 3:
+	if info(p)["drive"] == "craft" and people[p]["skills"][t["cat"]] >= 3:
 		people[p]["mood"] -= 0.5
 		_say(p, "sit.micro")
 	else:
@@ -888,7 +901,7 @@ func intervene(uid: int) -> void:
 		return
 	_tip_used("active")
 	var p: String = t["owner"]
-	if not C.TEAM.has(p) or not available(p) or people[p]["absent"]:
+	if not team.has(p) or not available(p) or people[p]["absent"]:
 		return
 	t["checked_day"] = day
 	spend_attention()
@@ -897,7 +910,7 @@ func intervene(uid: int) -> void:
 
 
 func can_intervene(t: Dictionary) -> bool:
-	return phase == "plan" and pending.is_empty() and t["status"] == "active" and C.TEAM.has(t["owner"]) and available(t["owner"]) \
+	return phase == "plan" and pending.is_empty() and t["status"] == "active" and team.has(t["owner"]) and available(t["owner"]) \
 		and not people[t["owner"]]["absent"] and t.get("checked_day", 0) != day
 
 
@@ -919,7 +932,7 @@ func initiative_offer(p: String) -> String:
 	for t in tasks:
 		if t["status"] == "active" and t["helper"] == p:
 			return ""
-	var list: Array = C.INITIATIVES[p]
+	var list: Array = C.INITIATIVES.get(p, [])
 	var i: int = init_next.get(p, 0)
 	while i < list.size() and _initiative_done(list[i]):
 		i += 1
@@ -936,7 +949,7 @@ func accept_initiative(p: String) -> void:
 	var id := initiative_offer(p)
 	if id == "" or not pending.is_empty():
 		return
-	init_next[p] = C.INITIATIVES[p].find(id) + 1
+	init_next[p] = C.INITIATIVES.get(p, []).find(id) + 1
 	for pair in INIT_STYLE.get(id, []):
 		lead(pair[0], pair[1])
 	flags["init_" + id] = true
@@ -955,7 +968,7 @@ func accept_initiative(p: String) -> void:
 	t["status"] = "active"
 	t["assigned_day"] = day
 	history.append({"who": "you", "key": "init.yes", "args": [], "names": {}, "to": p, "day": day})
-	var drive: String = C.PEOPLE[p]["drive"]
+	var drive: String = info(p)["drive"]
 	people[p]["mood"] = clampf(people[p]["mood"] + (1.5 if drive == "craft" or drive == "growth" else 1.0), -5.0, 5.0)
 	_say(p, "react.%s.pos" % p)
 
@@ -1007,7 +1020,7 @@ func _reveal(p: String, key: String) -> void:
 		return
 	known[key] = true
 	if key == "drive":
-		_narrate("know.drive", [], {"who": "@name.%s.nom" % p, "drive": "@drive." + C.PEOPLE[p]["drive"]})
+		_narrate("know.drive", [], {"who": "@name.%s.nom" % p, "drive": "@drive." + info(p)["drive"]})
 	else:
 		var cat := key.replace("skill.", "")
 		_narrate("know.skill", [], {"who": "@name.%s.nom" % p, "cat": "@cat." + cat, "level": "@level.%d" % people[p]["skills"][cat]})
@@ -1026,7 +1039,7 @@ func end_day() -> void:
 		var share := help_share(t)
 		if share > 0.0:
 			shares[t["uid"]] = share
-	for p in C.TEAM:
+	for p in team:
 		_work(p)
 	_work_myself()
 	for t in tasks:
@@ -1054,7 +1067,7 @@ func end_day() -> void:
 				_say("boss", "boss.vouched_late", [], {"task": "@taskname." + t["id"]})
 	_advance_chains()
 	_check_lies()
-	for p in C.TEAM:
+	for p in team:
 		_check_person(p)
 	_weight_check()
 	if C.SURVEY_AT.has(chapter_day()):
@@ -1168,7 +1181,7 @@ func hire_contractor(uid: int) -> void:
 	if not has_weight():
 		_say("boss", "contractor.no", [], {"task": "@taskname." + t["id"]})
 		return
-	if C.TEAM.has(t["owner"]) and t["progress"] > 0.0:
+	if team.has(t["owner"]) and t["progress"] > 0.0:
 		people[t["owner"]]["mood"] -= 0.5
 	t["owner"] = "contractor"
 	t["status"] = "taras"
@@ -1232,7 +1245,7 @@ func _speed(p: String, t: Dictionary) -> float:
 # half if they do. Someone listed as helper on several tasks only helps with the first.
 func help_share(t: Dictionary) -> float:
 	var h: String = t["helper"]
-	if t["status"] != "active" or h == "" or not C.TEAM.has(t["owner"]) or not available(h) or people[h]["absent"]:
+	if t["status"] != "active" or h == "" or not team.has(t["owner"]) or not available(h) or people[h]["absent"]:
 		return 0.0
 	if not available(t["owner"]) or people[t["owner"]]["absent"]:
 		return 0.0
@@ -1272,7 +1285,7 @@ func estimate(t: Dictionary, p: String = "") -> Dictionary:
 		return {"days": left / my_speed(t["cat"]) + t["blocked"], "sure": true}
 	var sure := true
 	var skill := 2
-	if C.TEAM.has(who) and people[who]["known"].has("skill." + t["cat"]):
+	if team.has(who) and people[who]["known"].has("skill." + t["cat"]):
 		skill = people[who]["skills"][t["cat"]]
 	else:
 		sure = false
@@ -1345,9 +1358,9 @@ func _work(p: String) -> void:
 			t["q_sum"] += quality * spend
 			t["q_days"] += spend
 			_learn(p, t["cat"], spend)
-			if C.PEOPLE[p]["likes"].has(t["cat"]):
+			if info(p)["likes"].has(t["cat"]):
 				st["mood"] += 0.3 * spend
-			if C.PEOPLE[p]["hates"].has(t["cat"]):
+			if info(p)["hates"].has(t["cat"]):
 				st["mood"] -= 0.4 * spend
 			if t["progress"] >= t["size"] - 0.001:
 				_finish(p, t)
@@ -1382,7 +1395,7 @@ func _work(p: String) -> void:
 			st["energy"] -= DRAIN
 		else:
 			st["energy"] = minf(_stamina(p), st["energy"] + IDLE_REST)
-			st["mood"] += C.PEOPLE[p]["idle"]
+			st["mood"] += info(p)["idle"]
 			if not st["idle_said"]:
 				st["idle_said"] = true
 				_say(p, "idle.%s" % p)
@@ -1473,7 +1486,7 @@ func late_hours(p: String) -> int:
 	var q := queue_of(p)
 	if q.is_empty():
 		return 0
-	var info: Dictionary = C.PEOPLE[p]
+	var info: Dictionary = info(p)
 	var first: Dictionary = q[0]
 	var late := 0
 	var tired := _feels_tired(p)
@@ -1513,7 +1526,7 @@ func ask_stay(uid: int) -> void:
 	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("stay_asked", -1) == day:
 		return
 	var p: String = t["owner"]
-	if not C.TEAM.has(p) or not available(p) or people[p]["absent"]:
+	if not team.has(p) or not available(p) or people[p]["absent"]:
 		return
 	var st: Dictionary = people[p]
 	t["stay_asked"] = day
@@ -1523,7 +1536,7 @@ func ask_stay(uid: int) -> void:
 	if not st.has("asked_late_week"):
 		st["asked_late_week"] = {}
 	st["asked_late_week"][week()] = asked
-	var info: Dictionary = C.PEOPLE[p]
+	var info: Dictionary = info(p)
 	if _feels_tired(p) and not info.get("workaholic", false):
 		_say(p, "stay.no_tired")
 		return
@@ -1573,7 +1586,7 @@ func _stuck_today(p: String, t: Dictionary, skill: int) -> bool:
 
 func _learn(p: String, cat: String, amount: float) -> void:
 	var st: Dictionary = people[p]
-	if C.PEOPLE[p].get("fast_learner", false):
+	if info(p).get("fast_learner", false):
 		amount *= 1.6
 	st["xp"][cat] += amount
 	var need: float = XP_BASE + XP_PER_SKILL * st["skills"][cat]
@@ -1709,7 +1722,7 @@ func _drop_tasks(p: String) -> void:
 
 
 func _stamina(p: String) -> float:
-	return float(C.PEOPLE[p]["stamina"])
+	return float(info(p)["stamina"])
 
 
 func stamina(p: String) -> float:
@@ -1748,7 +1761,7 @@ func _build_review() -> void:
 	for t in tasks:
 		if t["reviewed"]:
 			continue
-		var by_team: bool = C.TEAM.has(t["owner"]) and available(t["owner"])
+		var by_team: bool = team.has(t["owner"]) and available(t["owner"])
 		var done: bool = t["status"] == "done"
 		var good: bool = done and (t["quality"] == "good" or t["quality"] == "ok") and not t["late"]
 		if done and t["owner"] == "me":
@@ -1813,7 +1826,7 @@ func review_true(item: Dictionary, choice: String) -> bool:
 			return people[p]["skills"][t["cat"]] >= 2 and people[p]["week_overtime"][week()] == 0
 		"overload":
 			var overtime := 0
-			for q in C.TEAM:
+			for q in team:
 				overtime += people[q]["week_overtime"][week()]
 			return overtime >= 4 or people[p]["week_overtime"][week()] >= 2
 	return true
@@ -1845,10 +1858,10 @@ func answer_review(choice: String) -> void:
 				vika_up()
 		"team":
 			boss += boss_like("I", 0.5)
-			for q in C.TEAM:
+			for q in team:
 				if available(q):
 					people[q]["mood"] += 0.3
-			if C.PEOPLE[p]["drive"] == "visibility":
+			if info(p)["drive"] == "visibility":
 				st["mood"] -= 0.8
 				_say(p, "review.team." + p if L.has_key("review.team." + p) else "review.hurt", [], names)
 			_say("boss", "review.boss.team", [], names)
@@ -1928,7 +1941,7 @@ func _next_tip() -> String:
 				due.append("pushback")
 			elif day == 1:
 				due.append("assign")
-				if C.TEAM.any(func(p): return not queue_of(p).is_empty()):
+				if team.any(func(p): return not queue_of(p).is_empty()):
 					due.append("end_day")
 			elif flags.get("tip_day", 0) != day: # after day one, one tip a day at most
 				due.append("talk")
@@ -1938,7 +1951,7 @@ func _next_tip() -> String:
 					due.append("backlog")
 				if tasks.any(func(t): return can_intervene(t)):
 					due.append("intervene")
-				if C.TEAM.any(func(p): return available(p) and late_hours(p) > 0):
+				if team.any(func(p): return available(p) and late_hours(p) > 0):
 					due.append("overtime")
 		"evening":
 			due.append("evening")
@@ -2174,16 +2187,16 @@ func results_score() -> float:
 # How the team sees you: trust, mood, and anyone who left.
 func team_score() -> float:
 	var sum := 0.0
-	for p in C.TEAM:
+	for p in team:
 		var st: Dictionary = people[p]
 		sum += -3.0 if st["gone"] else st["trust"] + clampf(st["mood"], -3.0, 3.0) / 3.0
-	return sum / C.TEAM.size()
+	return sum / team.size()
 
 
 # Marina asks everyone anonymously. Each answer comes from what actually happened to that person.
 func _run_survey() -> void:
 	var quotes: Array = []
-	for p in C.TEAM:
+	for p in team:
 		if not people[p]["gone"]:
 			var q := _survey_quote(p)
 			# The same answer twice reads as a copy-paste; people phrase things differently.
@@ -2231,7 +2244,7 @@ func _survey_quote(p: String) -> String:
 
 func broken_promises() -> Array[String]:
 	var result: Array[String] = []
-	for p in C.TEAM:
+	for p in team:
 		if people[p]["promised"] or people[p]["debts"] > 0 or flags.has("mention_" + p) or flags.has("stretch_" + p):
 			result.append(p)
 	return result
@@ -2398,10 +2411,10 @@ func _style_week() -> void:
 		_say("boss", "style.boss.%s.%s" % [boss_letter(), top])
 		var sh := style_shares(week_style)
 		var missing := ""
-		for p in C.TEAM:
+		for p in team:
 			if not available(p):
 				continue
-			var mine: String = C.PEOPLE[p]["paei"]
+			var mine: String = info(p)["paei"]
 			if mine == top:
 				people[p]["mood"] = clampf(people[p]["mood"] + 0.7, -5.0, 5.0)
 				_say(p, "style.team.%s.pos" % p)
@@ -2419,9 +2432,9 @@ func _style_week() -> void:
 # energy well before that.
 func _feels_tired(p: String) -> bool:
 	var e: float = people[p]["energy"]
-	if C.PEOPLE[p].get("workaholic", false):
+	if info(p).get("workaholic", false):
 		return e <= 0.5
-	if C.PEOPLE[p].get("guards_energy", false):
+	if info(p).get("guards_energy", false):
 		return e <= 0.4 * _stamina(p)
 	return e <= TIRED_ENERGY
 
@@ -2429,7 +2442,7 @@ func _feels_tired(p: String) -> bool:
 # Will they offer to do something on their own today? Only with energy to spare, and (for some)
 # after hearing something good. A team led toward change volunteers more.
 func _wants_to_volunteer(p: String) -> bool:
-	var info: Dictionary = C.PEOPLE[p]
+	var info: Dictionary = info(p)
 	var st: Dictionary = people[p]
 	if st["energy"] < info["rest_at"] * _stamina(p):
 		return false
