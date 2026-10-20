@@ -119,12 +119,12 @@ const PRODUCT_TEAMS := {
 # us. The run starts with START_BANKS; sales bring in the chapter's BANK_POOL; some arrive with a card
 # tagged "joins" (a chain), and one tagged "last_chance" left undone loses the bank.
 const BANKS := {
-	"meridian": {"ru": "«Меридиан»", "en": "Meridian Bank"},
-	"fjord": {"ru": "«Фьорд»", "en": "Fjord Bank"},
-	"sahara": {"ru": "«Сахара Финанс»", "en": "Sahara Finance"},
-	"alpine": {"ru": "«Альпийский кредит»", "en": "Alpine Credit"},
-	"baltic": {"ru": "«Балтика»", "en": "Baltica Bank"},
-	"pacific": {"ru": "«Пасифик Траст»", "en": "Pacific Trust"},
+	"meridian": {"ru": "«Кредит Доверия»", "en": "Trust Credit Bank"},
+	"fjord": {"ru": "«Цифровая Трансформация»", "en": "Digital Transformation Bank"},
+	"sahara": {"ru": "«ОКР-Банк»", "en": "OKR Bank"},
+	"alpine": {"ru": "«Мы Одна Семья»", "en": "One Family Bank"},
+	"baltic": {"ru": "«Беги Заплати»", "en": "Run & Pay Bank"},
+	"pacific": {"ru": "«Банановый Банк»", "en": "Banana Bank"},
 }
 const START_BANKS := ["meridian"]
 const BANK_POOL := {1: ["sahara"], 2: ["alpine", "baltic"], 3: ["pacific"]}
@@ -190,6 +190,9 @@ static func _static_init() -> void:
 		for v in _variants(row, ch):
 			_add_card(row, ch, v)
 	_load_improvements()
+	for b in BANKS:
+		for lang in ["ru", "en"]:
+			TASK_TEXT[lang]["bankphrase." + b] = bank_phrase(b, lang)
 	for id in TASKS:
 		for b in TASKS[id]["then"]:
 			if not TASKS.has(b["next"]):
@@ -292,11 +295,25 @@ static func _add_card(row: Dictionary, ch: int, v: Dictionary) -> void:
 		TASK_TEXT[lang]["task.%s.ask" % id] = _fill(row["ask_" + lang], v, lang, ch)
 
 
+# "банк «Кредит Доверия»", but just "«ОКР-Банк»" when the name says it already. English names all do.
+static func bank_phrase(b: String, lang: String) -> String:
+	var name: String = BANKS[b][lang]
+	if lang == "ru" and not name.to_lower().contains("банк"):
+		return "банк " + name
+	return name
+
+
+static func _cap(text: String) -> String:
+	return text.substr(0, 1).to_upper() + text.substr(1)
+
+
 static func _fill(text: String, v: Dictionary, lang: String, ch: int) -> String:
 	if v.has("team"):
 		text = text.replace("{team}", PRODUCT_TEAMS[v["team"]][lang])
 	if v.has("bank"):
-		text = text.replace("{bank}", BANKS[v["bank"]][lang])
+		text = text.replace("{bank_name}", BANKS[v["bank"]][lang])
+		text = text.replace("{bank}", bank_phrase(v["bank"], lang))
+		text = text.replace("{Bank}", _cap(bank_phrase(v["bank"], lang)))
 	var voice: Dictionary = LEAD_VOICE.get(v["from"], {})
 	var pick: int = abs(hash(v["id"]))
 	text = text.replace("{hi}", voice["hi_" + lang][pick % 3] if voice else "")

@@ -342,7 +342,7 @@ func _join_bank(b: String) -> void:
 	if banks.has(b):
 		return
 	banks[b] = {"mood": 0.0, "since": day}
-	_narrate("bank.joined", [], {"bank": "@bank." + b})
+	_narrate("bank.joined", [], {"bank": "@bankphrase." + b})
 	# Its deliveries mix into the deck from here on.
 	for id in C.DECK.get(chapter, []):
 		if C.TASKS[id].get("bank", "") == b:
@@ -358,7 +358,7 @@ func _maybe_sell() -> void:
 		return
 	var b: String = pool[0]
 	reputation = 0.0
-	_say("boss", "bank.sold", [], {"bank": "@bank." + b})
+	_say("boss", "bank.sold", [], {"bank": "@bankphrase." + b})
 	_join_bank(b)
 
 
@@ -375,7 +375,7 @@ func _settle_bank(t: Dictionary, outcome: String) -> void:
 		flags["bank_lost_" + b] = true
 		deck = deck.filter(func(id): return _bank_here(id))
 		boss -= 1.0
-		_say("boss", "bank.left", [], {"bank": "@bank." + b})
+		_say("boss", "bank.left", [], {"bank": "@bankphrase." + b})
 
 
 func bank_word(b: String) -> String:
