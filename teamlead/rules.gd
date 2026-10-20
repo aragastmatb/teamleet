@@ -246,7 +246,10 @@ func _arrivals() -> Array:
 	var keys: Dictionary = C.KEY_DAYS.get(chapter, {})
 	if keys.has(chapter_day()):
 		out.append(keys[chapter_day()])
-	out.append_array(C.START_DAYS.get(chapter, {}).get(chapter_day(), []))
+	for id in C.START_DAYS.get(chapter, {}).get(chapter_day(), []):
+		# A chain that only starts if something hasn't happened yet (unless:<flag>).
+		if not C.TASKS[id]["tags"].any(func(tag): return tag.begins_with("unless:") and flags.has(tag.substr(7))):
+			out.append(id)
 	for due in chain_due.duplicate():
 		if due["day"] <= day:
 			chain_due.erase(due)
@@ -254,7 +257,8 @@ func _arrivals() -> Array:
 	var load := 0.0
 	for id in out:
 		load += C.TASKS[id]["size"]
-	var target: float = C.DAILY_LOAD
+	# More banks than chapter one's three bring more work.
+	var target: float = C.DAILY_LOAD + C.BANK_LOAD * maxi(0, banks.size() - 3)
 	if flags.get("relief", false):
 		flags["relief"] = false
 		target -= 1.5
@@ -353,7 +357,10 @@ func _join_bank(b: String) -> void:
 func _maybe_sell() -> void:
 	if day % 5 != 1 or day == C.chapter_first_day(chapter):
 		return
-	var pool: Array = C.BANK_POOL.get(chapter, []).filter(func(b): return not banks.has(b) and not flags.has("bank_lost_" + b))
+	var pool: Array = []
+	for ch in range(1, chapter + 1):
+		pool.append_array(C.BANK_POOL.get(ch, []))
+	pool = pool.filter(func(b): return not banks.has(b) and not flags.has("bank_lost_" + b))
 	if pool.is_empty() or rng.randf() > SALE_CHANCE + REPUTATION_SALE * maxf(0.0, reputation):
 		return
 	var b: String = pool[0]
@@ -369,6 +376,8 @@ func _settle_bank(t: Dictionary, outcome: String) -> void:
 		return
 	var info: Dictionary = C.TASKS[t["id"]]
 	banks[b]["mood"] += BANK_MOOD[outcome]
+	if outcome == "good" and info["tags"].has("client"):
+		banks[b]["shipped"] = true
 	reputation += 1.0 if outcome == "good" else -0.5
 	if (info["tags"].has("last_chance") and outcome in ["late", "declined"]) or banks[b]["mood"] <= BANK_LEAVES:
 		banks.erase(b)
@@ -402,7 +411,10 @@ func _improved_by(kind: String, id: String) -> Array:
 # Keep three improvements on offer, next in line first.
 func _fill_backlog() -> void:
 	var open := tasks.filter(func(t): return t.get("backlog", false) and t["status"] == "inbox").size()
-	for id in C.improvements_of(chapter):
+	var ids: Array = []
+	for ch in range(1, chapter + 1):
+		ids.append_array(C.improvements_of(ch))
+	for id in ids:
 		if open >= BACKLOG_SIZE:
 			return
 		if flags.has("imp_added_" + id) or flags.has("init_" + id):
@@ -973,7 +985,8 @@ func _initiative_effect(t: Dictionary) -> void:
 		"write_docs":
 			comp_off["missing_docs"] = true
 			comp_off["old_system"] = true
-	_narrate("init.done." + id, [], names)
+	if L.has_key("init.done." + id): # improvements have said their piece in _improve
+		_narrate("init.done." + id, [], names)
 
 
 func _next_unknown(p: String) -> String:
@@ -1409,6 +1422,16 @@ func drop_task(t: Dictionary, again_later: bool) -> void:
 # Each evening, a chain card that has an outcome (done well or badly, turned down, late) sends on
 # whatever its table row says comes next.
 func _advance_chains() -> void:
+	for t in tasks:
+		if not t.get("flagged", false) and C.TASKS.get(t["id"], {}).get("tags", []).any(func(tag): return tag.begins_with("sets:")):
+			var outcome := _outcome(t)
+			if outcome != "":
+				t["flagged"] = true
+				if outcome == "good":
+					for tag in C.TASKS[t["id"]]["tags"]:
+						if tag.begins_with("sets:"):
+							flags[tag.substr(5)] = true
+							_narrate("flag." + tag.substr(5))
 	for t in tasks:
 		if not t.get("settled", false) and C.TASKS.get(t["id"], {}).get("bank", "") != "":
 			var outcome := _outcome(t)
@@ -2023,8 +2046,12 @@ func start_next_chapter() -> void:
 	chapter += 1
 	day += 1
 	ending = ""
+	hours = 0
+	events.clear()
+	pending = {}
 	deck.clear()
 	_refill_deck()
+	_fill_backlog()
 	_start_day()
 
 
@@ -2048,6 +2075,9 @@ func chapter_keys() -> Array:
 # The end of a chapter: results (the boss's view, mostly the key projects) against what the team says.
 # Passing it leads on to the next chapter; anything else ends the run.
 func _finish_chapter() -> void:
+	if chapter > 1:
+		_chapter_verdict()
+		return
 	var r := results_score()
 	var team := team_score()
 	if quits >= 2:
@@ -2069,7 +2099,49 @@ func _finish_chapter() -> void:
 
 
 func passed() -> bool:
-	return ending in ["leader", "puppeteer"]
+	return ending in ["leader", "puppeteer"] or ending.ends_with("_pass") or ending.ends_with("_partial")
+
+
+# Chapters after the probation are judged by the company's goals: all met, some, or none.
+func _chapter_verdict() -> void:
+	var info: Dictionary = C.CHAPTERS[chapter - 1]
+	var met := 0
+	for g in goal_progress():
+		if g["have"] >= g["need"]:
+			met += 1
+	if quits >= 2:
+		ending = "team_gone"
+	elif vika_standing >= 4 and vika_standing > boss:
+		ending = "replaced"
+	elif hours >= 60:
+		ending = "workhorse"
+	elif met == info["goals"].size():
+		ending = info["id"] + "_pass"
+	elif met > 0:
+		ending = info["id"] + "_partial"
+		boss -= 1.5
+	else:
+		ending = info["fail"]
+	promoted = false
+	phase = "chapter_end" if passed() and chapter < C.CHAPTERS.size() else "end"
+
+
+# This chapter's goals and how far along they are: [{"id", "have", "need"}].
+func goal_progress() -> Array:
+	var out: Array = []
+	for g in C.CHAPTERS[chapter - 1].get("goals", []):
+		var have := 0
+		match g["kind"]:
+			"flags":
+				for f in g["flags"]:
+					if flags.has(f):
+						have += 1
+			"banks_shipped":
+				for b in banks:
+					if banks[b].get("shipped", false):
+						have += 1
+		out.append({"id": g["id"], "have": have, "need": g["need"]})
+	return out
 
 
 const RESULTS_OK := 3.0

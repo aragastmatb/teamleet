@@ -500,7 +500,7 @@ func _sound_for_changes() -> String:
 	var moved := phase != last_phase
 	last_phase = phase
 	if moved and (phase == "end" or phase == "chapter_end"):
-		return "ending_good" if rules.ending in ["leader", "puppeteer", "beloved"] else "ending_bad"
+		return "ending_good" if rules.passed() or rules.ending == "beloved" else "ending_bad"
 	if moved and phase == "report":
 		return "report"
 	for name in ["trouble", "weight_down", "weight_up"]:
@@ -713,7 +713,7 @@ func _top_bar() -> Control:
 	bar.add_child(top)
 	top.add_child(_logo(26))
 	top.add_child(_label(Loc.t("title"), 18, COL_ON_TOP, false, true))
-	top.add_child(_label(Loc.t(rules.day_key().substr(1)), 15, COL_ON_TOP_MUTED))
+	top.add_child(_label(_day_label(), 15, COL_ON_TOP_MUTED))
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(gap)
@@ -726,6 +726,12 @@ func _top_bar() -> Control:
 	top.add_child(_button(Loc.t("sound_on" if sound_on else "sound_off"), _toggle_sound, 0, "on_top"))
 	top.add_child(_button(Loc.t("lang_button"), _toggle_lang, 0, "on_top"))
 	return bar
+
+
+# "Понедельник, неделя 2", and from chapter two on, which chapter.
+func _day_label() -> String:
+	var text := Loc.t(rules.day_key().substr(1))
+	return text if rules.chapter == 1 else Loc.t("chapter_short", [rules.chapter]) + text
 
 
 func _logo(size: int) -> Control:
@@ -882,6 +888,13 @@ func _chainer_card() -> Control:
 	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 10))
 	var v := _vbox(4)
 	card.add_child(v)
+	var goals := rules.goal_progress()
+	if not goals.is_empty():
+		v.add_child(_label(Loc.t("chainer.goal"), 13, COL_MUTED, false, true))
+		for g in goals:
+			var done: bool = g["have"] >= g["need"]
+			v.add_child(_label(("✓ " if done else "· ") + Loc.t("goal." + g["id"], [mini(g["have"], g["need"]), g["need"]]), 13, COL_GOOD if done else COL_TEXT, true))
+		v.add_child(_spacer(4))
 	v.add_child(_label(Loc.t("chainer.banks"), 13, COL_MUTED, false, true))
 	if rules.banks.is_empty():
 		v.add_child(_label(Loc.t("chainer.no_banks"), 13, COL_DANGER, true))
@@ -1285,7 +1298,7 @@ func _phone_top() -> Control:
 	row.add_theme_constant_override("separation", 10)
 	v.add_child(row)
 	row.add_child(_logo(22))
-	var day := _label(Loc.t(rules.day_key().substr(1)), 15, COL_ON_TOP, false, true)
+	var day := _label(_day_label(), 15, COL_ON_TOP, false, true)
 	day.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(day)
 	var k := rules.key_status()
@@ -1745,7 +1758,7 @@ func _build_end() -> void:
 	var v := _document(780)
 	var info: Dictionary = C.CHAPTERS[rules.chapter - 1]
 	v.add_child(_section(Loc.t("chapter.results", [rules.chapter, Loc.t("chapter.%s.name" % info["id"])])))
-	var good := rules.ending in ["leader", "puppeteer", "beloved"]
+	var good := rules.ending == "beloved" or rules.passed()
 	v.add_child(_label(Loc.t("ending.%s.title" % rules.ending), 28, COL_GOOD if good else COL_DANGER, true, true))
 	v.add_child(_label(Loc.t("ending.%s.text" % rules.ending), 16, COL_TEXT, true))
 	v.add_child(_label(Loc.t("summary.hours", [rules.hours]), 15, COL_GOOD if rules.hours == 0 else COL_DANGER, true))

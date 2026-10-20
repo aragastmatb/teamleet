@@ -8,9 +8,15 @@ extends RefCounted
 # Each chapter has its own key projects and deck (the `chapter` column in data/tasks.tsv); Irina names the
 # key projects on its first day, Marina surveys the team halfway and at the end, and the chapter closes
 # with a verdict. ready: playable already; the others are announced and come later.
+# goals (chapter 2 on): what the company needs this month. "flags": that many of these flags set (a card
+# tagged sets:<flag> done well sets it); "banks_shipped": that many banks with us that got a good delivery.
+# All goals met: on to the next chapter. Some: on, but Irina remembers. None: `fail` is the ending.
 const CHAPTERS := [
 	{"id": "probation", "days": 20, "ready": true},
-	{"id": "round_a", "days": 20, "ready": false},
+	{"id": "round_a", "days": 20, "ready": true, "fail": "company_closed", "goals": [
+		{"id": "teams_onboarded", "kind": "flags", "flags": ["onboarded_kyc", "onboarded_payments", "onboarded_regulatory"], "need": 3},
+		{"id": "banks_shipped", "kind": "banks_shipped", "need": 3},
+	]},
 	{"id": "round_b", "days": 20, "ready": false},
 	{"id": "deal", "days": 20, "ready": false},
 ]
@@ -127,7 +133,8 @@ const BANKS := {
 	"pacific": {"ru": "«Банановый Банк»", "en": "Banana Bank"},
 }
 const START_BANKS := ["meridian"]
-const BANK_POOL := {1: ["sahara"], 2: ["alpine", "baltic"], 3: ["pacific"]}
+# Banks sales can bring in, by chapter; one not sold yet stays on offer later.
+const BANK_POOL := {1: ["sahara"], 2: ["alpine"], 3: ["pacific"]}
 # How each lead opens and pushes; a card picks one of the three by its id, so it reads the same every time.
 const LEAD_VOICE := {
 	"stas": {
@@ -181,14 +188,16 @@ static func _static_init() -> void:
 		var row := {}
 		for i in header.size():
 			row[header[i]] = cells[i].strip_edges()
-		var ch := maxi(1, int(row.get("chapter", "1")))
-		if not DECK.has(ch):
-			DECK[ch] = []
-			KEY_DAYS[ch] = {}
-			KEY_PROJECTS[ch] = []
-			START_DAYS[ch] = {}
-		for v in _variants(row, ch):
-			_add_card(row, ch, v)
+		# chapter "*": a card of the common base, in every chapter's deck.
+		var chapters: Array = range(1, CHAPTERS.size() + 1) if row.get("chapter", "1") == "*" else [maxi(1, int(row.get("chapter", "1")))]
+		for ch in chapters:
+			if not DECK.has(ch):
+				DECK[ch] = []
+				KEY_DAYS[ch] = {}
+				KEY_PROJECTS[ch] = []
+				START_DAYS[ch] = {}
+			for v in _variants(row, ch):
+				_add_card(row, ch, v)
 	_load_improvements()
 	for b in BANKS:
 		for lang in ["ru", "en"]:
@@ -337,6 +346,7 @@ static func tasks_with(field: String, value: String) -> Array:
 const DAILY_LOAD := 7.5
 const MAX_CARDS_A_DAY := 5
 const MAX_SAME_KIND := 2
+const BANK_LOAD := 0.7 # more work a day for each bank past the third
 const REPEAT_GAP := 5 # working days before the same card can come again
 const TEMPLATE_GAP := 2 # and before the same trouble comes from another team
 

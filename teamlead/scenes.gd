@@ -46,7 +46,7 @@ const COMP_STYLE := {
 
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
-	"probation", "weekend_fire", "chaos_meeting", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
+	"probation", "chapter_intro", "weekend_fire", "chaos_meeting", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
 	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow", "boris_drunk", "friday_deploy",
 ]
 
@@ -109,6 +109,17 @@ func _check_boss_deadline(r) -> Dictionary:
 	return {}
 
 
+# The first day of a later chapter: Irina sets the company's goal for the month and names the key projects.
+func _check_chapter_intro(r) -> Dictionary:
+	if r.chapter == 1 or r.chapter_day() != 1 or not once(r, "intro_%d" % r.chapter):
+		return {}
+	var id: String = C.CHAPTERS[r.chapter - 1]["id"]
+	var names := {}
+	for i in r.chapter_keys().size():
+		names["k%d" % (i + 1)] = "@taskname." + r.chapter_keys()[i]
+	return {"who": "boss", "names": names, "lines": [{"who": "boss", "key": "event.chapter_intro.%s" % id}, {"who": "boss", "key": "event.chapter_intro.%s.keys" % id}], "choices": ["ok"]}
+
+
 # Day one: Irina explains the probation and names the key projects.
 func _check_probation(r) -> Dictionary:
 	if r.day != 1 or not once(r, "probation"):
@@ -166,7 +177,8 @@ func _check_weekend_fire(r) -> Dictionary:
 	r.flags.erase("weekend_fire")
 	r.flags["last_fixer"] = fixer
 	var names := {}
-	if fixer == "me":
+	# Whoever was on it has left since: it fell to you.
+	if fixer == "me" or not r.available(fixer):
 		r.my_energy -= 2.0
 		r.my_week_hours[r.week()] += 8
 		names["who"] = "@you"
