@@ -14,6 +14,9 @@ const TOP_H := 50
 # Base sizes the screen is laid out for: a landscape desktop, or a phone held upright.
 const DESKTOP_SIZE := Vector2i(1280, 800)
 const PHONE_SIZE := Vector2i(430, 860)
+const PHONE_WIDE_SIZE := Vector2i(860, 430) # a phone on its side
+# Below this (in CSS pixels on the web, window pixels elsewhere) the desktop layout gets too small to read.
+const DESKTOP_MIN := Vector2(900, 560)
 const PHONE_TOP_H := 64
 
 const COL_BG := Color("f4f5f7")
@@ -156,13 +159,16 @@ func _fit_window() -> void:
 
 
 # An upright window (a phone) gets the phone layout; the base size changes with it so text stays readable.
+# Upright or small (a phone, also held sideways): the one-column layout. Windows and the web canvas
+# are in device pixels, so a 3x phone or a Retina laptop is measured in points.
 func _apply_layout_mode() -> bool:
-	var size := get_window().size
-	var phone := size.x < size.y
-	if phone == mobile and get_window().content_scale_size == (PHONE_SIZE if phone else DESKTOP_SIZE):
+	var size := Vector2(get_window().size) / maxf(1.0, DisplayServer.screen_get_scale())
+	var phone := size.x < size.y or size.x < DESKTOP_MIN.x or size.y < DESKTOP_MIN.y
+	var target := DESKTOP_SIZE if not phone else (PHONE_SIZE if size.x < size.y else PHONE_WIDE_SIZE)
+	if phone == mobile and get_window().content_scale_size == target:
 		return false
 	mobile = phone
-	get_window().content_scale_size = PHONE_SIZE if phone else DESKTOP_SIZE
+	get_window().content_scale_size = target
 	return true
 
 
@@ -618,9 +624,12 @@ func _build_title() -> void:
 
 # Before a run: which Irina you get and who you were. Portraits, not letters: the letters come out at the end.
 func _build_setup() -> void:
+	var outer := _vbox(0)
+	outer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(outer)
 	var scroll := _scroll("setup")
-	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.add_child(scroll)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_child(scroll)
 	var center := CenterContainer.new()
 	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(center)
@@ -649,13 +658,27 @@ func _build_setup() -> void:
 	v.add_child(_spacer(6))
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 12)
-	v.add_child(buttons)
 	buttons.add_child(_button(Loc.t("setup.start"), _start_run, 160 if mobile else 260, "primary"))
 	buttons.add_child(_button(Loc.t("setup.back"), _open_setup.bind(false), 0))
+	if mobile:
+		# On a phone the start button stays in reach under the scrolling choices.
+		var bar := PanelContainer.new()
+		var style := _flat(COL_SURFACE)
+		style.border_color = COL_BORDER
+		style.border_width_top = 1
+		style.content_margin_left = 16
+		style.content_margin_right = 16
+		style.content_margin_top = 10
+		style.content_margin_bottom = 12
+		bar.add_theme_stylebox_override("panel", style)
+		bar.add_child(buttons)
+		outer.add_child(bar)
+	else:
+		v.add_child(buttons)
 
 
 func _option_grid(kind: String, values: Array, chosen: String, width: int) -> Control:
-	var cols := 1 if mobile else 3
+	var cols := 3 if width >= 700 else 1
 	var grid := GridContainer.new()
 	grid.columns = cols
 	grid.add_theme_constant_override("h_separation", 12)
@@ -782,9 +805,14 @@ func _team_sidebar() -> Control:
 	scroll.add_child(_padded(v, 12, 12))
 	v.add_child(_me_card())
 	v.add_child(_section(Loc.t("team_header")))
+	var gone := PackedStringArray()
 	for p in rules.team:
-		if not rules.people[p]["gone"] or not p.begins_with("hire"):
+		if rules.people[p]["gone"]:
+			gone.append(Loc.person(p))
+		else:
 			v.add_child(_person_card(p))
+	if not gone.is_empty():
+		v.add_child(_label(Loc.t("gone_list", [", ".join(gone)]), 12, COL_FAINT, true))
 	if rules.openings > 0 or not rules.candidates.is_empty():
 		v.add_child(_spacer(4))
 		v.add_child(_section(Loc.t("hire.section") + " · " + Loc.t("hire.openings_left", [rules.openings])))
