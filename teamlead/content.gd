@@ -4,12 +4,29 @@ extends RefCounted
 # Every number here is hidden. The player sees moods, energy and progress in words and bars,
 # and learns skills and motives through results and one-on-ones.
 
-# A four-week probation. Irina names three key projects on day one; Marina surveys the team
-# halfway and at the end. The final attestation weighs results against what the team says.
-const WEEKS := 4
-const DAYS := 20
-const REVIEW_DAYS := [5, 10, 15, 20]
-const SURVEY_DAYS := [10, 20]
+# The run is four chapters, a month (four working weeks) each; days are counted through the whole run.
+# Each chapter has its own key projects and deck (the `chapter` column in data/tasks.tsv); Irina names the
+# key projects on its first day, Marina surveys the team halfway and at the end, and the chapter closes
+# with a verdict. ready: playable already; the others are announced and come later.
+const CHAPTERS := [
+	{"id": "probation", "days": 20, "ready": true},
+	{"id": "round_a", "days": 20, "ready": false},
+	{"id": "round_b", "days": 20, "ready": false},
+	{"id": "deal", "days": 20, "ready": false},
+]
+const SURVEY_AT := [10, 20] # days into the chapter
+const WEEKS := 16 # in the whole run
+
+
+static func chapter_first_day(ch: int) -> int:
+	var d := 1
+	for i in ch - 1:
+		d += CHAPTERS[i]["days"]
+	return d
+
+
+static func chapter_last_day(ch: int) -> int:
+	return chapter_first_day(ch) + CHAPTERS[ch - 1]["days"] - 1
 
 const TEAM := ["alex", "vika", "dima", "gena"]
 const CATEGORIES := ["pipelines", "infra", "portal", "support"]
@@ -75,16 +92,18 @@ const INTENT_TASTE := {
 
 
 # The task deck lives in data/tasks.tsv, a table anyone can edit (Excel, Google Sheets, a text editor).
-# Columns: id, kind, category, from, size, due, public, copies, key_day, tags, name_ru, ask_ru, name_en, ask_en.
+# Columns: id, kind, chapter, category, from, size, due, public, copies, key_day, tags, name_ru, ask_ru, name_en, ask_en.
+# chapter: which chapter's deck it's in (empty = 1). key_day: the day of that chapter a key project arrives.
 # size: days of work for someone decent at it. due: days after arrival (0 = today). public: the boss will look.
 # kind: key (key project, arrives on key_day), weekly (Monday report), deck (shuffled, `copies` of it),
 # followup (a client coming back for more), dump (Irina drops it on you). tags: debt (fires that cleaning up
 # tech debt removes and neglect brings back), client (good work here brings the client back for more).
 const TASKS_PATH := "res://data/tasks.tsv"
 static var TASKS := {}
-static var DECK: Array = []
+# By chapter: DECK[ch] the deck cards, KEY_DAYS[ch][day of the chapter] the key project, KEY_PROJECTS[ch] all of them.
+static var DECK := {}
 static var KEY_DAYS := {}
-static var KEY_PROJECTS: Array = []
+static var KEY_PROJECTS := {}
 static var DUMPS: Array = []
 static var TASK_TEXT := {"ru": {}, "en": {}}
 
@@ -106,13 +125,18 @@ static func _static_init() -> void:
 		var tags: Array = Array(row["tags"].split(",", false)).map(func(x): return x.strip_edges())
 		TASKS[id] = {"cat": row["category"], "size": float(row["size"]), "due": int(row["due"]), "public": row["public"] == "1",
 			"from": row["from"], "kind": row["kind"], "tags": tags}
+		var ch := maxi(1, int(row.get("chapter", "1")))
+		if not DECK.has(ch):
+			DECK[ch] = []
+			KEY_DAYS[ch] = {}
+			KEY_PROJECTS[ch] = []
 		match row["kind"]:
 			"deck":
 				for i in maxi(1, int(row["copies"])):
-					DECK.append(id)
+					DECK[ch].append(id)
 			"key":
-				KEY_DAYS[int(row["key_day"])] = id
-				KEY_PROJECTS.append(id)
+				KEY_DAYS[ch][int(row["key_day"])] = id
+				KEY_PROJECTS[ch].append(id)
 			"dump":
 				DUMPS.append(id)
 		for lang in ["ru", "en"]:

@@ -114,8 +114,8 @@ func _check_probation(r) -> Dictionary:
 	if r.day != 1 or not once(r, "probation"):
 		return {}
 	var names := {}
-	for i in C.KEY_PROJECTS.size():
-		names["k%d" % (i + 1)] = "@taskname." + C.KEY_PROJECTS[i]
+	for i in r.chapter_keys().size():
+		names["k%d" % (i + 1)] = "@taskname." + r.chapter_keys()[i]
 	return {"who": "boss", "names": names, "lines": [{"who": "boss", "key": "event.probation.ask"}, {"who": "boss", "key": "event.probation.ask2"},
 		{"who": "boss", "key": "event.probation.taste." + r.boss_type}], "choices": ["ok"]}
 
@@ -152,7 +152,7 @@ func _check_boris_drunk(r) -> Dictionary:
 
 # Friday: Stas wants to ship tonight.
 func _check_friday_deploy(r) -> Dictionary:
-	if r.day % 5 != 0 or r.day < 5 or r.day >= C.DAYS or r.flags.has("no_friday_deploys") or r.flags.get("friday_asks", 0) >= 2 or r.rng.randf() > 0.6:
+	if r.day % 5 != 0 or r.day < 5 or r.day >= r.last_day() or r.flags.has("no_friday_deploys") or r.flags.get("friday_asks", 0) >= 2 or r.rng.randf() > 0.6:
 		return {}
 	r.flags["friday_asks"] = r.flags.get("friday_asks", 0) + 1
 	return {"who": "stas", "lines": [{"who": "stas", "key": "event.friday_deploy.ask"}], "choices": ["allow", "forbid", "on_call"]}
@@ -373,7 +373,7 @@ func _check_gena_mentor(r) -> Dictionary:
 
 # Taras needs a pair of hands for a day.
 func _check_taras_borrow(r) -> Dictionary:
-	if r.day < 3 or r.day > C.DAYS - 3 or r.flags.has("scene_taras_borrow"):
+	if r.day < 3 or r.day > r.last_day() - 3 or r.flags.has("scene_taras_borrow"):
 		return {}
 	if r.day < 12 and r.rng.randf() > 0.15:
 		return {}

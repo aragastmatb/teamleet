@@ -44,6 +44,8 @@ const STUCK_DAYS := 3
 var rng := RandomNumberGenerator.new()
 var scenes := Scenes.new()
 var day := 1
+# Which chapter (1..4) of C.CHAPTERS; days run on through the chapters.
+var chapter := 1
 var phase := "title" # plan, event, evening, report, review, end
 var people := {}
 var tasks: Array[Dictionary] = []
@@ -111,6 +113,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	else:
 		rng.randomize()
 	day = 1
+	chapter = 1
 	people.clear()
 	for p in C.TEAM:
 		var base: Dictionary = C.PEOPLE[p]
@@ -164,7 +167,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 
 
 func _start_day() -> void:
-	_narrate("log.morning", ["@day.%d" % day])
+	_narrate("log.morning", [day_key()])
 	var monday := day % 5 == 1 and day > 1
 	if monday:
 		my_energy = minf(10.0, my_energy + MY_WEEKEND_REST)
@@ -219,8 +222,9 @@ func _arrivals() -> Array:
 	var out: Array = []
 	if day % 5 == 1 and not flags.has("automated_report"):
 		out.append_array(C.tasks_with("kind", "weekly"))
-	if C.KEY_DAYS.has(day):
-		out.append(C.KEY_DAYS[day])
+	var keys: Dictionary = C.KEY_DAYS.get(chapter, {})
+	if keys.has(chapter_day()):
+		out.append(keys[chapter_day()])
 	var load := 0.0
 	for id in out:
 		load += C.TASKS[id]["size"]
@@ -238,7 +242,7 @@ func _arrivals() -> Array:
 			for id in out:
 				if C.TASKS[id]["cat"] == info["cat"]:
 					same += 1
-			if same < C.MAX_SAME_KIND and day + info["size"] - 1 <= C.DAYS:
+			if same < C.MAX_SAME_KIND and day + info["size"] - 1 <= last_day():
 				picked = i
 				break
 		if picked < 0:
@@ -251,7 +255,7 @@ func _arrivals() -> Array:
 
 # A fresh shuffle of the base deck goes under what's left. Improvements keep their cards out.
 func _refill_deck() -> void:
-	var fresh: Array = C.DECK.duplicate()
+	var fresh: Array = C.DECK.get(chapter, []).duplicate()
 	if flags.has("tech_debt_done"):
 		fresh = fresh.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
 	for i in range(fresh.size() - 1, 0, -1):
@@ -265,7 +269,7 @@ func _refill_deck() -> void:
 func add_task(id: String) -> void:
 	var info: Dictionary = C.TASKS[id]
 	# Near the end of the probation, deadlines squeeze into what's left of it.
-	add_task_raw(id, info["cat"], info["size"], mini(day + info["due"], C.DAYS), info["public"], info["from"])
+	add_task_raw(id, info["cat"], info["size"], mini(day + info["due"], last_day()), info["public"], info["from"])
 	_say(info["from"], "task.%s.ask" % id)
 
 
@@ -276,7 +280,7 @@ func add_task_raw(id: String, cat: String, size: float, due: int, public: bool, 
 		"q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
 		"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
 		"asked": false, "vouched": false, "flaw": false, "complicated": false, "blocked": 0, "q_bonus": 0.0, "involved": false,
-		"key": C.KEY_PROJECTS.has(id), "sit_today": false,
+		"key": chapter_keys().has(id), "sit_today": false,
 	})
 	next_uid += 1
 
@@ -759,7 +763,7 @@ func accept_initiative(p: String) -> void:
 		lead(pair[0], pair[1])
 	flags["init_" + id] = true
 	var info: Dictionary = C.INIT_TASKS[id]
-	add_task_raw("init_" + id, info["cat"], info["size"], C.DAYS + 10, false, p)
+	add_task_raw("init_" + id, info["cat"], info["size"], last_day() + 10, false, p)
 	var t: Dictionary = tasks[tasks.size() - 1]
 	t["owner"] = p
 	t["status"] = "active"
@@ -862,9 +866,9 @@ func end_day() -> void:
 	for p in C.TEAM:
 		_check_person(p)
 	_weight_check()
-	if C.SURVEY_DAYS.has(day):
+	if C.SURVEY_AT.has(chapter_day()):
 		_run_survey()
-	if C.REVIEW_DAYS.has(day):
+	if day % 5 == 0:
 		_style_week()
 		_build_review()
 		if review.is_empty():
@@ -888,7 +892,7 @@ func _end_of_my_day() -> void:
 		my_energy = 6.0
 		_narrate("you.burnout")
 	# Untouched tech debt makes itself felt: each Friday another outage goes into the deck.
-	if day % 5 == 0 and day < C.DAYS and not flags.has("tech_debt_done"):
+	if day % 5 == 0 and day < last_day() and not flags.has("tech_debt_done"):
 		var fires := C.tasks_with("tag", "debt")
 		if not fires.is_empty():
 			deck.insert(mini(2, deck.size()), fires[rng.randi() % fires.size()])
@@ -982,6 +986,11 @@ func hire_contractor(uid: int) -> void:
 	weight_cause = t["id"]
 	_say("boss", "contractor.yes", [], {"task": "@taskname." + t["id"]})
 	_weight_check()
+
+
+# The day's name inside the chapter, "Wednesday, week 2", as a locale reference.
+func day_key() -> String:
+	return "@day.%d" % chapter_day()
 
 
 func week() -> int:
@@ -1644,8 +1653,8 @@ func answer_review(choice: String) -> void:
 	_weight_check()
 	if not review.is_empty():
 		_ask_review()
-	elif day >= C.DAYS:
-		_finish_run()
+	elif day >= last_day():
+		_finish_chapter()
 	else:
 		phase = "evening"
 
@@ -1702,7 +1711,7 @@ static func _read_save():
 	if f == null:
 		return null
 	var state = f.get_var()
-	if not state is Dictionary or state.get("version") != SAVE_VERSION or state.get("phase", "end") in ["title", "end"]:
+	if not state is Dictionary or state.get("version") != SAVE_VERSION or state.get("phase", "end") in ["title", "end"] or (state.get("phase") == "chapter_end" and not C.CHAPTERS[state.get("chapter", 1)]["ready"]):
 		return null
 	if not C.BOSSES.has(state.get("boss_type", "")) or not C.PROFILES.has(state.get("profile", "")):
 		return null
@@ -1720,15 +1729,46 @@ static func _read_save():
 func next() -> void:
 	if phase != "evening":
 		return
-	if day >= C.DAYS:
-		_finish_run()
+	if day >= last_day():
+		_finish_chapter()
 		return
 	day += 1
 	_start_day()
 
 
-# The attestation: results (the boss's view, mostly the key projects) against what the team says.
-func _finish_run() -> void:
+# The chapter is over and the next one is ready to play: a new month, a new deck and new key projects.
+# The team, Irina and everything they remember carry over.
+func start_next_chapter() -> void:
+	if phase != "chapter_end" or not next_chapter_ready():
+		return
+	chapter += 1
+	day += 1
+	ending = ""
+	deck.clear()
+	_refill_deck()
+	_start_day()
+
+
+func next_chapter_ready() -> bool:
+	return chapter < C.CHAPTERS.size() and C.CHAPTERS[chapter]["ready"]
+
+
+func last_day() -> int:
+	return C.chapter_last_day(chapter)
+
+
+# 1..20: how far into this chapter's month we are.
+func chapter_day() -> int:
+	return day - C.chapter_first_day(chapter) + 1
+
+
+func chapter_keys() -> Array:
+	return C.KEY_PROJECTS.get(chapter, [])
+
+
+# The end of a chapter: results (the boss's view, mostly the key projects) against what the team says.
+# Passing it leads on to the next chapter; anything else ends the run.
+func _finish_chapter() -> void:
 	var r := results_score()
 	var team := team_score()
 	if quits >= 2:
@@ -1746,7 +1786,11 @@ func _finish_run() -> void:
 	else:
 		ending = "fired"
 	promoted = _level_of(boss) >= 3 and ending in ["leader", "puppeteer"]
-	phase = "end"
+	phase = "chapter_end" if passed() and chapter < C.CHAPTERS.size() else "end"
+
+
+func passed() -> bool:
+	return ending in ["leader", "puppeteer"]
 
 
 const RESULTS_OK := 3.0
@@ -1758,7 +1802,7 @@ func key_status() -> Dictionary:
 	var out := {"good": 0, "bad": 0, "late": 0, "open": 0, "ahead": 0}
 	var seen := {}
 	for t in tasks:
-		if not t["key"]:
+		if not t["key"] or not chapter_keys().has(t["id"]):
 			continue
 		seen[t["id"]] = true
 		if t["late"]:
@@ -1767,7 +1811,7 @@ func key_status() -> Dictionary:
 			out["good" if t["quality"] == "good" or t["quality"] == "ok" else "bad"] += 1
 		else:
 			out["open"] += 1
-	out["ahead"] = C.KEY_PROJECTS.size() - seen.size()
+	out["ahead"] = chapter_keys().size() - seen.size()
 	return out
 
 

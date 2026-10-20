@@ -25,7 +25,9 @@ Play in the browser: https://aragastmatb.github.io/teamleet/ — every push to `
 - Assessment outcomes: results and team (a leader people follow), results without the team (master of delegation), the team without results (the team's favourite, probation failed), neither (failed); plus workaholic, replaced by Vika, the team fell apart.
 
 ## Content you can edit without code
-- `data/tasks.tsv` — the task deck: one row per task (category, who brings it, size, deadline, whether the boss sees it, copies in the deck, Russian and English text). Open it in Excel or Google Sheets, or any text editor; the game reads it on start.
+- Before a run you pick Irina (results, order, ideas, people, the chaotic one, or a surprise) and who you were: a former engineer (strong hands), a former manager (more attention, better at talking people round) or someone who grew up in this team (knows everyone's skills, but old colleagues resent orders). The run saves itself after every step; Continue on the title picks it up.
+- The game is four month-long chapters; only the first, the probation, is playable so far. Passing it shows the chapter's results and what comes next.
+- `data/tasks.tsv` — the task deck: one row per task (chapter, category, who brings it, size, deadline, whether the boss sees it, copies in the deck, Russian and English text). Open it in Excel or Google Sheets, or any text editor; the game reads it on start.
 - `docs/lore.md` — the world (2Leet, the Chainer platform team) and what's agreed; `docs/plan.md` — the expansion plan.
 
 ## Files (`teamlead/`)

@@ -339,7 +339,7 @@ func _sound_for_changes() -> String:
 	var phase: String = rules.phase
 	var moved := phase != last_phase
 	last_phase = phase
-	if moved and phase == "end":
+	if moved and (phase == "end" or phase == "chapter_end"):
 		return "ending_good" if rules.ending in ["leader", "puppeteer", "beloved"] else "ending_bad"
 	if moved and phase == "report":
 		return "report"
@@ -372,7 +372,7 @@ func _render() -> void:
 	if rules.phase != "title":
 		_play(_sound_for_changes())
 	# Every action ends in a render, so this keeps the save one step behind the player at most.
-	if rules.phase == "end":
+	if rules.phase == "end" or (rules.phase == "chapter_end" and not rules.next_chapter_ready()):
 		Rules.delete_save()
 	elif rules.phase != "title":
 		rules.save_game()
@@ -403,7 +403,7 @@ func _render() -> void:
 	match rules.phase:
 		"report":
 			_build_report()
-		"end":
+		"end", "chapter_end":
 			_build_end()
 	_let_touches_through(ui)
 	_restore_scrolls()
@@ -557,13 +557,13 @@ func _top_bar() -> Control:
 	bar.add_child(top)
 	top.add_child(_logo(26))
 	top.add_child(_label(Loc.t("title"), 18, COL_ON_TOP, false, true))
-	top.add_child(_label(Loc.t("day.%d" % rules.day), 15, COL_ON_TOP_MUTED))
+	top.add_child(_label(Loc.t(rules.day_key().substr(1)), 15, COL_ON_TOP_MUTED))
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(gap)
 	top.add_child(_label(_attention_text(), 15, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
 	var k := rules.key_status()
-	top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": C.KEY_PROJECTS.size()}), 15, COL_ON_TOP))
+	top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
 	var word := rules.boss_word()
 	top.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 15, BOSS_COLORS[word]))
 	top.add_child(_button(Loc.t("sound_on" if sound_on else "sound_off"), _toggle_sound, 0, "on_top"))
@@ -754,7 +754,7 @@ func _board_area() -> Control:
 		hint = Loc.t("you.busy")
 	titles.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
 	if rules.phase == "evening":
-		head.add_child(_button(Loc.t("to_end" if rules.day >= C.DAYS else "next_day"), _next, 200, "primary"))
+		head.add_child(_button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 200, "primary"))
 	else:
 		var end := _button(Loc.t("end_day"), _end_day, 200, "primary")
 		end.disabled = rules.phase != "plan" or not rules.pending.is_empty()
@@ -1060,11 +1060,11 @@ func _phone_top() -> Control:
 	row.add_theme_constant_override("separation", 10)
 	v.add_child(row)
 	row.add_child(_logo(22))
-	var day := _label(Loc.t("day.%d" % rules.day), 15, COL_ON_TOP, false, true)
+	var day := _label(Loc.t(rules.day_key().substr(1)), 15, COL_ON_TOP, false, true)
 	day.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(day)
 	var k := rules.key_status()
-	row.add_child(_label(Loc.render("keys_short", [], {"good": k["good"], "total": C.KEY_PROJECTS.size()}), 15, COL_ON_TOP))
+	row.add_child(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
 	var info := _flow(12, 0)
 	v.add_child(info)
 	info.add_child(_label(_attention_text(), 13, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
@@ -1124,7 +1124,7 @@ func _phone_board() -> Control:
 	for t in lanes[lane]:
 		list.add_child(_task_card(t, lane))
 	if rules.phase == "evening":
-		v.add_child(_button(Loc.t("to_end" if rules.day >= C.DAYS else "next_day"), _next, 0, "primary"))
+		v.add_child(_button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 0, "primary"))
 	else:
 		var end := _button(Loc.t("end_day"), _end_day, 0, "primary")
 		end.disabled = rules.phase != "plan" or not rules.pending.is_empty()
@@ -1267,7 +1267,7 @@ func _chat_prompt(list: VBoxContainer) -> void:
 		_review_prompt(list)
 	elif rules.phase == "evening":
 		list.add_child(_spacer(8))
-		var b := _button(Loc.t("to_end" if rules.day >= C.DAYS else "next_day"), _next, 0, "primary")
+		var b := _button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 0, "primary")
 		list.add_child(b)
 	elif rules.phase == "plan":
 		for p in C.TEAM:
@@ -1403,7 +1403,7 @@ func _document(width: int) -> VBoxContainer:
 func _build_report() -> void:
 	var w := rules.week()
 	var v := _document(780)
-	v.add_child(_label(Loc.t("report_title", [w + 1]), 24, COL_TEXT, true, true))
+	v.add_child(_label(Loc.t("report_title", [w + 1 - (C.chapter_first_day(rules.chapter) - 1) / 5]), 24, COL_TEXT, true, true))
 	v.add_child(_label(Loc.t("report_hint"), 14, COL_MUTED, true))
 	v.add_child(_spacer(4))
 	for p in C.TEAM:
@@ -1465,8 +1465,11 @@ func _survey_block(v: VBoxContainer) -> void:
 	v.add_child(_label(Loc.t("survey.verdict." + verdict), 15, COL_GOOD if verdict == "for" else (COL_WARN if verdict == "wary" else COL_DANGER), true, true))
 
 
+# The end of a chapter or of the run: Irina's verdict, the numbers, the team, and what comes next.
 func _build_end() -> void:
 	var v := _document(780)
+	var info: Dictionary = C.CHAPTERS[rules.chapter - 1]
+	v.add_child(_section(Loc.t("chapter.results", [rules.chapter, Loc.t("chapter.%s.name" % info["id"])])))
 	var good := rules.ending in ["leader", "puppeteer", "beloved"]
 	v.add_child(_label(Loc.t("ending.%s.title" % rules.ending), 28, COL_GOOD if good else COL_DANGER, true, true))
 	v.add_child(_label(Loc.t("ending.%s.text" % rules.ending), 16, COL_TEXT, true))
@@ -1480,7 +1483,7 @@ func _build_end() -> void:
 			late += 1
 	v.add_child(_label(Loc.t("summary.done", [done, late]), 15, COL_TEXT, true))
 	var k := rules.key_status()
-	v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": C.KEY_PROJECTS.size(), "boss": "@weight." + rules.boss_word()}), 15, COL_TEXT, true))
+	v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": rules.chapter_keys().size(), "boss": "@weight." + rules.boss_word()}), 15, COL_TEXT, true))
 	if rules.ending in ["leader", "puppeteer"]:
 		v.add_child(_label(Loc.t("promoted.yes" if rules.promoted else "promoted.no"), 15, COL_GOOD if rules.promoted else COL_MUTED, true))
 	_adizes_block(v)
@@ -1508,9 +1511,43 @@ func _build_end() -> void:
 	if not promises.is_empty():
 		v.add_child(_label(Loc.t("summary.promises", [", ".join(promises)]), 15, COL_DANGER, true))
 	v.add_child(_spacer(6))
-	var b := _button(Loc.t("again"), _start_run, 300, "primary")
-	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	v.add_child(b)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 12)
+	if rules.phase == "chapter_end":
+		_next_chapter_block(v)
+		if rules.next_chapter_ready():
+			buttons.add_child(_button(Loc.t("chapter.start", [rules.chapter + 1]), _start_next_chapter, 260, "primary"))
+		else:
+			buttons.add_child(_button(Loc.t("to_menu"), _to_title.bind(false), 260, "primary"))
+	else:
+		buttons.add_child(_button(Loc.t("again"), _to_title.bind(true), 260, "primary"))
+	v.add_child(buttons)
+
+
+# What the next chapter is about, or that it's still being made.
+func _next_chapter_block(v: VBoxContainer) -> void:
+	var id: String = C.CHAPTERS[rules.chapter]["id"]
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 16))
+	var box := _vbox(6)
+	card.add_child(box)
+	box.add_child(_section(Loc.t("chapter.next")))
+	box.add_child(_label(Loc.t("chapter.title", [rules.chapter + 1, Loc.t("chapter.%s.name" % id)]), 20, COL_TEXT, true, true))
+	box.add_child(_label(Loc.t("chapter.%s.goal" % id), 15, COL_TEXT, true))
+	if not rules.next_chapter_ready():
+		box.add_child(_label(Loc.t("chapter.soon"), 14, COL_MUTED, true))
+	v.add_child(card)
+
+
+func _start_next_chapter() -> void:
+	rules.start_next_chapter()
+	_clear_selection()
+
+
+func _to_title(setup: bool) -> void:
+	rules.phase = "title"
+	setup_open = setup
+	_render()
 
 
 # How Irina read your style: your Adizes code, what kind of lead that makes you, and what she herself is.
