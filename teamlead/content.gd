@@ -13,7 +13,7 @@ extends RefCounted
 # All goals met: on to the next chapter. Some: on, but Irina remembers. None: `fail` is the ending.
 const CHAPTERS := [
 	{"id": "probation", "days": 20, "ready": true},
-	{"id": "round_a", "days": 20, "ready": true, "fail": "company_closed", "goals": [
+	{"id": "round_a", "days": 20, "ready": true, "fail": "company_closed", "openings": 2, "goals": [
 		{"id": "teams_onboarded", "kind": "flags", "flags": ["onboarded_kyc", "onboarded_payments", "onboarded_regulatory"], "need": 3},
 		{"id": "banks_shipped", "kind": "banks_shipped", "need": 3},
 	]},
@@ -54,6 +54,35 @@ const PEOPLE := {
 	"gena": {"skills": {"pipelines": 4, "infra": 2, "portal": 0, "support": 1}, "drive": "peace", "likes": ["pipelines"], "hates": ["support"], "idle": 0.3, "stamina": 7,
 		"paei": "A", "rest_at": 0.75, "initiative": 0.35, "guards_energy": true},
 }
+
+# Hiring, from chapter two: Irina gives openings, Marina sends candidates. A hire is made up from a name
+# and an archetype, and nobody tells you which archetype: it shows in how they work.
+#   solid       an ordinary decent engineer
+#   junior      weak at first, learns fast
+#   faker       a great CV and great stand-ups; the work itself crawls (stepping in shows it)
+#   stump       does the minimum, never complains, never grows
+#   life_first  honest, pleasant and good, but now and then the dog, the car or the marathon comes first
+#   genius      very strong and Irina adores them; the team around them wilts
+# Names: Russian in the five cases the texts need (nom, gen, dat, acc, ins), and English.
+const HIRE_NAMES := [
+	{"ru": ["Артём", "Артёма", "Артёму", "Артёма", "Артёмом"], "en": "Artem"},
+	{"ru": ["Ксения", "Ксении", "Ксении", "Ксению", "Ксенией"], "en": "Ksenia"},
+	{"ru": ["Олег", "Олега", "Олегу", "Олега", "Олегом"], "en": "Oleg"},
+	{"ru": ["Полина", "Полины", "Полине", "Полину", "Полиной"], "en": "Polina"},
+	{"ru": ["Руслан", "Руслана", "Руслану", "Руслана", "Русланом"], "en": "Ruslan"},
+	{"ru": ["Яна", "Яны", "Яне", "Яну", "Яной"], "en": "Yana"},
+	{"ru": ["Тимур", "Тимура", "Тимуру", "Тимура", "Тимуром"], "en": "Timur"},
+	{"ru": ["Нина", "Нины", "Нине", "Нину", "Ниной"], "en": "Nina"},
+	{"ru": ["Егор", "Егора", "Егору", "Егора", "Егором"], "en": "Egor"},
+	{"ru": ["Лиза", "Лизы", "Лизе", "Лизу", "Лизой"], "en": "Liza"},
+	{"ru": ["Марк", "Марка", "Марку", "Марка", "Марком"], "en": "Mark"},
+	{"ru": ["Соня", "Сони", "Соне", "Соню", "Соней"], "en": "Sonya"},
+]
+const ARCHETYPES := {
+	"solid": {"weight": 30}, "junior": {"weight": 20}, "faker": {"weight": 15},
+	"stump": {"weight": 15}, "life_first": {"weight": 10}, "genius": {"weight": 10},
+}
+const INTERVIEW_TOPICS := ["tech", "last_job", "overtime", "team"]
 
 # Adizes' four roles of a manager: P produces results, A keeps order, E brings change, I holds people
 # together. Everything you do as a lead leans one way; nobody is strong in all four.

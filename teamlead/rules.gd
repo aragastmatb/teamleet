@@ -133,20 +133,13 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	people.clear()
 	team = C.TEAM.duplicate()
 	hires.clear()
+	candidates.clear()
+	openings = 0
+	next_hire = 1
+	L.EXTRA = {"ru": {}, "en": {}}
+	L.STAND_IN = {}
 	for p in team:
-		var base: Dictionary = info(p)
-		var skills := {}
-		var xp := {}
-		for cat in C.CATEGORIES:
-			skills[cat] = clampi(base["skills"][cat] + rng.randi_range(-1, 1), 0, 4)
-			xp[cat] = 0.0
-		people[p] = {
-			"skills": skills, "xp": xp, "energy": float(base["stamina"]), "mood": 1.0, "trust": 0,
-			"sick": 0, "absent": false, "absent_reason": "", "off_next": false, "pushed": 0, "promised": false, "ambition": 0,
-			"gone": false, "known": {}, "warned_mood": false, "warned_tired": false,
-			"last_done": -10, "idle_said": false, "idle_days": 0, "promised_day": 0,
-			"week_hours": _zeros(), "week_overtime": _zeros(), "week_extra": _zeros(), "week_absent": _zeros(), "week_done": _zeros(), "debts": 0, "caught_flattery": false, "done_cats": {}, "start": skills.duplicate(),
-		}
+		_new_person(p, true)
 	tasks.clear()
 	comp_off.clear()
 	flags.clear()
@@ -212,6 +205,16 @@ func _start_day() -> void:
 		elif st["sick"] > 0:
 			st["sick"] -= 1
 			_say(p, "absent.sick")
+		elif archetype(p) == "life_first" and day - st["joined"] > 1 and rng.randf() < LIFE_AWAY:
+			st["absent"] = true
+			st["absent_reason"] = "life"
+			_say(p, "absent.life.%d" % rng.randi_range(1, 5))
+	# A genius on the team: Irina loves them, everyone else gets a little greyer each day.
+	for g in team:
+		if archetype(g) == "genius" and available(g) and not people[g]["absent"]:
+			for p in team:
+				if p != g and available(p):
+					people[p]["mood"] = clampf(people[p]["mood"] - GENIUS_GLOOM, -5.0, 5.0)
 	# Today's cards come in once the morning's questions are answered, so the chat reads in order.
 	arriving = _arrivals()
 	talked.clear()
@@ -238,6 +241,7 @@ func _start_day() -> void:
 
 func _deliver_arrivals() -> void:
 	_maybe_sell()
+	_hiring_morning()
 	for id in arriving:
 		add_task(id)
 	arriving = []
@@ -336,9 +340,180 @@ func add_task(id: String) -> void:
 
 # ---------- people ----------
 
+const NEWBIE_DAYS := 5 # a hire works at half speed this long, unless someone who knows the work pairs up
+const FAKER_PACE := 0.35 # how fast a faker really works, whatever they say
+const LIFE_AWAY := 0.15 # a life-first hire's chance of being away on any given day
+const GENIUS_GLOOM := 0.15 # how much a genius sinks everyone else's mood a day
+const CANDIDATE_DAYS := 5 # how long a candidate waits for an answer
+const MAX_CANDIDATES := 3
+
+
 # What someone is like: the four from content.gd, or a hire made up at hiring time (same keys).
 func info(p: String) -> Dictionary:
 	return hires[p] if hires.has(p) else C.PEOPLE[p]
+
+
+func archetype(p: String) -> String:
+	return info(p).get("arch", "")
+
+
+func _new_person(p: String, jitter: bool) -> void:
+	var base: Dictionary = info(p)
+	var skills := {}
+	var xp := {}
+	for cat in C.CATEGORIES:
+		skills[cat] = clampi(base["skills"][cat] + (rng.randi_range(-1, 1) if jitter else 0), 0, 4)
+		xp[cat] = 0.0
+	people[p] = {
+		"skills": skills, "xp": xp, "energy": float(base["stamina"]), "mood": 1.0, "trust": 0,
+		"sick": 0, "absent": false, "absent_reason": "", "off_next": false, "pushed": 0, "promised": false, "ambition": 0,
+		"gone": false, "known": {}, "warned_mood": false, "warned_tired": false,
+		"last_done": -10, "idle_said": false, "idle_days": 0, "promised_day": 0,
+		"week_hours": _zeros(), "week_overtime": _zeros(), "week_extra": _zeros(), "week_absent": _zeros(), "week_done": _zeros(), "debts": 0, "caught_flattery": false, "done_cats": {}, "start": skills.duplicate(),
+		"joined": day if hires.has(p) else -100,
+	}
+
+
+# ---------- hiring ----------
+
+# Openings Irina has given and not yet filled; candidates Marina has sent: [{"id", "until", "asked", "known"}].
+var openings := 0
+var candidates: Array = []
+var next_hire := 1
+
+
+# A made-up person: a name nobody on the team has yet, an archetype, and what that makes them.
+func _new_candidate() -> void:
+	var id := "hire%d" % next_hire
+	next_hire += 1
+	var used := hires.values().map(func(h): return h["name"])
+	var names: Array = range(C.HIRE_NAMES.size()).filter(func(i): return not used.has(i))
+	if names.is_empty():
+		names = range(C.HIRE_NAMES.size())
+	var total := 0
+	for a in C.ARCHETYPES:
+		total += C.ARCHETYPES[a]["weight"]
+	var roll := rng.randi_range(1, total)
+	var arch := "solid"
+	for a in C.ARCHETYPES:
+		roll -= C.ARCHETYPES[a]["weight"]
+		if roll <= 0:
+			arch = a
+			break
+	var cats: Array = C.CATEGORIES.duplicate()
+	for i in range(cats.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = cats[i]
+		cats[i] = cats[j]
+		cats[j] = tmp
+	# Real skills by archetype; the CV says what they'd like you to think.
+	var levels: Array = {"solid": [3, 2, 1, 1], "junior": [2, 1, 1, 0], "faker": [1, 1, 1, 0], "stump": [2, 1, 1, 1],
+		"life_first": [3, 3, 1, 1], "genius": [4, 4, 3, 1]}[arch]
+	var skills := {}
+	var cv := {}
+	for i in cats.size():
+		skills[cats[i]] = levels[i]
+		cv[cats[i]] = 3 if arch == "faker" and i < 2 else levels[i]
+	var drives: Array = {"solid": ["craft", "growth", "peace", "visibility"], "junior": ["growth"], "faker": ["visibility"], "stump": ["peace"],
+		"life_first": ["peace", "craft"], "genius": ["craft", "visibility"]}[arch]
+	hires[id] = {
+		"name": names[rng.randi() % names.size()], "arch": arch, "skills": skills, "cv": cv,
+		"drive": drives[rng.randi() % drives.size()], "likes": [cats[0]], "hates": [cats[3]] if arch != "stump" else [],
+		"idle": 0.0 if arch == "stump" else -0.3, "stamina": 10 if arch == "life_first" else 8,
+		"paei": C.PAEI[rng.randi() % 4], "rest_at": 0.4, "initiative": 0.0 if arch in ["stump", "faker"] else 0.4,
+		"fast_learner": arch == "junior", "touchy": arch == "genius",
+	}
+	_register_hire(id)
+	candidates.append({"id": id, "until": day + CANDIDATE_DAYS, "asked": [], "known": {}})
+	_say("marina", "hire.cv", [], {"who": "@name.%s.nom" % id})
+
+
+# A hire's name in every case, and whose lines they borrow (their archetype's, then any hire's).
+func _register_hire(id: String) -> void:
+	var n: Dictionary = C.HIRE_NAMES[hires[id]["name"]]
+	var cases := ["nom", "gen", "dat", "acc", "ins"]
+	for i in cases.size():
+		L.EXTRA["ru"]["name.%s.%s" % [id, cases[i]]] = n["ru"][i]
+		L.EXTRA["en"]["name.%s.%s" % [id, cases[i]]] = n["en"] + ("'s" if cases[i] == "gen" else "")
+	L.STAND_IN[id] = ["hire_" + hires[id]["arch"], "hire"]
+
+
+# Each morning: candidates who waited too long take another offer, and Marina sends more while there are openings.
+func _hiring_morning() -> void:
+	if flags.get("openings_said", 0) < openings:
+		flags["openings_said"] = openings
+		_say("boss", "hire.openings", [openings])
+	for c in candidates.duplicate():
+		if c["until"] < day:
+			candidates.erase(c)
+			_narrate("hire.gone", [], {"who": "@name.%s.nom" % c["id"]})
+	if openings > 0 and candidates.size() < MAX_CANDIDATES and (candidates.is_empty() or day % 2 == 0):
+		_new_candidate()
+
+
+func candidate(id: String) -> Dictionary:
+	for c in candidates:
+		if c["id"] == id:
+			return c
+	return {}
+
+
+func can_interview(id: String) -> bool:
+	var c := candidate(id)
+	return phase == "plan" and pending.is_empty() and not c.is_empty() and c["asked"].size() < 2
+
+
+func interview(id: String) -> void:
+	if not can_interview(id):
+		return
+	spend_attention()
+	lead("I", 0.2)
+	history.append({"who": "you", "key": "hire.interview_open", "args": [], "names": {}, "to": id, "day": day})
+	_open_conversation(scenes.interview_event(self, id))
+
+
+func can_hire(id: String) -> bool:
+	return phase == "plan" and pending.is_empty() and openings > 0 and not candidate(id).is_empty()
+
+
+func hire(id: String) -> void:
+	if not can_hire(id):
+		return
+	candidates.erase(candidate(id))
+	openings -= 1
+	team.append(id)
+	_new_person(id, false)
+	lead("P", 0.3)
+	_say("marina", "hire.joined", [], {"who": "@name.%s.nom" % id})
+	_say(id, "hello." + id)
+
+
+func reject_candidate(id: String) -> void:
+	var c := candidate(id)
+	if c.is_empty() or phase != "plan":
+		return
+	candidates.erase(c)
+	_narrate("hire.rejected", [], {"who": "@name.%s.nom" % id})
+
+
+# What the candidate's CV claims, unless an interview showed the truth.
+func cv_level(id: String, cat: String) -> int:
+	var c := candidate(id)
+	if not c.is_empty() and c["known"].has(cat):
+		return hires[id]["skills"][cat]
+	return hires[id]["cv"][cat]
+
+
+# The progress a task seems to have: a faker's own reports, until someone looks.
+func shown_progress(t: Dictionary) -> float:
+	return maxf(t["progress"], t.get("claimed", 0.0)) if not t.get("exposed", false) else t["progress"]
+
+
+func _expose_faker(t: Dictionary) -> void:
+	if t.get("claimed", 0.0) <= t["progress"] + 0.05 or t.get("exposed", false):
+		return
+	t["exposed"] = true
+	_narrate("faker.exposed", [], {"who": "@name.%s.gen" % t["owner"], "task": "@taskname." + t["id"]})
 
 
 # ---------- banks ----------
@@ -828,6 +1003,12 @@ func reveal_next(p: String) -> void:
 		_say(p, "talk.listen.nothing")
 		return
 	var line := "talk.listen.%s.%s" % [p, key.replace("skill.", "")]
+	if hires.has(p) and key.begins_with("skill."):
+		# A hire talks about their level in it; the four have their own words for each kind of work.
+		var cat := key.replace("skill.", "")
+		_say(p, "talk.listen.hire.level.%d" % people[p]["skills"][cat], [], {"cat": "@cat." + cat})
+		_reveal(p, key)
+		return
 	_say(p, line if L.has_key(line) else "talk.listen.any")
 	_reveal(p, key)
 
@@ -903,6 +1084,8 @@ func intervene(uid: int) -> void:
 	var p: String = t["owner"]
 	if not team.has(p) or not available(p) or people[p]["absent"]:
 		return
+	# Looking closely at a faker's task shows how far it really got.
+	_expose_faker(t)
 	t["checked_day"] = day
 	spend_attention()
 	history.append({"who": "you", "key": "intervene.open", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": p, "day": day})
@@ -1059,6 +1242,7 @@ func end_day() -> void:
 				_say("taras", "taras.done", [], {"task": "@taskname." + t["id"]})
 	for t in tasks:
 		if (t["status"] == "inbox" or t["status"] == "active") and t["due"] == day and not t["late"]:
+			_expose_faker(t)
 			t["late"] = true
 			t["late_day"] = day
 			_late(t)
@@ -1230,6 +1414,9 @@ func _speed(p: String, t: Dictionary) -> float:
 	# Told to hurry or to take care when you stepped in.
 	s *= t.get("pace", 1.0)
 	var share: float = shares.get(t["uid"], 0.0)
+	# New people are slow at first, unless someone who knows the work sits with them.
+	if day - st["joined"] < NEWBIE_DAYS and not (share > 0.0 and people.has(t["helper"]) and people[t["helper"]]["skills"][t["cat"]] >= 2):
+		s *= 0.5
 	if share > 0.0 and people.has(t["helper"]):
 		var hs: int = people[t["helper"]]["skills"][t["cat"]]
 		if hs > skill:
@@ -1342,6 +1529,11 @@ func _work(p: String) -> void:
 				time = 0.0
 				continue
 			var step := _speed(p, t) * (1.2 if t["sit_today"] else 1.0)
+			var told := step
+			if archetype(p) == "faker":
+				# Reports a normal day's work; does a third of it, and gets stuck just short of "done".
+				step *= FAKER_PACE
+				t["claimed"] = minf(t["size"] * 0.95, maxf(t.get("claimed", 0.0), t["progress"]) + told * minf(time, 1.0))
 			var spend := minf(time, (t["size"] - t["progress"]) / step)
 			time -= spend
 			t["progress"] += step * spend
@@ -1366,7 +1558,7 @@ func _work(p: String) -> void:
 				_finish(p, t)
 			else:
 				# How far they got today, relative to the task: the main way to read someone's skill.
-				var part: float = step * spend / t["size"]
+				var part: float = (told if archetype(p) == "faker" and not t.get("exposed", false) else step) * spend / t["size"]
 				var pace := "big" if part >= 0.45 else ("mid" if part >= 0.25 else "small")
 				_narrate("pace." + pace, [], {"who": "@name.%s.nom" % p, "task": "@taskname." + t["id"]})
 		for t in stuck:
@@ -1481,7 +1673,7 @@ func _outcome(t: Dictionary) -> String:
 # because you told them to pull themselves together.
 func late_hours(p: String) -> int:
 	var st: Dictionary = people[p]
-	if not available(p) or st["absent"]:
+	if not available(p) or st["absent"] or archetype(p) == "life_first":
 		return 0
 	var q := queue_of(p)
 	if q.is_empty():
@@ -1585,6 +1777,8 @@ func _stuck_today(p: String, t: Dictionary, skill: int) -> bool:
 
 
 func _learn(p: String, cat: String, amount: float) -> void:
+	if archetype(p) == "stump":
+		return
 	var st: Dictionary = people[p]
 	if info(p).get("fast_learner", false):
 		amount *= 1.6
@@ -1600,6 +1794,12 @@ func _learn(p: String, cat: String, amount: float) -> void:
 
 func _finish(p: String, t: Dictionary) -> void:
 	t["quality"] = _quality_of(t)
+	# Irina adores a genius: anything visible they deliver lifts them in her eyes, and you with them.
+	if archetype(p) == "genius" and t["public"] and t["quality"] in ["good", "ok"]:
+		boss += 0.3
+		if not flags.has("genius_praised_" + p):
+			flags["genius_praised_" + p] = true
+			_say("boss", "hire.genius_praised", [], {"who": "@name.%s.nom" % p})
 	if t["id"].begins_with("init_"):
 		t["reviewed"] = true
 		_initiative_effect(t)
@@ -2014,6 +2214,10 @@ func load_game() -> bool:
 			set(key, state[key])
 	rng.seed = state["rng_seed"]
 	rng.state = state["rng_state"]
+	L.EXTRA = {"ru": {}, "en": {}}
+	L.STAND_IN = {}
+	for id in hires:
+		_register_hire(id)
 	return true
 
 
@@ -2062,6 +2266,7 @@ func start_next_chapter() -> void:
 	hours = 0
 	events.clear()
 	pending = {}
+	openings += C.CHAPTERS[chapter - 1].get("openings", 0)
 	deck.clear()
 	_refill_deck()
 	_fill_backlog()

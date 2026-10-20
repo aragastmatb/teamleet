@@ -54,6 +54,7 @@ const AVATAR_COLORS := {
 	"contractor": Color("7a869a"), "stas": Color("de350b"), "olga": Color("8777d9"), "boris": Color("5e6c84"),
 }
 
+const HIRE_COLORS := [Color("00b8d9"), Color("ff7452"), Color("57d9a3"), Color("998dd9"), Color("ffab00"), Color("2684ff")]
 const BANK_COLORS := {"happy": Color("00875a"), "fine": Color("5e6c84"), "unhappy": Color("b65c02"), "leaving": Color("de350b")}
 
 var rules := Rules.new()
@@ -782,7 +783,13 @@ func _team_sidebar() -> Control:
 	v.add_child(_me_card())
 	v.add_child(_section(Loc.t("team_header")))
 	for p in rules.team:
-		v.add_child(_person_card(p))
+		if not rules.people[p]["gone"] or not p.begins_with("hire"):
+			v.add_child(_person_card(p))
+	if rules.openings > 0 or not rules.candidates.is_empty():
+		v.add_child(_spacer(4))
+		v.add_child(_section(Loc.t("hire.section") + " · " + Loc.t("hire.openings_left", [rules.openings])))
+		for c in rules.candidates:
+			v.add_child(_candidate_card(c))
 	v.add_child(_spacer(4))
 	v.add_child(_section(Loc.t("boss_header")))
 	v.add_child(_boss_card())
@@ -827,6 +834,8 @@ func _person_card(p: String) -> Control:
 	v.add_child(state)
 	if st["absent"]:
 		state.add_child(_pill(Loc.t("absent.%s_label" % st["absent_reason"]), COL_WARN, Color("fff0b3")))
+	if rules.day - st["joined"] < rules.NEWBIE_DAYS:
+		state.add_child(_pill(Loc.t("newbie_label"), COL_PRIMARY, COL_SELECTED))
 	var late := rules.late_hours(p) if rules.phase == "plan" else 0
 	if late > 0:
 		state.add_child(_pill(Loc.render("late_preview", [], {"n": late}), COL_WARN, Color("fff0b3")))
@@ -880,6 +889,60 @@ func _me_card() -> Control:
 		var colors: Array = CAT_COLORS[cat]
 		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % rules.my_skill(cat))], colors[0], colors[1]))
 	return card
+
+
+# A CV from Marina: what they claim (or what an interview showed), how long they'll wait, and what to do.
+func _candidate_card(c: Dictionary) -> Control:
+	var id: String = c["id"]
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 10))
+	var v := _vbox(5)
+	card.add_child(v)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	v.add_child(head)
+	head.add_child(_avatar(id, 28))
+	var names := _vbox(0)
+	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(names)
+	names.add_child(_label(Loc.person(id), 15, COL_TEXT, false, true))
+	names.add_child(_label(Loc.t("hire.waits", [maxi(0, c["until"] - rules.day + 1)]), 12, COL_MUTED))
+	var skills := _flow(4, 4)
+	v.add_child(skills)
+	for cat in C.CATEGORIES:
+		var seen: bool = c["known"].has(cat)
+		var colors: Array = CAT_COLORS[cat]
+		var text := "%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % rules.cv_level(id, cat))]
+		skills.add_child(_pill(text + (" ✓" if seen else ""), colors[0], colors[1]))
+	v.add_child(_label(Loc.t("hire.cv_short") + (" · ✓ " + Loc.t("hire.seen_short") if not c["known"].is_empty() else ""), 11, COL_FAINT))
+	var row := _flow(6, 6)
+	v.add_child(row)
+	if c["asked"].size() < 2:
+		var ask := _button(Loc.t("hire.interview_btn") + _cost_mark(), _interview.bind(id), 0, "subtle")
+		ask.disabled = not rules.can_interview(id)
+		row.add_child(ask)
+	else:
+		row.add_child(_label(Loc.t("hire.asked_all"), 12, COL_MUTED))
+	var take := _button(Loc.t("hire.hire_btn"), _hire.bind(id), 0, "primary")
+	take.disabled = not rules.can_hire(id)
+	row.add_child(take)
+	row.add_child(_button(Loc.t("hire.reject_btn"), _reject_candidate.bind(id), 0, "subtle"))
+	return card
+
+
+func _interview(id: String) -> void:
+	rules.interview(id)
+	_render()
+
+
+func _hire(id: String) -> void:
+	rules.hire(id)
+	_render()
+
+
+func _reject_candidate(id: String) -> void:
+	rules.reject_candidate(id)
+	_render()
 
 
 # The platform as a business: which banks are with us and how they feel, and what's been improved.
@@ -1072,7 +1135,7 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 	if t["status"] == "active":
 		var bar := ProgressBar.new()
 		bar.max_value = t["size"]
-		bar.value = minf(t["progress"], t["size"])
+		bar.value = minf(rules.shown_progress(t), t["size"])
 		bar.show_percentage = false
 		bar.custom_minimum_size = Vector2(0, 4)
 		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1887,7 +1950,7 @@ func _avatar(p: String, size: int) -> Control:
 	box.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	box.mouse_filter = Control.MOUSE_FILTER_PASS
-	var style := _flat(AVATAR_COLORS.get(p, COL_MUTED))
+	var style := _flat(AVATAR_COLORS.get(p, HIRE_COLORS[absi(p.hash()) % HIRE_COLORS.size()] if p.begins_with("hire") else COL_MUTED))
 	style.set_corner_radius_all(int(size / 2.0))
 	box.add_theme_stylebox_override("panel", style)
 	var name := Loc.t("you") if p == "me" else Loc.person(p)
