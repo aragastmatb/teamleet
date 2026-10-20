@@ -26,6 +26,7 @@ Play in the browser: https://aragastmatb.github.io/teamleet/ — every push to `
 
 ## Content you can edit without code
 - Before a run you pick Irina (results, order, ideas, people, the chaotic one, or a surprise) and who you were: a former engineer (strong hands), a former manager (more attention, better at talking people round) or someone who grew up in this team (knows everyone's skills, but old colleagues resent orders). The run saves itself after every step; Continue on the title picks it up.
+- Chainer as a business: an improvements backlog under the inbox (data/improvements.tsv) changes the deck for good — fewer fires, smaller cards, requests the teams serve themselves; client banks bring their deliveries while they're with us, sales bring more, and a bank badly served leaves. Both are on the Chainer card in the sidebar.
 - The chat plays out like a messenger: lines come one by one with "… is typing" (a click on the chat shows the rest at once), and in the evening the morning folds into one line you can open.
 - No rules screen: in the first week Gena, the old-timer, explains things in the chat right when they come up, and the board lights up where to look (switch it off on the setup screen). The "?" button at the top is a short reference.
 - The game is four month-long chapters; only the first, the probation, is playable so far. Passing it shows the chapter's results and what comes next.

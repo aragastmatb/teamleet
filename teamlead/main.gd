@@ -54,6 +54,8 @@ const AVATAR_COLORS := {
 	"contractor": Color("7a869a"), "stas": Color("de350b"), "olga": Color("8777d9"), "boris": Color("5e6c84"),
 }
 
+const BANK_COLORS := {"happy": Color("00875a"), "fine": Color("5e6c84"), "unhappy": Color("b65c02"), "leaving": Color("de350b")}
+
 var rules := Rules.new()
 var ui: Control
 var selected := -1
@@ -778,6 +780,9 @@ func _team_sidebar() -> Control:
 	v.add_child(_spacer(4))
 	v.add_child(_section(Loc.t("boss_header")))
 	v.add_child(_boss_card())
+	v.add_child(_spacer(4))
+	v.add_child(_section(Loc.t("chainer_header")))
+	v.add_child(_chainer_card())
 	if mobile:
 		# On the phone the top bar has no room for these.
 		v.add_child(_spacer(4))
@@ -868,6 +873,30 @@ func _me_card() -> Control:
 	for cat in C.CATEGORIES:
 		var colors: Array = CAT_COLORS[cat]
 		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % rules.my_skill(cat))], colors[0], colors[1]))
+	return card
+
+
+# The platform as a business: which banks are with us and how they feel, and what's been improved.
+func _chainer_card() -> Control:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 10))
+	var v := _vbox(4)
+	card.add_child(v)
+	v.add_child(_label(Loc.t("chainer.banks"), 13, COL_MUTED, false, true))
+	if rules.banks.is_empty():
+		v.add_child(_label(Loc.t("chainer.no_banks"), 13, COL_DANGER, true))
+	for b in rules.banks:
+		var word := rules.bank_word(b)
+		var row := _flow(6, 0)
+		row.add_child(_label(Loc.t("bank." + b), 14, COL_TEXT))
+		row.add_child(_label("· " + Loc.t("bank_mood." + word), 13, BANK_COLORS[word]))
+		v.add_child(row)
+	v.add_child(_spacer(4))
+	v.add_child(_label(Loc.t("chainer.improved"), 13, COL_MUTED, false, true))
+	if rules.improved.is_empty():
+		v.add_child(_label(Loc.t("chainer.nothing_yet"), 13, COL_FAINT, true))
+	for id in rules.improved:
+		v.add_child(_label("✓ " + Loc.t("imp.%s.effect" % id), 13, COL_GOOD, true))
 	return card
 
 
@@ -1730,6 +1759,12 @@ func _build_end() -> void:
 	v.add_child(_label(Loc.t("summary.done", [done, late]), 15, COL_TEXT, true))
 	var k := rules.key_status()
 	v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": rules.chapter_keys().size(), "boss": "@weight." + rules.boss_word()}), 15, COL_TEXT, true))
+	var bank_names := PackedStringArray()
+	for b in rules.banks:
+		bank_names.append(Loc.t("bank." + b))
+	v.add_child(_label(Loc.t("summary.banks", [", ".join(bank_names) if not bank_names.is_empty() else Loc.t("summary.no_banks")]), 15, COL_TEXT, true))
+	if not rules.improved.is_empty():
+		v.add_child(_label(Loc.t("summary.improved", [rules.improved.size()]), 15, COL_TEXT, true))
 	if rules.ending in ["leader", "puppeteer"]:
 		v.add_child(_label(Loc.t("promoted.yes" if rules.promoted else "promoted.no"), 15, COL_GOOD if rules.promoted else COL_MUTED, true))
 	_adizes_block(v)
