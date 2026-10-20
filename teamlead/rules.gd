@@ -71,6 +71,8 @@ var talked := {}
 var deck: Array = []
 # When each card last arrived, by id: it isn't dealt again too soon, and a repeat is marked as one.
 var seen_day := {}
+# Chain cards on their way: [{"id", "day"}], dealt the morning of that day.
+var chain_due: Array = []
 var comp_off := {}
 # Your attention: a few tokens a day for managing. Past them you stay late, and that wears you out.
 var attention := 0
@@ -138,6 +140,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	flags.clear()
 	deck.clear()
 	seen_day.clear()
+	chain_due.clear()
 	_refill_deck()
 	my_energy = 10.0
 	my_sick = 0
@@ -230,6 +233,11 @@ func _arrivals() -> Array:
 	var keys: Dictionary = C.KEY_DAYS.get(chapter, {})
 	if keys.has(chapter_day()):
 		out.append(keys[chapter_day()])
+	out.append_array(C.START_DAYS.get(chapter, {}).get(chapter_day(), []))
+	for due in chain_due.duplicate():
+		if due["day"] <= day:
+			chain_due.erase(due)
+			out.append(due["id"])
 	var load := 0.0
 	for id in out:
 		load += C.TASKS[id]["size"]
@@ -884,6 +892,7 @@ func end_day() -> void:
 			if t["vouched"]:
 				boss -= 1
 				_say("boss", "boss.vouched_late", [], {"task": "@taskname." + t["id"]})
+	_advance_chains()
 	_check_lies()
 	for p in C.TEAM:
 		_check_person(p)
@@ -1240,8 +1249,41 @@ func decline(uid: int) -> void:
 # A turned-down task leaves the board; put off "for later", it goes back into the deck to come round again.
 func drop_task(t: Dictionary, again_later: bool) -> void:
 	t["status"] = "declined"
-	if again_later and C.TASKS.has(t["id"]):
+	if again_later and C.TASKS.get(t["id"], {}).get("kind", "") in ["start", "chain"]:
+		# A step of a chain put off comes back in a week, and the chain waits for it.
+		t["chained"] = true
+		chain_due.append({"id": t["id"], "day": day + 5})
+	elif again_later and C.TASKS.has(t["id"]):
 		deck.insert(mini(8, deck.size()), t["id"])
+
+
+# ---------- chains ----------
+
+# Each evening, a chain card that has an outcome (done well or badly, turned down, late) sends on
+# whatever its table row says comes next.
+func _advance_chains() -> void:
+	for t in tasks:
+		var branches: Array = C.TASKS.get(t["id"], {}).get("then", [])
+		if branches.is_empty() or t.get("chained", false):
+			continue
+		var outcome := _outcome(t)
+		if outcome == "":
+			continue
+		t["chained"] = true
+		for b in branches:
+			if b["on"] == outcome or (b["on"] == "done" and outcome in ["good", "bad"]):
+				chain_due.append({"id": b["next"], "day": day + maxi(1, b["after"])})
+				break
+
+
+func _outcome(t: Dictionary) -> String:
+	if t["status"] == "declined":
+		return "declined"
+	if t["late"]:
+		return "late"
+	if t["status"] == "done":
+		return "good" if t["quality"] in ["good", "ok"] else "bad"
+	return ""
 
 
 # How many hours past the 8 this person will stay tonight, as things stand. The same answer drives the

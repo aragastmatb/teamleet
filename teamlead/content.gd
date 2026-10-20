@@ -99,6 +99,11 @@ const INTENT_TASTE := {
 # followup (a client coming back for more), dump (Irina drops it on you). tags: debt (fires that cleaning up
 # tech debt removes and neglect brings back), client (good work here brings the client back for more).
 #
+# Chains: a card of kind start arrives on its key_day; its `then` column says what comes next, by how it
+# went: "good:kyc_pipelines+2; bad:kyc_rollback+1; declined:kyc_escalation+3" — done well (or ok), done
+# badly, turned down, late (missed its deadline, done or not), done (well or badly). The first branch that
+# fits wins; +N is days later. The cards it leads to are of kind chain: dealt only by a chain.
+#
 # Templates: a row brought "from" product becomes one card per product team, brought by that team's lead;
 # a row with {bank} in its text becomes one card per client bank of its chapter. In the text, {team} and
 # {bank} become the names, {hi} and {push} the lead's own way of opening and of leaning on you.
@@ -138,6 +143,8 @@ static var DECK := {}
 static var KEY_DAYS := {}
 static var KEY_PROJECTS := {}
 static var DUMPS: Array = []
+# By chapter: START_DAYS[ch][day of the chapter] the chains that begin that day.
+static var START_DAYS := {}
 static var TASK_TEXT := {"ru": {}, "en": {}}
 
 
@@ -159,8 +166,25 @@ static func _static_init() -> void:
 			DECK[ch] = []
 			KEY_DAYS[ch] = {}
 			KEY_PROJECTS[ch] = []
+			START_DAYS[ch] = {}
 		for v in _variants(row, ch):
 			_add_card(row, ch, v)
+	for id in TASKS:
+		for b in TASKS[id]["then"]:
+			if not TASKS.has(b["next"]):
+				push_error("%s leads to %s, which isn't in %s" % [id, b["next"], TASKS_PATH])
+
+
+# "good:x+2; bad:y+1" -> [{"on": "good", "next": "x", "after": 2}, ...]
+static func _branches(text: String) -> Array:
+	var out: Array = []
+	for part in text.split(";", false):
+		var on_next := part.strip_edges().split(":", false)
+		if on_next.size() != 2:
+			continue
+		var next_after := on_next[1].strip_edges().split("+")
+		out.append({"on": on_next[0].strip_edges(), "next": next_after[0].strip_edges(), "after": int(next_after[1]) if next_after.size() > 1 else 1})
+	return out
 
 
 # What one table row becomes: a single card, or one per product team or per bank.
@@ -178,7 +202,7 @@ static func _add_card(row: Dictionary, ch: int, v: Dictionary) -> void:
 	var id: String = v["id"]
 	var tags: Array = Array(row["tags"].split(",", false)).map(func(x): return x.strip_edges())
 	TASKS[id] = {"cat": row["category"], "size": float(row["size"]), "due": int(row["due"]), "public": row["public"] == "1",
-		"from": v["from"], "kind": row["kind"], "tags": tags, "tpl": row["id"]}
+		"from": v["from"], "kind": row["kind"], "tags": tags, "tpl": row["id"], "then": _branches(row.get("then", ""))}
 	match row["kind"]:
 		"deck":
 			for i in maxi(1, int(row["copies"])):
@@ -188,6 +212,10 @@ static func _add_card(row: Dictionary, ch: int, v: Dictionary) -> void:
 			KEY_PROJECTS[ch].append(id)
 		"dump":
 			DUMPS.append(id)
+		"start":
+			if not START_DAYS[ch].has(int(row["key_day"])):
+				START_DAYS[ch][int(row["key_day"])] = []
+			START_DAYS[ch][int(row["key_day"])].append(id)
 	for lang in ["ru", "en"]:
 		TASK_TEXT[lang]["taskname." + id] = _fill(row["name_" + lang], v, lang, ch)
 		TASK_TEXT[lang]["task.%s.ask" % id] = _fill(row["ask_" + lang], v, lang, ch)
