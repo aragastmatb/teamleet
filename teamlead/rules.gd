@@ -69,6 +69,8 @@ var quits := 0
 var talked := {}
 # The task deck still to come, and complications switched off by improvements.
 var deck: Array = []
+# When each card last arrived, by id: it isn't dealt again too soon, and a repeat is marked as one.
+var seen_day := {}
 var comp_off := {}
 # Your attention: a few tokens a day for managing. Past them you stay late, and that wears you out.
 var attention := 0
@@ -135,6 +137,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	comp_off.clear()
 	flags.clear()
 	deck.clear()
+	seen_day.clear()
 	_refill_deck()
 	my_energy = 10.0
 	my_sick = 0
@@ -244,7 +247,7 @@ func _arrivals() -> Array:
 			for id in out:
 				if C.TASKS[id]["cat"] == info["cat"]:
 					same += 1
-			if same < C.MAX_SAME_KIND and day + info["size"] - 1 <= last_day():
+			if same < C.MAX_SAME_KIND and day + info["size"] - 1 <= last_day() and _can_come_again(deck[i]) and not out.has(deck[i]):
 				picked = i
 				break
 		if picked < 0:
@@ -253,6 +256,13 @@ func _arrivals() -> Array:
 		out.append(id)
 		load += C.TASKS[id]["size"]
 	return out
+
+
+# The same card doesn't come back while it's still on the board, nor within REPEAT_GAP working days.
+func _can_come_again(id: String) -> bool:
+	if day - seen_day.get(id, -100) < C.REPEAT_GAP:
+		return false
+	return not tasks.any(func(t): return t["id"] == id and not t["status"] in ["done", "declined"])
 
 
 # A fresh shuffle of the base deck goes under what's left. Improvements keep their cards out.
@@ -282,8 +292,9 @@ func add_task_raw(id: String, cat: String, size: float, due: int, public: bool, 
 		"q_sum": 0.0, "q_days": 0.0, "status": "inbox", "late": false, "quality": "",
 		"done_day": 0, "reviewed": false, "assigned_day": 0, "helped": {}, "first": false,
 		"asked": false, "vouched": false, "flaw": false, "complicated": false, "blocked": 0, "q_bonus": 0.0, "involved": false,
-		"key": chapter_keys().has(id), "sit_today": false,
+		"key": chapter_keys().has(id), "sit_today": false, "again": seen_day.has(id),
 	})
+	seen_day[id] = day
 	next_uid += 1
 
 

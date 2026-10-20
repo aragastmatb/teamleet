@@ -160,6 +160,7 @@ static func tasks_with(field: String, value: String) -> Array:
 const DAILY_LOAD := 7.5
 const MAX_CARDS_A_DAY := 5
 const MAX_SAME_KIND := 2
+const REPEAT_GAP := 5 # working days before the same card can come again
 
 # What free people propose to do on their own, in order. Each is a small internal task; when it's
 # done, it changes the decks or the people.

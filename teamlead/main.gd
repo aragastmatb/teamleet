@@ -995,6 +995,8 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 	v.add_child(tags)
 	var colors: Array = CAT_COLORS[t["cat"]]
 	tags.add_child(_pill(Loc.t("cat." + t["cat"]), colors[0], colors[1]))
+	if t.get("again", false) and C.TASKS.get(t["id"], {}).get("kind", "") != "weekly":
+		tags.add_child(_pill(Loc.t("chip_again"), COL_WARN, Color("fff0b3")))
 	if t["key"]:
 		tags.add_child(_pill("★", COL_STAR, Color("fff7e6")))
 	if t["blocked"] > 0:
