@@ -322,6 +322,7 @@ func add_task(id: String) -> void:
 	var info: Dictionary = C.TASKS[id]
 	if info["tags"].has("joins"):
 		_join_bank(info["bank"])
+
 	# What the teams can now do through the portal, they do; it only shows in the chat.
 	if not _improved_by("self", id).is_empty():
 		seen_day[id] = day
@@ -541,12 +542,17 @@ func let_go(p: String, with_warning: bool) -> void:
 	st["gone"] = true
 	st["fired"] = true
 	_drop_tasks(p)
-	openings += 1
 	lead("P", 1.0)
 	var arch := archetype(p)
 	var team_mood := -0.3
 	var line := "fire.team.sad"
-	if not with_warning:
+	if layoff_on():
+		# The cut the board asked for: no scandal, no opening back, and everyone feels it.
+		flags.erase("layoff_until")
+		flags["layoff_done"] = true
+		team_mood = -0.5
+		line = "layoff.team"
+	elif not with_warning:
 		team_mood = -0.8
 		line = "fire.team.shock"
 		boss -= 1.0
@@ -558,6 +564,8 @@ func let_go(p: String, with_warning: bool) -> void:
 	elif arch in ["faker", "stump"]:
 		team_mood = 0.3
 		line = "fire.team.relief"
+	if line != "layoff.team":
+		openings += 1
 	for q in team:
 		if q != p and available(q):
 			people[q]["mood"] = clampf(people[q]["mood"] + team_mood, -5.0, 5.0)
@@ -565,6 +573,35 @@ func let_go(p: String, with_warning: bool) -> void:
 	if arch == "genius":
 		boss -= 1.5
 		_say("boss", "fire.boss_genius", [], {"who": "@name.%s.acc" % p})
+
+
+# The board's order in chapter three: one person has to go by the deadline.
+func layoff_on() -> bool:
+	return flags.has("layoff_until")
+
+
+# Nobody picked by the deadline: Irina picks, the newest hire first, then whoever she thinks is weakest.
+func _layoff_deadline() -> void:
+	if not layoff_on() or day < flags["layoff_until"]:
+		return
+	var pick := ""
+	for p in team:
+		if available(p) and hires.has(p):
+			pick = p
+	if pick == "":
+		var weakest := 99
+		for p in team:
+			if not available(p):
+				continue
+			var total := 0
+			for cat in C.CATEGORIES:
+				total += people[p]["skills"][cat]
+			if total < weakest:
+				weakest = total
+				pick = p
+	boss -= 0.5
+	_say("boss", "layoff.irina_chose", [], {"who": "@name.%s.acc" % pick})
+	let_go(pick, true)
 
 
 # What the candidate's CV claims, unless an interview showed the truth.
@@ -654,6 +691,7 @@ func bank_word(b: String) -> String:
 # ---------- improvements to Chainer ----------
 
 const BACKLOG_SIZE := 3
+const NO_DEADLINE := 100000 # improvements and initiatives: done when they're done
 
 
 # The improvements done that act on this card in this way ("remove", "shrink", "self").
@@ -685,7 +723,7 @@ func _fill_backlog() -> void:
 func _add_improvement(id: String) -> Dictionary:
 	flags["imp_added_" + id] = true
 	var info: Dictionary = C.IMPROVEMENTS[id]
-	add_task_raw("init_" + id, info["cat"], info["size"], last_day() + 60, false, "me")
+	add_task_raw("init_" + id, info["cat"], info["size"], NO_DEADLINE, false, "me")
 	var t: Dictionary = tasks[tasks.size() - 1]
 	t["backlog"] = true
 	return t
@@ -1216,7 +1254,7 @@ func accept_initiative(p: String) -> void:
 		t = _add_improvement(id)
 	if t.is_empty():
 		var info: Dictionary = C.INIT_TASKS[id]
-		add_task_raw("init_" + id, info["cat"], info["size"], last_day() + 10, false, p)
+		add_task_raw("init_" + id, info["cat"], info["size"], NO_DEADLINE, false, p)
 		t = tasks[tasks.size() - 1]
 	t["owner"] = p
 	t["status"] = "active"
@@ -1312,7 +1350,8 @@ func end_day() -> void:
 			else:
 				_say("taras", "taras.done", [], {"task": "@taskname." + t["id"]})
 	for t in tasks:
-		if (t["status"] == "inbox" or t["status"] == "active") and t["due"] == day and not t["late"]:
+		# Improvements and initiatives have no real deadline.
+		if (t["status"] == "inbox" or t["status"] == "active") and t["due"] == day and not t["late"] and not t["id"].begins_with("init_"):
 			_expose_faker(t)
 			t["late"] = true
 			t["late_day"] = day
@@ -1321,6 +1360,7 @@ func end_day() -> void:
 				boss -= 1
 				_say("boss", "boss.vouched_late", [], {"task": "@taskname." + t["id"]})
 	_advance_chains()
+	_layoff_deadline()
 	_check_lies()
 	for p in team:
 		_check_person(p)
@@ -1350,6 +1390,10 @@ func _end_of_my_day() -> void:
 		my_sick = 1
 		my_energy = 6.0
 		_narrate("you.burnout")
+		flags["burnouts_%d" % chapter] = flags.get("burnouts_%d" % chapter, 0) + 1
+		# One short of quitting: the body says so first.
+		if flags["burnouts_%d" % chapter] == BURNOUTS_TO_QUIT - 1:
+			_narrate("you.burnout_warning")
 	# Untouched tech debt makes itself felt: each Friday another outage goes into the deck.
 	if day % 5 == 0 and day < last_day() and not flags.has("tech_debt_done"):
 		var fires := C.tasks_with("tag", "debt").filter(func(id): return _improved_by("remove", id).is_empty())
@@ -1699,6 +1743,15 @@ func drop_task(t: Dictionary, again_later: bool) -> void:
 # Each evening, a chain card that has an outcome (done well or badly, turned down, late) sends on
 # whatever its table row says comes next.
 func _advance_chains() -> void:
+	# An outage becomes a serious incident if it's fixed late or badly (or not at all).
+	for t in tasks:
+		if not t.get("incident_settled", false) and C.TASKS.get(t["id"], {}).get("tags", []).has("incident"):
+			var outcome := _outcome(t)
+			if outcome != "":
+				t["incident_settled"] = true
+				if outcome != "good":
+					flags["incidents_%d" % chapter] = flags.get("incidents_%d" % chapter, 0) + 1
+					_narrate("incident.counted", [], {"task": "@taskname." + t["id"]})
 	for t in tasks:
 		if not t.get("flagged", false) and C.TASKS.get(t["id"], {}).get("tags", []).any(func(tag): return tag.begins_with("sets:")):
 			var outcome := _outcome(t)
@@ -2370,7 +2423,9 @@ func _finish_chapter() -> void:
 		return
 	var r := results_score()
 	var team := team_score()
-	if quits >= 2:
+	if flags.get("burnouts_%d" % chapter, 0) >= BURNOUTS_TO_QUIT:
+		ending = "burned_out"
+	elif quits >= 2:
 		ending = "team_gone"
 	elif vika_standing >= 4 and vika_standing > boss:
 		ending = "replaced"
@@ -2389,7 +2444,7 @@ func _finish_chapter() -> void:
 
 
 func passed() -> bool:
-	return ending in ["leader", "puppeteer"] or ending.ends_with("_pass") or ending.ends_with("_partial")
+	return ending in ["leader", "puppeteer", "cto", "stayed_lead"] or ending.ends_with("_pass") or ending.ends_with("_partial")
 
 
 # Chapters after the probation are judged by the company's goals: all met, some, or none.
@@ -2397,23 +2452,47 @@ func _chapter_verdict() -> void:
 	var info: Dictionary = C.CHAPTERS[chapter - 1]
 	var met := 0
 	for g in goal_progress():
-		if g["have"] >= g["need"]:
+		if goal_met(g):
 			met += 1
-	if quits >= 2:
+	if flags.get("burnouts_%d" % chapter, 0) >= BURNOUTS_TO_QUIT:
+		ending = "burned_out"
+	elif quits >= 2:
 		ending = "team_gone"
 	elif vika_standing >= 4 and vika_standing > boss:
 		ending = "replaced"
 	elif hours >= 60:
 		ending = "workhorse"
 	elif met == info["goals"].size():
-		ending = info["id"] + "_pass"
+		ending = _final_standing() if info.get("final", false) else info["id"] + "_pass"
 	elif met > 0:
-		ending = info["id"] + "_partial"
+		ending = "optimized" if info.get("final", false) else info["id"] + "_partial"
 		boss -= 1.5
 	else:
 		ending = info["fail"]
 	promoted = false
 	phase = "chapter_end" if passed() and chapter < C.CHAPTERS.size() else "end"
+
+
+const BURNOUTS_TO_QUIT := 4
+
+
+# The deal went through: what becomes of you depends on Irina's view of you and on the team.
+# Weight and the team's say add up over four months, so the bar is set for the whole run.
+const CTO_WEIGHT := 25.0
+const CTO_TEAM := 20.0
+const LEAD_WEIGHT := 8.0
+
+
+func _final_standing() -> String:
+	if boss >= CTO_WEIGHT and team_score() >= CTO_TEAM:
+		return "cto"
+	if boss >= LEAD_WEIGHT:
+		return "stayed_lead"
+	return "optimized"
+
+
+func goal_met(g: Dictionary) -> bool:
+	return g["have"] <= g["need"] if g.get("max", false) else g["have"] >= g["need"]
 
 
 # This chapter's goals and how far along they are: [{"id", "have", "need"}].
@@ -2430,7 +2509,9 @@ func goal_progress() -> Array:
 				for b in banks:
 					if banks[b].get("shipped", false):
 						have += 1
-		out.append({"id": g["id"], "have": have, "need": g["need"]})
+			"max_incidents":
+				have = flags.get("incidents_%d" % chapter, 0)
+		out.append({"id": g["id"], "have": have, "need": g["need"], "max": g["kind"].begins_with("max_")})
 	return out
 
 

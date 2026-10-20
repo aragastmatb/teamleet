@@ -9,7 +9,8 @@ extends RefCounted
 # key projects on its first day, Marina surveys the team halfway and at the end, and the chapter closes
 # with a verdict. ready: playable already; the others are announced and come later.
 # goals (chapter 2 on): what the company needs this month. "flags": that many of these flags set (a card
-# tagged sets:<flag> done well sets it); "banks_shipped": that many banks with us that got a good delivery.
+# tagged sets:<flag> done well sets it); "banks_shipped": that many banks with us that got a good delivery;
+# "max_incidents": no more than that many serious incidents (cards tagged incident) this month.
 # All goals met: on to the next chapter. Some: on, but Irina remembers. None: `fail` is the ending.
 const CHAPTERS := [
 	{"id": "probation", "days": 20, "ready": true},
@@ -17,8 +18,14 @@ const CHAPTERS := [
 		{"id": "teams_onboarded", "kind": "flags", "flags": ["onboarded_kyc", "onboarded_payments", "onboarded_regulatory"], "need": 3},
 		{"id": "banks_shipped", "kind": "banks_shipped", "need": 3},
 	]},
-	{"id": "round_b", "days": 20, "ready": false},
-	{"id": "deal", "days": 20, "ready": false},
+	{"id": "round_b", "days": 20, "ready": true, "fail": "scapegoat", "layoff_day": 8, "goals": [
+		{"id": "audit_passed", "kind": "flags", "flags": ["audit_access", "audit_secrets", "audit_trail"], "need": 3},
+	]},
+	# The last one: the deal. final: the run ends here, and how depends on where you stand (see _final_standing).
+	{"id": "deal", "days": 20, "ready": true, "final": true, "fail": "deal_failed", "goals": [
+		{"id": "few_incidents", "kind": "max_incidents", "need": 2},
+		{"id": "final_release", "kind": "flags", "flags": ["final_release"], "need": 1},
+	]},
 ]
 const SURVEY_AT := [10, 20] # days into the chapter
 const WEEKS := 16 # in the whole run

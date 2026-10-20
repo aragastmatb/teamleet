@@ -47,7 +47,7 @@ const COMP_STYLE := {
 
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
-	"probation", "chapter_intro", "weekend_fire", "chaos_meeting", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
+	"probation", "chapter_intro", "layoff_order", "weekend_fire", "chaos_meeting", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
 	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow", "boris_drunk", "friday_deploy",
 ]
 
@@ -108,6 +108,14 @@ func _check_boss_deadline(r) -> Dictionary:
 		return {"who": "boss", "uid": t["uid"], "names": task_names(r, t),
 			"lines": [{"who": "boss", "key": "event.boss_deadline.ask"}], "choices": ["yes", "warn"]}
 	return {}
+
+
+# Chapter three: the board wants one person cut from every team. Accept and pick, or fight it with weight.
+func _check_layoff_order(r) -> Dictionary:
+	var at: int = C.CHAPTERS[r.chapter - 1].get("layoff_day", 0)
+	if at == 0 or r.chapter_day() != at or not once(r, "layoff_%d" % r.chapter):
+		return {}
+	return {"who": "boss", "lines": [{"who": "boss", "key": "event.layoff_order.ask"}], "choices": ["accept", "fight"]}
 
 
 # The first day of a later chapter: Irina sets the company's goal for the month and names the key projects.
@@ -469,6 +477,8 @@ func _resolve_complication(r, ev: Dictionary, c: String, t: Dictionary, names: D
 # The serious talk: a warning first; a week later, the decision. Or straight out, without one.
 func fire_event(r, p: String) -> Dictionary:
 	var choices: Array = ["fire", "keep"] if r.fire_ready(p) else (["back"] if r.warned(p) else ["warn", "fire_now", "back"])
+	if r.layoff_on():
+		choices = ["layoff", "back"]
 	return {"id": "fire", "who": p, "target": p, "lines": [{"who": p, "key": _own_line(r, "fire.ask", p)}], "choices": choices}
 
 
@@ -492,6 +502,10 @@ func _resolve_fire(r, ev: Dictionary, c: String) -> String:
 		"fire":
 			r.say(p, _own_line(r, "fire.react.fired", p))
 			r.say("marina", "fire.marina_ok", [], names)
+			r.let_go(p, true)
+		"layoff":
+			r.say(p, _own_line(r, "layoff.react", p))
+			r.say("marina", "layoff.marina", [], names)
 			r.let_go(p, true)
 		"keep":
 			r.people[p]["warned_day"] = -1
@@ -997,6 +1011,15 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			else:
 				r.boss += 0.5
 
+		"layoff_order/accept":
+			r.flags["layoff_until"] = r.day + 4
+		"layoff_order/fight":
+			if r.has_weight():
+				r.boss -= 2.0
+				reply = "event.layoff_order.fight.won"
+			else:
+				r.flags["layoff_until"] = r.day + 4
+				reply = "event.layoff_order.fight.lost"
 		"boss_dump/take":
 			r.add_task(ev["dump"])
 		"boss_dump/refuse":

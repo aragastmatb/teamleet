@@ -971,8 +971,10 @@ func _chainer_card() -> Control:
 	if not goals.is_empty():
 		v.add_child(_label(Loc.t("chainer.goal"), 13, COL_MUTED, false, true))
 		for g in goals:
-			var done: bool = g["have"] >= g["need"]
-			v.add_child(_label(("✓ " if done else "· ") + Loc.t("goal." + g["id"], [mini(g["have"], g["need"]), g["need"]]), 13, COL_GOOD if done else COL_TEXT, true))
+			var done: bool = rules.goal_met(g)
+			var have: int = g["have"] if g["max"] else mini(g["have"], g["need"])
+			var color := COL_GOOD if done and not g["max"] else (COL_DANGER if not done and g["max"] else COL_TEXT)
+			v.add_child(_label(("✓ " if done and not g["max"] else "· ") + Loc.t("goal." + g["id"], [have, g["need"]]), 13, color, true))
 		v.add_child(_spacer(4))
 	v.add_child(_label(Loc.t("chainer.banks"), 13, COL_MUTED, false, true))
 	if rules.banks.is_empty():
