@@ -80,10 +80,17 @@ var cue := ""
 # Phone layout: one screen at a time (board, team or chat) with tabs at the bottom.
 var mobile := false
 var tab := "board"
-var tab_before_chat := "board"
 var lane := "inbox"
 var chat_read := 0
-var was_waiting := false
+# Where the chat was left: it follows new messages only if you were at the bottom, and otherwise stays put.
+var chat_pos := 0
+# The first question of a run shades the board to teach where answers go; after that the board stays
+# open to look at while you think, with only the actions held until you answer.
+var taught_now := false
+const HELD_WHILE_ASKED := ["_helper", "_end_day", "_visit_boss", "_unassign", "_talk_to", "_sit", "_reject_candidate",
+	"_prioritize", "_pick", "_interview", "_intervene", "_hire", "_fire", "_direct", "_decline", "_days", "_ask_stay",
+	"_accept_initiative"]
+var chat_at_bottom := true
 var press_pos := Vector2.ZERO
 # The setup screen before a run, and what's picked on it (remembered between runs).
 var setup_open := false
@@ -428,7 +435,9 @@ func _reveal_next() -> void:
 	typing_row = _typing_row()
 	if typing_row:
 		chat_list.add_child(typing_row)
-	_scroll_to_end(chat_scroll)
+	var bar := chat_scroll.get_v_scroll_bar()
+	if chat_scroll.scroll_vertical >= bar.max_value - bar.page - 24:
+		_scroll_to_end(chat_scroll)
 
 
 func _show_all() -> void:
@@ -545,6 +554,10 @@ func _render() -> void:
 	elif rules.phase != "title":
 		rules.save_game()
 	cue = ""
+	if is_instance_valid(chat_scroll):
+		var bar := chat_scroll.get_v_scroll_bar()
+		chat_pos = chat_scroll.scroll_vertical
+		chat_at_bottom = chat_pos >= bar.max_value - bar.page - 24
 	for key in scrolls:
 		if is_instance_valid(scrolls[key]):
 			scroll_memory[key] = scrolls[key].scroll_vertical
@@ -566,7 +579,7 @@ func _render() -> void:
 		_build_phone()
 	else:
 		_build_office()
-		if _waiting_for_answer():
+		if _teach_chat():
 			_block_board()
 	match rules.phase:
 		"report":
@@ -592,6 +605,23 @@ func _let_touches_through(node: Node) -> void:
 # The chat holds a question you have to answer before anything else happens.
 func _waiting_for_answer() -> bool:
 	return rules.phase == "event" or rules.phase == "review" or not rules.pending.is_empty()
+
+
+# The board can be looked through during the day, a question in the chat included.
+func _looking() -> bool:
+	return rules.phase in ["plan", "event", "review"]
+
+
+# Only the run's first question shades the board; once it's answered, never again.
+func _teach_chat() -> bool:
+	if rules.flags.has("chat_taught"):
+		return false
+	if _waiting_for_answer():
+		taught_now = true
+		return true
+	if taught_now:
+		rules.flags["chat_taught"] = true
+	return false
 
 
 func _build_title() -> void:
@@ -890,13 +920,13 @@ func _person_card(p: String) -> Control:
 	if rules.warned(p):
 		state.add_child(_pill(Loc.t("fire.decide_label" if rules.fire_ready(p) else "fire.warned_label"), COL_DANGER, Color("ffebe6")))
 	var talk := _button(Loc.t("talk_button") + _cost_mark(), _talk_to.bind(p), 0, "subtle")
-	talk.disabled = not rules.can_talk(p)
+	talk.disabled = talk.disabled or not rules.can_talk(p)
 	talk.custom_minimum_size.y = 30
 	if talk.disabled == false:
 		_lit(talk, "talk")
 	if rules.chapter >= 2:
 		var fire := _button(Loc.t("fire.button"), _fire.bind(p), 0, "subtle")
-		fire.disabled = not rules.can_fire(p)
+		fire.disabled = fire.disabled or not rules.can_fire(p)
 		fire.custom_minimum_size.y = 26
 		fire.add_theme_font_size_override("font_size", 12)
 		fire.add_theme_color_override("font_color", COL_DANGER)
@@ -958,12 +988,12 @@ func _candidate_card(c: Dictionary) -> Control:
 	v.add_child(row)
 	if c["asked"].size() < 2:
 		var ask := _button(Loc.t("hire.interview_btn") + _cost_mark(), _interview.bind(id), 0, "subtle")
-		ask.disabled = not rules.can_interview(id)
+		ask.disabled = ask.disabled or not rules.can_interview(id)
 		row.add_child(ask)
 	else:
 		row.add_child(_label(Loc.t("hire.asked_all"), 12, COL_MUTED))
 	var take := _button(Loc.t("hire.hire_btn"), _hire.bind(id), 0, "primary")
-	take.disabled = not rules.can_hire(id)
+	take.disabled = take.disabled or not rules.can_hire(id)
 	row.add_child(take)
 	row.add_child(_button(Loc.t("hire.reject_btn"), _reject_candidate.bind(id), 0, "subtle"))
 	return card
@@ -1077,7 +1107,7 @@ func _board_area() -> Control:
 		var column := _column(lane, lanes[lane])
 		_lit(column, lane)
 		columns.add_child(column)
-	if selected >= 0 and rules.phase == "plan":
+	if selected >= 0 and _looking():
 		var t := rules.task(selected)
 		if not t.is_empty() and t["status"] in ["inbox", "active"]:
 			v.add_child(_task_detail(t))
@@ -1154,7 +1184,7 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 	style.shadow_size = 1
 	style.shadow_offset = Vector2(0, 1)
 	card.add_theme_stylebox_override("panel", style)
-	var clickable: bool = rules.phase == "plan" and rules.pending.is_empty() and (t["status"] == "inbox" or t["status"] == "active")
+	var clickable: bool = _looking() and (t["status"] == "inbox" or t["status"] == "active")
 	if clickable:
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		card.gui_input.connect(_on_card_input.bind(t["uid"]))
@@ -1282,7 +1312,7 @@ func _task_detail(t: Dictionary) -> Control:
 		var pe: Dictionary = rules.estimate(t, p)
 		var label := "%s  ~%s" % [Loc.person(p), _days(pe["days"])] if pe["sure"] else "%s  ?" % Loc.person(p)
 		var b := _button(label, _pick.bind(p), 0, "chosen" if t["owner"] == p else "")
-		b.disabled = t["owner"] == p
+		b.disabled = b.disabled or t["owner"] == p
 		who.add_child(b)
 	who.add_child(_button("%s  ~%s" % [Loc.t("myself"), _days(rules.estimate(t, "me")["days"])], _direct.bind("me"), 0))
 	if not t.get("backlog", false):
@@ -1299,10 +1329,10 @@ func _task_detail(t: Dictionary) -> Control:
 			acts.add_child(_button(Loc.t("sit.button") + _cost_mark(), _sit, 0, "subtle"))
 		if rules.team.has(t["owner"]):
 			var stay := _button(Loc.t("stay_button"), _ask_stay, 0, "subtle")
-			stay.disabled = t.get("stay_asked", -1) == rules.day
+			stay.disabled = stay.disabled or t.get("stay_asked", -1) == rules.day
 			acts.add_child(stay)
 			var step := _button(Loc.t("intervene_button") + _cost_mark(), _intervene, 0, "subtle")
-			step.disabled = not rules.can_intervene(t)
+			step.disabled = step.disabled or not rules.can_intervene(t)
 			acts.add_child(step)
 	if t["status"] == "active" and rules.team.has(t["owner"]):
 		var pair := _flow(6, 6)
@@ -1353,16 +1383,9 @@ func _view_width() -> float:
 	return get_viewport().get_visible_rect().size.x
 
 
-# One screen at a time. When someone needs an answer the chat opens by itself, and the game
-# goes back to where you were once you've answered.
+# One screen at a time, and only you switch them: when the chat needs you, the other screens say so
+# and point there, but nothing jumps by itself.
 func _build_phone() -> void:
-	var waiting := _waiting_for_answer() or rules.phase == "evening"
-	if waiting and not was_waiting and tab != "chat":
-		tab_before_chat = tab
-		tab = "chat"
-	elif not waiting and was_waiting and tab == "chat":
-		tab = tab_before_chat
-	was_waiting = waiting
 	if tab == "chat":
 		chat_read = rules.history.size()
 	var v := _vbox(0)
@@ -1383,11 +1406,11 @@ func _build_phone() -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(body)
 	v.add_child(_phone_tabs())
-	if tab == "board" and selected >= 0 and rules.phase == "plan":
+	if tab == "board" and selected >= 0 and _looking():
 		var t := rules.task(selected)
 		if not t.is_empty() and t["status"] in ["inbox", "active"]:
 			_task_sheet(t)
-	if _waiting_for_answer() and tab != "chat":
+	if _teach_chat() and tab != "chat":
 		_phone_block()
 
 
@@ -1444,7 +1467,8 @@ func _phone_tabs() -> Control:
 		var text := Loc.t("tab." + name)
 		if name == "chat" and unread > 0 and tab != "chat":
 			text += " (%d)" % unread
-		var b := _button(text, _go_tab.bind(name), 0, "chosen" if tab == name else "subtle")
+		var calls: bool = name == "chat" and tab != "chat" and (_waiting_for_answer() or rules.phase == "evening")
+		var b := _button(text, _go_tab.bind(name), 0, "chosen" if tab == name else ("primary" if calls else "subtle"))
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if name == "team" and tab != "team":
 			_lit(b, "talk")
@@ -1592,7 +1616,10 @@ func _chat() -> Control:
 					_show_all.call_deferred())
 	else:
 		_chat_prompt(list)
-	_scroll_to_end(scroll)
+	if chat_at_bottom:
+		_scroll_to_end(scroll)
+	else:
+		_scroll_to(scroll, chat_pos)
 	return panel
 
 
@@ -1759,6 +1786,13 @@ func _answer_button(text_value: String, action: Callable) -> Button:
 	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return b
+
+
+func _scroll_to(scroll: ScrollContainer, pos: int) -> void:
+	for i in 2:
+		await get_tree().process_frame
+	if is_instance_valid(scroll):
+		scroll.scroll_vertical = pos
 
 
 func _scroll_to_end(scroll: ScrollContainer) -> void:
@@ -2125,6 +2159,9 @@ func _button(text_value: String, action: Callable, min_width: int, look: String 
 	b.add_theme_color_override("font_disabled_color", COL_PRIMARY if look == "chosen" else COL_FAINT)
 	b.pressed.connect(func(): cue = "click")
 	b.pressed.connect(action)
+	if action.get_method() in HELD_WHILE_ASKED and _waiting_for_answer():
+		b.disabled = true
+		b.tooltip_text = Loc.t("answer_first")
 	return b
 
 
