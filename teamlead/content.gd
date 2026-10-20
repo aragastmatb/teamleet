@@ -115,10 +115,19 @@ const PRODUCT_TEAMS := {
 	"kyc": {"lead": "olga", "ru": "KYC", "en": "KYC"},
 	"regulatory": {"lead": "boris", "ru": "«Регуляторка»", "en": "Regulatory"},
 }
-# Client banks by chapter.
+# Client banks. A bank's cards ({bank} templates, and cards tagged bank:<id>) come only while it's with
+# us. The run starts with START_BANKS; sales bring in the chapter's BANK_POOL; some arrive with a card
+# tagged "joins" (a chain), and one tagged "last_chance" left undone loses the bank.
 const BANKS := {
-	1: {"fjord": {"ru": "«Фьорд»", "en": "Fjord Bank"}, "meridian": {"ru": "«Меридиан»", "en": "Meridian Bank"}, "sahara": {"ru": "«Сахара Финанс»", "en": "Sahara Finance"}},
+	"meridian": {"ru": "«Меридиан»", "en": "Meridian Bank"},
+	"fjord": {"ru": "«Фьорд»", "en": "Fjord Bank"},
+	"sahara": {"ru": "«Сахара Финанс»", "en": "Sahara Finance"},
+	"alpine": {"ru": "«Альпийский кредит»", "en": "Alpine Credit"},
+	"baltic": {"ru": "«Балтика»", "en": "Baltica Bank"},
+	"pacific": {"ru": "«Пасифик Траст»", "en": "Pacific Trust"},
 }
+const START_BANKS := ["meridian"]
+const BANK_POOL := {1: ["sahara"], 2: ["alpine", "baltic"], 3: ["pacific"]}
 # How each lead opens and pushes; a card picks one of the three by its id, so it reads the same every time.
 const LEAD_VOICE := {
 	"stas": {
@@ -249,8 +258,7 @@ static func _variants(row: Dictionary, ch: int) -> Array:
 		return PRODUCT_TEAMS.keys().map(func(k): return {"id": row["id"] + "@" + k, "from": PRODUCT_TEAMS[k]["lead"], "team": k})
 	var text: String = row["name_ru"] + row["ask_ru"] + row["name_en"] + row["ask_en"]
 	if text.contains("{bank}"):
-		var banks: Dictionary = BANKS.get(ch, {})
-		return banks.keys().map(func(k): return {"id": row["id"] + "@" + k, "from": row["from"], "bank": k})
+		return BANKS.keys().map(func(k): return {"id": row["id"] + "@" + k, "from": row["from"], "bank": k})
 	return [{"id": row["id"], "from": row["from"]}]
 
 
@@ -258,7 +266,10 @@ static func _add_card(row: Dictionary, ch: int, v: Dictionary) -> void:
 	var id: String = v["id"]
 	var tags: Array = Array(row["tags"].split(",", false)).map(func(x): return x.strip_edges())
 	TASKS[id] = {"cat": row["category"], "size": float(row["size"]), "due": int(row["due"]), "public": row["public"] == "1",
-		"from": v["from"], "kind": row["kind"], "tags": tags, "tpl": row["id"], "then": _branches(row.get("then", ""))}
+		"from": v["from"], "kind": row["kind"], "tags": tags, "tpl": row["id"], "then": _branches(row.get("then", "")), "bank": v.get("bank", "")}
+	for tag in tags:
+		if tag.begins_with("bank:"):
+			TASKS[id]["bank"] = tag.substr(5)
 	match row["kind"]:
 		"deck":
 			for i in maxi(1, int(row["copies"])):
@@ -285,7 +296,7 @@ static func _fill(text: String, v: Dictionary, lang: String, ch: int) -> String:
 	if v.has("team"):
 		text = text.replace("{team}", PRODUCT_TEAMS[v["team"]][lang])
 	if v.has("bank"):
-		text = text.replace("{bank}", BANKS[ch][v["bank"]][lang])
+		text = text.replace("{bank}", BANKS[v["bank"]][lang])
 	var voice: Dictionary = LEAD_VOICE.get(v["from"], {})
 	var pick: int = abs(hash(v["id"]))
 	text = text.replace("{hi}", voice["hi_" + lang][pick % 3] if voice else "")

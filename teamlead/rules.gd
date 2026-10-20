@@ -75,6 +75,10 @@ var seen_day := {}
 var chain_due: Array = []
 # Improvements to Chainer that are done: id -> the day.
 var improved := {}
+# The banks with us: id -> {"mood": how they feel about us, "since": day}. Reputation: how the platform's
+# deliveries have gone lately; it makes the next sale come sooner.
+var banks := {}
+var reputation := 0.0
 var comp_off := {}
 # Your attention: a few tokens a day for managing. Past them you stay late, and that wears you out.
 var attention := 0
@@ -144,6 +148,10 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	seen_day.clear()
 	chain_due.clear()
 	improved.clear()
+	banks.clear()
+	for b in C.START_BANKS:
+		banks[b] = {"mood": 0.0, "since": 1}
+	reputation = 0.0
 	_refill_deck()
 	my_energy = 10.0
 	my_sick = 0
@@ -223,6 +231,7 @@ func _start_day() -> void:
 
 
 func _deliver_arrivals() -> void:
+	_maybe_sell()
 	for id in arriving:
 		add_task(id)
 	arriving = []
@@ -259,7 +268,7 @@ func _arrivals() -> Array:
 			for id in out:
 				if C.TASKS[id]["cat"] == info["cat"]:
 					same += 1
-			if same < C.MAX_SAME_KIND and day + info["size"] - 1 <= last_day() and _can_come_again(deck[i]) and not out.has(deck[i]) and _improved_by("remove", deck[i]).is_empty():
+			if same < C.MAX_SAME_KIND and day + info["size"] - 1 <= last_day() and _can_come_again(deck[i]) and not out.has(deck[i]) and _improved_by("remove", deck[i]).is_empty() and _bank_here(deck[i]):
 				picked = i
 				break
 		if picked < 0:
@@ -286,7 +295,7 @@ func _refill_deck() -> void:
 	var fresh: Array = C.DECK.get(chapter, []).duplicate()
 	if flags.has("tech_debt_done"):
 		fresh = fresh.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
-	fresh = fresh.filter(func(id): return _improved_by("remove", id).is_empty())
+	fresh = fresh.filter(func(id): return _improved_by("remove", id).is_empty() and _bank_here(id))
 	for i in range(fresh.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
 		var tmp = fresh[i]
@@ -297,6 +306,8 @@ func _refill_deck() -> void:
 
 func add_task(id: String) -> void:
 	var info: Dictionary = C.TASKS[id]
+	if info["tags"].has("joins"):
+		_join_bank(info["bank"])
 	# What the teams can now do through the portal, they do; it only shows in the chat.
 	if not _improved_by("self", id).is_empty():
 		seen_day[id] = day
@@ -311,6 +322,65 @@ func add_task(id: String) -> void:
 	# Near the end of the probation, deadlines squeeze into what's left of it.
 	add_task_raw(id, info["cat"], maxf(0.5, size), mini(day + info["due"], last_day()), info["public"], info["from"])
 	_say(info["from"], "task.%s.ask" % id)
+
+
+# ---------- banks ----------
+
+const SALE_CHANCE := 0.3 # each Monday, plus REPUTATION_SALE for each point of reputation
+const REPUTATION_SALE := 0.1
+const BANK_LEAVES := -3.0
+const BANK_MOOD := {"good": 1.0, "bad": -1.0, "late": -1.5, "declined": -0.5}
+
+
+# A card about a bank comes only while that bank is with us.
+func _bank_here(id: String) -> bool:
+	var b: String = C.TASKS[id].get("bank", "")
+	return b == "" or banks.has(b)
+
+
+func _join_bank(b: String) -> void:
+	if banks.has(b):
+		return
+	banks[b] = {"mood": 0.0, "since": day}
+	_narrate("bank.joined", [], {"bank": "@bank." + b})
+	# Its deliveries mix into the deck from here on.
+	for id in C.DECK.get(chapter, []):
+		if C.TASKS[id].get("bank", "") == b:
+			deck.insert(rng.randi_range(0, deck.size()), id)
+
+
+# On a Monday sales may close a deal with the next bank of the chapter; good deliveries make it likelier.
+func _maybe_sell() -> void:
+	if day % 5 != 1 or day == C.chapter_first_day(chapter):
+		return
+	var pool: Array = C.BANK_POOL.get(chapter, []).filter(func(b): return not banks.has(b) and not flags.has("bank_lost_" + b))
+	if pool.is_empty() or rng.randf() > SALE_CHANCE + REPUTATION_SALE * maxf(0.0, reputation):
+		return
+	var b: String = pool[0]
+	reputation = 0.0
+	_say("boss", "bank.sold", [], {"bank": "@bank." + b})
+	_join_bank(b)
+
+
+# How a card about a bank went moves that bank, and the platform's name with the next ones.
+func _settle_bank(t: Dictionary, outcome: String) -> void:
+	var b: String = C.TASKS.get(t["id"], {}).get("bank", "")
+	if b == "" or not banks.has(b) or not BANK_MOOD.has(outcome):
+		return
+	var info: Dictionary = C.TASKS[t["id"]]
+	banks[b]["mood"] += BANK_MOOD[outcome]
+	reputation += 1.0 if outcome == "good" else -0.5
+	if (info["tags"].has("last_chance") and outcome in ["late", "declined"]) or banks[b]["mood"] <= BANK_LEAVES:
+		banks.erase(b)
+		flags["bank_lost_" + b] = true
+		deck = deck.filter(func(id): return _bank_here(id))
+		boss -= 1.0
+		_say("boss", "bank.left", [], {"bank": "@bank." + b})
+
+
+func bank_word(b: String) -> String:
+	var m: float = banks[b]["mood"]
+	return "happy" if m >= 2.0 else ("fine" if m > -1.0 else ("unhappy" if m > -2.5 else "leaving"))
 
 
 # ---------- improvements to Chainer ----------
@@ -1339,6 +1409,12 @@ func drop_task(t: Dictionary, again_later: bool) -> void:
 # Each evening, a chain card that has an outcome (done well or badly, turned down, late) sends on
 # whatever its table row says comes next.
 func _advance_chains() -> void:
+	for t in tasks:
+		if not t.get("settled", false) and C.TASKS.get(t["id"], {}).get("bank", "") != "":
+			var outcome := _outcome(t)
+			if outcome != "":
+				t["settled"] = true
+				_settle_bank(t, outcome)
 	for t in tasks:
 		var branches: Array = C.TASKS.get(t["id"], {}).get("then", [])
 		if branches.is_empty() or t.get("chained", false):
