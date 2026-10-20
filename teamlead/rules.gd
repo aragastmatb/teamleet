@@ -73,6 +73,8 @@ var deck: Array = []
 var seen_day := {}
 # Chain cards on their way: [{"id", "day"}], dealt the morning of that day.
 var chain_due: Array = []
+# Improvements to Chainer that are done: id -> the day.
+var improved := {}
 var comp_off := {}
 # Your attention: a few tokens a day for managing. Past them you stay late, and that wears you out.
 var attention := 0
@@ -141,6 +143,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	deck.clear()
 	seen_day.clear()
 	chain_due.clear()
+	improved.clear()
 	_refill_deck()
 	my_energy = 10.0
 	my_sick = 0
@@ -171,6 +174,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	flags.clear()
 	history.clear()
 	ending = ""
+	_fill_backlog()
 	_start_day()
 
 
@@ -255,7 +259,7 @@ func _arrivals() -> Array:
 			for id in out:
 				if C.TASKS[id]["cat"] == info["cat"]:
 					same += 1
-			if same < C.MAX_SAME_KIND and day + info["size"] - 1 <= last_day() and _can_come_again(deck[i]) and not out.has(deck[i]):
+			if same < C.MAX_SAME_KIND and day + info["size"] - 1 <= last_day() and _can_come_again(deck[i]) and not out.has(deck[i]) and _improved_by("remove", deck[i]).is_empty():
 				picked = i
 				break
 		if picked < 0:
@@ -282,6 +286,7 @@ func _refill_deck() -> void:
 	var fresh: Array = C.DECK.get(chapter, []).duplicate()
 	if flags.has("tech_debt_done"):
 		fresh = fresh.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
+	fresh = fresh.filter(func(id): return _improved_by("remove", id).is_empty())
 	for i in range(fresh.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
 		var tmp = fresh[i]
@@ -292,9 +297,69 @@ func _refill_deck() -> void:
 
 func add_task(id: String) -> void:
 	var info: Dictionary = C.TASKS[id]
+	# What the teams can now do through the portal, they do; it only shows in the chat.
+	if not _improved_by("self", id).is_empty():
+		seen_day[id] = day
+		seen_day[info["tpl"]] = day
+		_narrate("imp.self", [], {"who": "@name.%s.gen" % info["from"], "task": "@taskname." + id})
+		return
+	var size: float = info["size"]
+	for imp in _improved_by("shrink", id):
+		for e in C.IMPROVEMENTS[imp]["effects"]:
+			if e["kind"] == "shrink":
+				size *= e["factor"]
 	# Near the end of the probation, deadlines squeeze into what's left of it.
-	add_task_raw(id, info["cat"], info["size"], mini(day + info["due"], last_day()), info["public"], info["from"])
+	add_task_raw(id, info["cat"], maxf(0.5, size), mini(day + info["due"], last_day()), info["public"], info["from"])
 	_say(info["from"], "task.%s.ask" % id)
+
+
+# ---------- improvements to Chainer ----------
+
+const BACKLOG_SIZE := 3
+
+
+# The improvements done that act on this card in this way ("remove", "shrink", "self").
+func _improved_by(kind: String, id: String) -> Array:
+	var out: Array = []
+	for imp in improved:
+		for e in C.IMPROVEMENTS[imp]["effects"]:
+			if e["kind"] == kind and e["targets"].any(func(target): return C.covers(target, id)):
+				out.append(imp)
+				break
+	return out
+
+
+# Keep three improvements on offer, next in line first.
+func _fill_backlog() -> void:
+	var open := tasks.filter(func(t): return t.get("backlog", false) and t["status"] == "inbox").size()
+	for id in C.improvements_of(chapter):
+		if open >= BACKLOG_SIZE:
+			return
+		if flags.has("imp_added_" + id) or flags.has("init_" + id):
+			continue
+		_add_improvement(id)
+		open += 1
+
+
+func _add_improvement(id: String) -> Dictionary:
+	flags["imp_added_" + id] = true
+	var info: Dictionary = C.IMPROVEMENTS[id]
+	add_task_raw("init_" + id, info["cat"], info["size"], last_day() + 60, false, "me")
+	var t: Dictionary = tasks[tasks.size() - 1]
+	t["backlog"] = true
+	return t
+
+
+func backlog() -> Array:
+	return tasks.filter(func(t): return t.get("backlog", false) and t["status"] == "inbox")
+
+
+# An improvement is done: its cards change from now on.
+func _improve(id: String) -> void:
+	improved[id] = day
+	deck = deck.filter(func(card): return _improved_by("remove", card).is_empty())
+	_narrate("imp.done", [], {"task": "@taskname.init_" + id, "effect": "@imp.%s.effect" % id})
+	_fill_backlog()
 
 
 func add_task_raw(id: String, cat: String, size: float, due: int, public: bool, from: String) -> void:
@@ -348,7 +413,7 @@ func task(uid: int) -> Dictionary:
 func inbox() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for t in tasks:
-		if t["status"] == "inbox":
+		if t["status"] == "inbox" and not t.get("backlog", false):
 			result.append(t)
 	return result
 
@@ -780,7 +845,9 @@ func initiative_offer(p: String) -> String:
 
 
 func _initiative_done(id: String) -> bool:
-	return id != "showcase" and id != "self_study" and flags.has("init_" + id)
+	if id == "showcase" or id == "self_study":
+		return false
+	return flags.has("init_" + id) or tasks.any(func(t): return t["id"] == "init_" + id and t["owner"] != "")
 
 
 func accept_initiative(p: String) -> void:
@@ -791,9 +858,17 @@ func accept_initiative(p: String) -> void:
 	for pair in INIT_STYLE.get(id, []):
 		lead(pair[0], pair[1])
 	flags["init_" + id] = true
-	var info: Dictionary = C.INIT_TASKS[id]
-	add_task_raw("init_" + id, info["cat"], info["size"], last_day() + 10, false, p)
-	var t: Dictionary = tasks[tasks.size() - 1]
+	# An improvement they take from the backlog, or put there and take; anything else is just theirs.
+	var t: Dictionary = {}
+	for b in backlog():
+		if b["id"] == "init_" + id:
+			t = b
+	if t.is_empty() and C.IMPROVEMENTS.has(id):
+		t = _add_improvement(id)
+	if t.is_empty():
+		var info: Dictionary = C.INIT_TASKS[id]
+		add_task_raw("init_" + id, info["cat"], info["size"], last_day() + 10, false, p)
+		t = tasks[tasks.size() - 1]
 	t["owner"] = p
 	t["status"] = "active"
 	t["assigned_day"] = day
@@ -807,6 +882,8 @@ func accept_initiative(p: String) -> void:
 func _initiative_effect(t: Dictionary) -> void:
 	var id: String = t["id"].trim_prefix("init_")
 	var names := {"who": "@name.%s.nom" % t["owner"]}
+	if C.IMPROVEMENTS.has(id):
+		_improve(id)
 	match id:
 		"tech_debt":
 			flags["tech_debt_done"] = true
@@ -924,10 +1001,10 @@ func _end_of_my_day() -> void:
 		_narrate("you.burnout")
 	# Untouched tech debt makes itself felt: each Friday another outage goes into the deck.
 	if day % 5 == 0 and day < last_day() and not flags.has("tech_debt_done"):
-		var fires := C.tasks_with("tag", "debt")
+		var fires := C.tasks_with("tag", "debt").filter(func(id): return _improved_by("remove", id).is_empty())
 		if not fires.is_empty():
 			deck.insert(mini(2, deck.size()), fires[rng.randi() % fires.size()])
-		_narrate("deck.neglect_tech")
+			_narrate("deck.neglect_tech")
 
 
 func my_state() -> String:
@@ -1234,7 +1311,7 @@ func _work(p: String) -> void:
 # Saying no to a request in the inbox: a conversation with whoever brought it (see scenes.gd decline).
 # Key projects can't be turned down.
 func can_decline(t: Dictionary) -> bool:
-	return phase == "plan" and pending.is_empty() and t.get("status", "") == "inbox" and not t["key"]
+	return phase == "plan" and pending.is_empty() and t.get("status", "") == "inbox" and not t["key"] and not t.get("backlog", false)
 
 
 func decline(uid: int) -> void:
@@ -1728,7 +1805,7 @@ func answer_review(choice: String) -> void:
 
 # In the first chapter Gena, who has seen leads come and go, shows the new one around: one line in the chat
 # at the moment it's needed, and the board lights up where to look until you've used it. Each tip once a run.
-const TIP_TARGETS := {"assign": "inbox", "end_day": "end_day", "talk": "talk", "decline": "inbox", "intervene": "active"}
+const TIP_TARGETS := {"assign": "inbox", "end_day": "end_day", "talk": "talk", "decline": "inbox", "intervene": "active", "backlog": "backlog"}
 
 
 func update_tips() -> void:
@@ -1758,6 +1835,8 @@ func _next_tip() -> String:
 				due.append("talk")
 				if day >= 3 and not inbox().is_empty():
 					due.append("decline")
+				if day >= 4 and not backlog().is_empty():
+					due.append("backlog")
 				if tasks.any(func(t): return can_intervene(t)):
 					due.append("intervene")
 				if C.TEAM.any(func(p): return available(p) and late_hours(p) > 0):
@@ -1842,7 +1921,8 @@ static func _read_save():
 		if not C.TASKS.has(id):
 			return null
 	for t in state.get("tasks", []):
-		if not (C.TASKS.has(t["id"]) or C.INIT_TASKS.has(String(t["id"]).trim_prefix("init_"))):
+		var bare := String(t["id"]).trim_prefix("init_")
+		if not (C.TASKS.has(t["id"]) or C.INIT_TASKS.has(bare) or C.IMPROVEMENTS.has(bare)):
 			return null
 	return state
 

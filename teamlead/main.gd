@@ -970,7 +970,28 @@ func _column(lane: String, items: Array) -> Control:
 		list.add_child(_label(Loc.t("col_empty." + lane), 12, COL_FAINT, true))
 	for t in items:
 		list.add_child(_task_card(t, lane))
+	if lane == "inbox":
+		_backlog_section(list)
 	return panel
+
+
+# Under the inbox: Chainer's own backlog. Nothing burns here, but what's done makes every week lighter.
+func _backlog_section(list: VBoxContainer) -> void:
+	var items := rules.backlog()
+	if items.is_empty():
+		return
+	list.add_child(_spacer(6))
+	var head := _section(Loc.t("col.backlog"))
+	list.add_child(head)
+	list.add_child(_label(Loc.t("backlog_hint"), 11, COL_FAINT, true))
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", _box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, 2))
+	_lit(frame, "backlog")
+	list.add_child(frame)
+	var box := _vbox(6)
+	frame.add_child(box)
+	for t in items:
+		box.add_child(_task_card(t, "inbox"))
 
 
 func _task_card(t: Dictionary, lane: String) -> Control:
@@ -1050,6 +1071,8 @@ func _on_card_input(event: InputEvent, uid: int) -> void:
 
 
 func _due_text(t: Dictionary) -> String:
+	if t.get("backlog", false) or t["id"].begins_with("init_"):
+		return Loc.t("due.none")
 	if t["late"]:
 		return Loc.t("due.late")
 	var left: int = t["due"] - rules.day
@@ -1093,7 +1116,12 @@ func _task_detail(t: Dictionary) -> Control:
 		facts.add_child(_pill(Loc.t("chip_key"), COL_WARN, Color("fff7e6")))
 	elif t["public"]:
 		facts.add_child(_pill(Loc.t("public"), COL_WARN, Color("fff7e6")))
-	v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 13, COL_MUTED, true))
+	var bare: String = t["id"].trim_prefix("init_")
+	if C.IMPROVEMENTS.has(bare):
+		v.add_child(_label(Loc.t("imp.%s.about" % bare), 13, COL_MUTED, true))
+		v.add_child(_label(Loc.t("imp.gives", [Loc.t("imp.%s.effect" % bare)]), 13, COL_GOOD, true, true))
+	else:
+		v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 13, COL_MUTED, true))
 	var who := _flow(6, 6)
 	v.add_child(who)
 	who.add_child(_row_label(Loc.t("to_whom")))
@@ -1106,7 +1134,8 @@ func _task_detail(t: Dictionary) -> Control:
 		b.disabled = t["owner"] == p
 		who.add_child(b)
 	who.add_child(_button("%s  ~%s" % [Loc.t("myself"), _days(rules.estimate(t, "me")["days"])], _direct.bind("me"), 0))
-	who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
+	if not t.get("backlog", false):
+		who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
 	if rules.can_decline(t):
 		who.add_child(_button(Loc.t("decline_button"), _decline, 0, "subtle"))
 	if t["status"] == "active":
@@ -1296,6 +1325,8 @@ func _phone_board() -> Control:
 		list.add_child(_label(Loc.t("col_empty." + lane), 14, COL_FAINT, true))
 	for t in lanes[lane]:
 		list.add_child(_task_card(t, lane))
+	if lane == "inbox":
+		_backlog_section(list)
 	if rules.phase == "evening":
 		v.add_child(_button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 0, "primary"))
 	else:

@@ -145,6 +145,17 @@ static var KEY_PROJECTS := {}
 static var DUMPS: Array = []
 # By chapter: START_DAYS[ch][day of the chapter] the chains that begin that day.
 static var START_DAYS := {}
+
+# Improvements to Chainer live in data/improvements.tsv: the team's own backlog, no deadline. Three are on
+# offer at a time, in `order`; finishing one brings up the next. Columns: id, chapter, order, category, size,
+# effect, name/about/effect in both languages. effect, ";"-separated:
+#   remove:a,b      those cards stop coming
+#   shrink:a,b*0.5  those cards get smaller
+#   self:a,b        those requests get done by the teams themselves through the portal
+#   init            a special one the code knows (tech debt, the weekly report, the old docs)
+# a, b are card ids, template ids (red_build covers red_build@kyc and the rest) or #tags.
+const IMPROVEMENTS_PATH := "res://data/improvements.tsv"
+static var IMPROVEMENTS := {}
 static var TASK_TEXT := {"ru": {}, "en": {}}
 
 
@@ -169,10 +180,55 @@ static func _static_init() -> void:
 			START_DAYS[ch] = {}
 		for v in _variants(row, ch):
 			_add_card(row, ch, v)
+	_load_improvements()
 	for id in TASKS:
 		for b in TASKS[id]["then"]:
 			if not TASKS.has(b["next"]):
 				push_error("%s leads to %s, which isn't in %s" % [id, b["next"], TASKS_PATH])
+
+
+static func _load_improvements() -> void:
+	var f := FileAccess.open(IMPROVEMENTS_PATH, FileAccess.READ)
+	if f == null:
+		push_error("Can't read " + IMPROVEMENTS_PATH)
+		return
+	var header := f.get_csv_line("\t")
+	while not f.eof_reached():
+		var cells := f.get_csv_line("\t")
+		if cells.size() < header.size() or cells[0].strip_edges() == "":
+			continue
+		var row := {}
+		for i in header.size():
+			row[header[i]] = cells[i].strip_edges()
+		var id: String = row["id"]
+		var effects: Array = []
+		for part in row["effect"].split(";", false):
+			var kind_targets: PackedStringArray = part.strip_edges().split(":", false)
+			var targets: String = kind_targets[1] if kind_targets.size() > 1 else ""
+			var factor := 1.0
+			if targets.contains("*"):
+				factor = float(targets.get_slice("*", 1))
+				targets = targets.get_slice("*", 0)
+			effects.append({"kind": kind_targets[0].strip_edges(), "targets": Array(targets.split(",", false)).map(func(x): return x.strip_edges()), "factor": factor})
+		IMPROVEMENTS[id] = {"chapter": int(row["chapter"]), "order": int(row["order"]), "cat": row["category"], "size": float(row["size"]), "effects": effects}
+		for lang in ["ru", "en"]:
+			TASK_TEXT[lang]["taskname.init_" + id] = row["name_" + lang]
+			TASK_TEXT[lang]["imp.%s.about" % id] = row["about_" + lang]
+			TASK_TEXT[lang]["imp.%s.effect" % id] = row["effect_" + lang]
+
+
+# The improvements of a chapter in the order they come up.
+static func improvements_of(ch: int) -> Array:
+	var ids := IMPROVEMENTS.keys().filter(func(id): return IMPROVEMENTS[id]["chapter"] == ch)
+	ids.sort_custom(func(a, b): return IMPROVEMENTS[a]["order"] < IMPROVEMENTS[b]["order"])
+	return ids
+
+
+# Does an improvement's target (an id, a template id or a #tag) cover this card?
+static func covers(target: String, id: String) -> bool:
+	if target.begins_with("#"):
+		return TASKS.has(id) and TASKS[id]["tags"].has(target.substr(1))
+	return target == id or (TASKS.has(id) and TASKS[id]["tpl"] == target)
 
 
 # "good:x+2; bad:y+1" -> [{"on": "good", "next": "x", "after": 2}, ...]
@@ -217,7 +273,11 @@ static func _add_card(row: Dictionary, ch: int, v: Dictionary) -> void:
 				START_DAYS[ch][int(row["key_day"])] = []
 			START_DAYS[ch][int(row["key_day"])].append(id)
 	for lang in ["ru", "en"]:
-		TASK_TEXT[lang]["taskname." + id] = _fill(row["name_" + lang], v, lang, ch)
+		var name := _fill(row["name_" + lang], v, lang, ch)
+		# A task's name is always shown «in quotes», so quotes inside it are the nested kind.
+		if lang == "ru":
+			name = name.replace("«", "„").replace("»", "“")
+		TASK_TEXT[lang]["taskname." + id] = name
 		TASK_TEXT[lang]["task.%s.ask" % id] = _fill(row["ask_" + lang], v, lang, ch)
 
 
@@ -260,12 +320,10 @@ const INITIATIVES := {
 	"dima": ["self_study", "self_study"],
 	"gena": ["write_docs", "automate_report"],
 }
+# The rest of what people offer (tech debt, the weekly report and the old docs are improvements: see below).
 const INIT_TASKS := {
-	"tech_debt": {"cat": "pipelines", "size": 2},
-	"automate_report": {"cat": "support", "size": 2},
 	"showcase": {"cat": "portal", "size": 1},
 	"self_study": {"cat": "infra", "size": 2},
-	"write_docs": {"cat": "pipelines", "size": 2},
 }
 
 # Things that happen inside a task while it's being worked on. Each comes up at most once per task.
