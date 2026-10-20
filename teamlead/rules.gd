@@ -80,6 +80,8 @@ var init_next := {}
 var offer_today := {}
 # Which Irina this run has (a key of C.BOSSES) and how your leading leans, overall and this week.
 var boss_type: String = C.DEFAULT_BOSS
+# Who you were before this job: a key of C.PROFILES.
+var profile: String = C.DEFAULT_PROFILE
 var style := {}
 var week_style := {}
 var events: Array[Dictionary] = []
@@ -103,7 +105,7 @@ var history: Array = []
 
 # ---------- run and day flow ----------
 
-func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS) -> void:
+func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile_kind: String = C.DEFAULT_PROFILE) -> void:
 	if seed_value >= 0:
 		rng.seed = seed_value
 	else:
@@ -133,6 +135,11 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS) -> void
 	my_sick = 0
 	init_next.clear()
 	boss_type = boss_kind
+	profile = profile_kind
+	if C.PROFILES[profile].get("knows_team", false):
+		for p in C.TEAM:
+			for cat in C.CATEGORIES:
+				people[p]["known"]["skill." + cat] = true
 	for x in C.PAEI:
 		style[x] = 0.0
 		week_style[x] = 0.0
@@ -185,7 +192,7 @@ func _start_day() -> void:
 			offer_today[p] = true
 	visited_today = false
 	overtime_today = 0
-	attention = 0 if my_sick > 0 else C.ATTENTION
+	attention = 0 if my_sick > 0 else max_attention()
 	sick_today = my_sick > 0
 	if my_sick > 0:
 		my_sick -= 1
@@ -447,7 +454,7 @@ func persuade(intent: String) -> void:
 		return
 	var drive: String = C.PEOPLE[p]["drive"]
 	var taste: int = C.INTENT_TASTE[drive][intent]
-	var delta := -1.0 + taste
+	var delta: float = -1.0 + taste + C.PROFILES[profile]["talk"]
 	var reply := ""
 	match intent:
 		"honest":
@@ -1373,8 +1380,21 @@ func _quality_of(t: Dictionary) -> String:
 	return q
 
 
+func my_skill(cat: String) -> int:
+	return C.PROFILES[profile]["skills"][cat]
+
+
+func max_attention() -> int:
+	return C.PROFILES[profile]["attention"]
+
+
+# Irina's letter for what she likes; the chaotic one likes what an E likes.
+func boss_letter() -> String:
+	return "E" if boss_type == "X" else boss_type
+
+
 func my_speed(cat: String) -> float:
-	return SPEED_BASE + SPEED_PER_SKILL * C.ME["skills"][cat]
+	return SPEED_BASE + SPEED_PER_SKILL * my_skill(cat)
 
 
 func _result_line(p: String, id: String, quality: String) -> String:
@@ -1389,7 +1409,7 @@ func _work_myself() -> void:
 	if q.is_empty():
 		return
 	var t: Dictionary = q[0]
-	var skill: int = C.ME["skills"][t["cat"]]
+	var skill: int = my_skill(t["cat"])
 	t["progress"] += my_speed(t["cat"])
 	t["q_sum"] += skill + rng.randf_range(-0.7, 0.7)
 	t["q_days"] += 1.0
@@ -1503,7 +1523,7 @@ func _build_review() -> void:
 	if my_week_hours[w] >= 16:
 		boss -= 1.0
 		# The chaotic one somehow never notices you were there all week.
-		_say("boss", "review.boss.workaholic.E" if boss_type == "E" else "review.boss.workaholic", [], {"hours": my_week_hours[w]})
+		_say("boss", "review.boss.workaholic.X" if boss_type == "X" else "review.boss.workaholic", [], {"hours": my_week_hours[w]})
 	if not review.is_empty():
 		_ask_review()
 
@@ -1684,7 +1704,7 @@ static func _read_save():
 	var state = f.get_var()
 	if not state is Dictionary or state.get("version") != SAVE_VERSION or state.get("phase", "end") in ["title", "end"]:
 		return null
-	if not C.BOSSES.has(state.get("boss_type", "")):
+	if not C.BOSSES.has(state.get("boss_type", "")) or not C.PROFILES.has(state.get("profile", "")):
 		return null
 	for id in state.get("deck", []):
 		if not C.TASKS.has(id):
@@ -1980,7 +2000,7 @@ func _style_week() -> void:
 	if _style_total(week_style) >= 2.0:
 		var top := _style_top(week_style)
 		boss += 0.5 * C.BOSSES[boss_type][top]
-		_say("boss", "style.boss.%s.%s" % [boss_type, top])
+		_say("boss", "style.boss.%s.%s" % [boss_letter(), top])
 		var sh := style_shares(week_style)
 		var missing := ""
 		for p in C.TEAM:

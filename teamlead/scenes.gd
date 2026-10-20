@@ -181,7 +181,7 @@ func _check_weekend_fire(r) -> Dictionary:
 
 # The chaotic Irina: rushes in mid-day and wants everyone in the meeting room, now.
 func _check_chaos_meeting(r) -> Dictionary:
-	if r.boss_type != "E" or r.day < 3 or r.flags.has("chaos_w%d" % r.week()) or r.rng.randf() > 0.35:
+	if r.boss_type != "X" or r.day < 3 or r.flags.has("chaos_w%d" % r.week()) or r.rng.randf() > 0.35:
 		return {}
 	r.flags["chaos_w%d" % r.week()] = true
 	return {"who": "boss", "lines": [{"who": "boss", "key": "event.chaos_meeting.ask"}], "choices": ["all_go", "me_only", "later"]}
@@ -669,7 +669,7 @@ func _resolve_intervene(r, ev: Dictionary, c: String) -> String:
 		"my_way":
 			# Your way only helps if you actually know this better than they do.
 			t["involved"] = true
-			var mine: int = C.ME["skills"][t["cat"]]
+			var mine: int = r.my_skill(t["cat"])
 			var theirs: int = st["skills"][t["cat"]]
 			if mine > theirs:
 				t["q_bonus"] += 0.8

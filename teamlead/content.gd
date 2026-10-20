@@ -42,12 +42,25 @@ const BOSSES := {
 	"A": {"P": 0.3, "A": 1.0, "E": -0.3, "I": 0.2},
 	"E": {"P": 0.2, "A": -0.3, "E": 1.0, "I": 0.3},
 	"I": {"P": -0.3, "A": 0.2, "E": 0.3, "I": 1.0},
+	# The chaotic one: an E who rushes in for two hours, calls everyone to the meeting room and runs off.
+	"X": {"P": 0.2, "A": -0.3, "E": 1.0, "I": 0.3},
 }
+const BOSS_KINDS := ["P", "A", "E", "I", "X"]
 const DEFAULT_BOSS := "A"
 
-# You, when you do the work yourself or step into someone's: a former engineer. Same 0..4 scale
-# as the team, and you know your own strengths. Picking a background comes later, with Irina.
-const ME := {"profile": "techie", "skills": {"pipelines": 3, "infra": 3, "portal": 2, "support": 1}}
+# Who you were before this job, picked at the start. skills: yours when you do the work yourself or step
+# into someone's (same 0..4 scale as the team). attention: tokens a day. talk: added to how people take
+# it when you talk them into a task. knows_team: you start out knowing everyone's skills.
+const PROFILES := {
+	# Strong hands; talking people round is the hard part.
+	"techie": {"skills": {"pipelines": 3, "infra": 3, "portal": 2, "support": 1}, "attention": 3, "talk": 0.0},
+	# Weak hands, but more time for people and better at it.
+	"manager": {"skills": {"pipelines": 1, "infra": 1, "portal": 2, "support": 2}, "attention": 4, "talk": 0.5},
+	# Grew up in this very team: knows who's good at what, but the old colleagues don't take orders well.
+	"insider": {"skills": {"pipelines": 2, "infra": 2, "portal": 2, "support": 2}, "attention": 3, "talk": -0.4, "knows_team": true},
+}
+const PROFILE_KINDS := ["techie", "manager", "insider"]
+const DEFAULT_PROFILE := "techie"
 
 # When someone pushes back on a task, you answer with an intent. Each motive takes each intent
 # differently (mood change on top of grudgingly accepting). Some intents only work when true:
@@ -123,7 +136,6 @@ static func tasks_with(field: String, value: String) -> Array:
 const DAILY_LOAD := 7.5
 const MAX_CARDS_A_DAY := 5
 const MAX_SAME_KIND := 2
-const ATTENTION := 3
 
 # What free people propose to do on their own, in order. Each is a small internal task; when it's
 # done, it changes the decks or the people.

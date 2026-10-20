@@ -79,6 +79,10 @@ var lane := "inbox"
 var chat_read := 0
 var was_waiting := false
 var press_pos := Vector2.ZERO
+# The setup screen before a run, and what's picked on it (remembered between runs).
+var setup_open := false
+var pick_boss := "random"
+var pick_profile: String = C.DEFAULT_PROFILE
 
 
 func _ready() -> void:
@@ -102,6 +106,12 @@ func _ready() -> void:
 	var settings := ConfigFile.new()
 	if settings.load(SETTINGS_PATH) == OK:
 		sound_on = settings.get_value("audio", "sound_on", true)
+		pick_boss = settings.get_value("setup", "boss", pick_boss)
+		pick_profile = settings.get_value("setup", "profile", pick_profile)
+	if not (pick_boss == "random" or C.BOSSES.has(pick_boss)):
+		pick_boss = "random"
+	if not C.PROFILES.has(pick_profile):
+		pick_profile = C.DEFAULT_PROFILE
 	_apply_layout_mode()
 	get_viewport().size_changed.connect(_on_resize)
 	var bg := ColorRect.new()
@@ -259,8 +269,27 @@ func _answer(choice: String) -> void:
 
 
 func _start_run() -> void:
-	rules.start_run()
+	setup_open = false
+	var settings := ConfigFile.new()
+	settings.load(SETTINGS_PATH)
+	settings.set_value("setup", "boss", pick_boss)
+	settings.set_value("setup", "profile", pick_profile)
+	settings.save(SETTINGS_PATH)
+	rules.start_run(-1, C.BOSS_KINDS.pick_random() if pick_boss == "random" else pick_boss, pick_profile)
 	_clear_selection()
+	_render()
+
+
+func _open_setup(open: bool) -> void:
+	setup_open = open
+	_render()
+
+
+func _pick_option(kind: String, value: String) -> void:
+	if kind == "boss":
+		pick_boss = value
+	else:
+		pick_profile = value
 	_render()
 
 
@@ -359,7 +388,10 @@ func _render() -> void:
 	ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(ui)
 	if rules.phase == "title":
-		_build_title()
+		if setup_open:
+			_build_setup()
+		else:
+			_build_title()
 		_let_touches_through(ui)
 		return
 	if mobile:
@@ -427,10 +459,75 @@ func _build_title() -> void:
 	v.add_child(buttons)
 	if Rules.has_save():
 		buttons.add_child(_button(Loc.t("continue"), _continue_run, 160 if mobile else 260, "primary"))
-		buttons.add_child(_button(Loc.t("new_game"), _start_run, 0))
+		buttons.add_child(_button(Loc.t("new_game"), _open_setup.bind(true), 0))
 	else:
-		buttons.add_child(_button(Loc.t("start"), _start_run, 160 if mobile else 260, "primary"))
+		buttons.add_child(_button(Loc.t("start"), _open_setup.bind(true), 160 if mobile else 260, "primary"))
 	buttons.add_child(_button(Loc.t("lang_button"), _toggle_lang, 110 if mobile else 140))
+
+
+# Before a run: which Irina you get and who you were. Portraits, not letters: the letters come out at the end.
+func _build_setup() -> void:
+	var scroll := _scroll("setup")
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(scroll)
+	var center := CenterContainer.new()
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(center)
+	var width := mini(960, int(_view_width()) - 32)
+	var v := _vbox(14)
+	v.custom_minimum_size.x = width
+	center.add_child(_padded(v, 0, 24))
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	v.add_child(head)
+	head.add_child(_logo(32))
+	head.add_child(_label(Loc.t("setup.title"), 26, COL_TEXT, false, true))
+	v.add_child(_label(Loc.t("setup.boss_head"), 17, COL_TEXT, true, true))
+	var bosses: Array = C.BOSS_KINDS.duplicate()
+	bosses.append("random")
+	v.add_child(_option_grid("boss", bosses, pick_boss, width))
+	v.add_child(_spacer(6))
+	v.add_child(_label(Loc.t("setup.me_head"), 17, COL_TEXT, true, true))
+	v.add_child(_option_grid("me", C.PROFILE_KINDS, pick_profile, width))
+	v.add_child(_spacer(6))
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 12)
+	v.add_child(buttons)
+	buttons.add_child(_button(Loc.t("setup.start"), _start_run, 160 if mobile else 260, "primary"))
+	buttons.add_child(_button(Loc.t("setup.back"), _open_setup.bind(false), 0))
+
+
+func _option_grid(kind: String, values: Array, chosen: String, width: int) -> Control:
+	var cols := 1 if mobile else 3
+	var grid := GridContainer.new()
+	grid.columns = cols
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 12)
+	for value in values:
+		var on: bool = value == chosen
+		var card := PanelContainer.new()
+		card.custom_minimum_size.x = (width - 12 * (cols - 1)) / float(cols)
+		card.size_flags_vertical = Control.SIZE_FILL
+		card.add_theme_stylebox_override("panel", _box(COL_SELECTED if on else COL_SURFACE, COL_PRIMARY if on else COL_BORDER, 2 if on else 1, 14))
+		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		var key := "setup.%s.%s" % [kind, value]
+		var text := _vbox(4)
+		text.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		text.add_child(_label(Loc.t(key), 16, COL_PRIMARY if on else COL_TEXT, true, true))
+		text.add_child(_label(Loc.t(key + ".desc"), 14, COL_MUTED, true))
+		card.add_child(text)
+		card.gui_input.connect(_on_option_input.bind("boss" if kind == "boss" else "profile", value))
+		grid.add_child(card)
+	return grid
+
+
+func _on_option_input(event: InputEvent, kind: String, value: String) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			press_pos = event.global_position
+		elif event.global_position.distance_to(press_pos) < 12.0:
+			cue = "select"
+			_pick_option.call_deferred(kind, value)
 
 
 func _build_office() -> void:
@@ -492,7 +589,7 @@ func _attention_text() -> String:
 	if rules.sick_today:
 		return Loc.t("you.sick_today")
 	var dots := ""
-	for i in C.ATTENTION:
+	for i in rules.max_attention():
 		dots += "●" if i < rules.attention else "○"
 	var text := Loc.render("attention_label", [], {"dots": dots, "state": "@me." + rules.my_state()})
 	if rules.overtime_today > 0:
@@ -608,12 +705,12 @@ func _me_card() -> Control:
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(names)
 	names.add_child(_label(Loc.t("me_card"), 15, COL_TEXT, false, true))
-	names.add_child(_label(Loc.t("me_profile." + C.ME["profile"]), 12, COL_MUTED))
+	names.add_child(_label(Loc.t("me_profile." + rules.profile), 12, COL_MUTED))
 	var skills := _flow(4, 4)
 	v.add_child(skills)
 	for cat in C.CATEGORIES:
 		var colors: Array = CAT_COLORS[cat]
-		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % C.ME["skills"][cat])], colors[0], colors[1]))
+		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % rules.my_skill(cat))], colors[0], colors[1]))
 	return card
 
 
