@@ -859,12 +859,23 @@ func _person_card(p: String) -> Control:
 	for t in rules.tasks:
 		if t["status"] == "active" and t["helper"] == p:
 			v.add_child(_label(Loc.t("helper_badge", ["«%s»" % Loc.t("taskname." + t["id"])]), 12, COL_MUTED, true))
+	if rules.warned(p):
+		state.add_child(_pill(Loc.t("fire.decide_label" if rules.fire_ready(p) else "fire.warned_label"), COL_DANGER, Color("ffebe6")))
 	var talk := _button(Loc.t("talk_button") + _cost_mark(), _talk_to.bind(p), 0, "subtle")
 	talk.disabled = not rules.can_talk(p)
 	talk.custom_minimum_size.y = 30
 	if talk.disabled == false:
 		_lit(talk, "talk")
-	v.add_child(talk)
+	if rules.chapter >= 2:
+		var fire := _button(Loc.t("fire.button"), _fire.bind(p), 0, "subtle")
+		fire.disabled = not rules.can_fire(p)
+		fire.custom_minimum_size.y = 26
+		fire.add_theme_font_size_override("font_size", 12)
+		fire.add_theme_color_override("font_color", COL_DANGER)
+		v.add_child(talk)
+		v.add_child(fire)
+	else:
+		v.add_child(talk)
 	return card
 
 
@@ -928,6 +939,11 @@ func _candidate_card(c: Dictionary) -> Control:
 	row.add_child(take)
 	row.add_child(_button(Loc.t("hire.reject_btn"), _reject_candidate.bind(id), 0, "subtle"))
 	return card
+
+
+func _fire(p: String) -> void:
+	rules.start_fire(p)
+	_render()
 
 
 func _interview(id: String) -> void:

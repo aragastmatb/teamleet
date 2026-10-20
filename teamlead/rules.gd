@@ -205,7 +205,7 @@ func _start_day() -> void:
 		elif st["sick"] > 0:
 			st["sick"] -= 1
 			_say(p, "absent.sick")
-		elif archetype(p) == "life_first" and day - st["joined"] > 1 and rng.randf() < LIFE_AWAY:
+		elif archetype(p) == "life_first" and day - st["joined"] > 1 and rng.randf() < LIFE_AWAY * (0.4 if warned(p) else 1.0):
 			st["absent"] = true
 			st["absent_reason"] = "life"
 			_say(p, "absent.life.%d" % rng.randi_range(1, 5))
@@ -494,6 +494,77 @@ func reject_candidate(id: String) -> void:
 		return
 	candidates.erase(c)
 	_narrate("hire.rejected", [], {"who": "@name.%s.nom" % id})
+
+
+# ---------- letting people go ----------
+
+const WARNING_DAYS := 5 # after a warning, this long before you can decide
+
+
+# From chapter two: a serious talk first (a warning), a decision a week later. Doing it without the
+# warning is possible, and Marina will make sure everyone hears about it.
+func can_fire(p: String) -> bool:
+	return chapter >= 2 and phase == "plan" and pending.is_empty() and available(p)
+
+
+func warned(p: String) -> bool:
+	return people[p].get("warned_day", -1) >= 0
+
+
+func fire_ready(p: String) -> bool:
+	return warned(p) and day - people[p]["warned_day"] >= WARNING_DAYS
+
+
+func start_fire(p: String) -> void:
+	if not can_fire(p):
+		return
+	spend_attention()
+	history.append({"who": "you", "key": "fire.open", "args": [], "names": {}, "to": p, "day": day})
+	_open_conversation(scenes.fire_event(self, p))
+
+
+func warn(p: String) -> void:
+	var st: Dictionary = people[p]
+	st["warned_day"] = day
+	st["mood"] = clampf(st["mood"] - 1.5, -5.0, 5.0)
+	st["trust"] -= 1
+	lead("A", 0.5)
+	# The rest of the team notices.
+	for q in team:
+		if q != p and available(q):
+			people[q]["mood"] = clampf(people[q]["mood"] - 0.2, -5.0, 5.0)
+
+
+# They're gone: their work goes back to the inbox, the team reacts, and the opening is yours again.
+func let_go(p: String, with_warning: bool) -> void:
+	var st: Dictionary = people[p]
+	st["gone"] = true
+	st["fired"] = true
+	_drop_tasks(p)
+	openings += 1
+	lead("P", 1.0)
+	var arch := archetype(p)
+	var team_mood := -0.3
+	var line := "fire.team.sad"
+	if not with_warning:
+		team_mood = -0.8
+		line = "fire.team.shock"
+		boss -= 1.0
+	elif C.PEOPLE.has(p):
+		team_mood = -0.8
+	elif arch == "genius":
+		team_mood = 0.8
+		line = "fire.team.relief"
+	elif arch in ["faker", "stump"]:
+		team_mood = 0.3
+		line = "fire.team.relief"
+	for q in team:
+		if q != p and available(q):
+			people[q]["mood"] = clampf(people[q]["mood"] + team_mood, -5.0, 5.0)
+	_narrate(line, [], {"who": "@name.%s.nom" % p, "who_gen": "@name.%s.gen" % p})
+	if arch == "genius":
+		boss -= 1.5
+		_say("boss", "fire.boss_genius", [], {"who": "@name.%s.acc" % p})
 
 
 # What the candidate's CV claims, unless an interview showed the truth.
@@ -1532,7 +1603,8 @@ func _work(p: String) -> void:
 			var told := step
 			if archetype(p) == "faker":
 				# Reports a normal day's work; does a third of it, and gets stuck just short of "done".
-				step *= FAKER_PACE
+				# A warning scares them into doing some real work.
+				step *= FAKER_PACE * (2.0 if warned(p) else 1.0)
 				t["claimed"] = minf(t["size"] * 0.95, maxf(t.get("claimed", 0.0), t["progress"]) + told * minf(time, 1.0))
 			var spend := minf(time, (t["size"] - t["progress"]) / step)
 			time -= spend

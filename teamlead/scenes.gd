@@ -9,6 +9,7 @@ extends RefCounted
 # A choice like "lend:dima" carries an argument after the colon.
 
 const C = preload("res://teamlead/content.gd")
+const L = preload("res://teamlead/locale.gd")
 
 const MAX_PER_MORNING := 2
 # How many times you can say no to one person before they complain to Irina.
@@ -465,6 +466,42 @@ func _resolve_complication(r, ev: Dictionary, c: String, t: Dictionary, names: D
 
 # What's on their mind decides how the talk opens; the answers depend on the topic and on what you
 # know about them (a known motive adds an answer aimed right at it).
+# The serious talk: a warning first; a week later, the decision. Or straight out, without one.
+func fire_event(r, p: String) -> Dictionary:
+	var choices: Array = ["fire", "keep"] if r.fire_ready(p) else (["back"] if r.warned(p) else ["warn", "fire_now", "back"])
+	return {"id": "fire", "who": p, "target": p, "lines": [{"who": p, "key": _own_line(r, "fire.ask", p)}], "choices": choices}
+
+
+# A person's own version of a line if they have one (the four, or a hire's archetype), else the plain one.
+func _own_line(r, key: String, p: String) -> String:
+	var own := "%s.%s" % [key, p]
+	return own if L.has_key(own) else key
+
+
+func _resolve_fire(r, ev: Dictionary, c: String) -> String:
+	var p: String = ev["target"]
+	var names := {"who": "@name.%s.nom" % p, "who_acc": "@name.%s.acc" % p}
+	match c:
+		"warn":
+			r.warn(p)
+			return _own_line(r, "fire.react.warn", p)
+		"fire_now":
+			r.say(p, _own_line(r, "fire.react.fired", p))
+			r.say("marina", "fire.marina_scandal", [], names)
+			r.let_go(p, false)
+		"fire":
+			r.say(p, _own_line(r, "fire.react.fired", p))
+			r.say("marina", "fire.marina_ok", [], names)
+			r.let_go(p, true)
+		"keep":
+			r.people[p]["warned_day"] = -1
+			r.people[p]["mood"] = clampf(r.people[p]["mood"] + 0.8, -5.0, 5.0)
+			return _own_line(r, "fire.react.kept", p)
+		"back":
+			return "fire.react.back"
+	return ""
+
+
 # An interview: two questions out of four; each answer gives something away.
 func interview_event(r, id: String) -> Dictionary:
 	var c: Dictionary = r.candidate(id)
@@ -934,7 +971,9 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 		routed = _resolve_decline(r, ev, c)
 	elif ev["id"] == "interview":
 		routed = _resolve_interview(r, ev, c)
-	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene", "decline", "interview"]:
+	elif ev["id"] == "fire":
+		routed = _resolve_fire(r, ev, c)
+	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene", "decline", "interview", "fire"]:
 		if routed != "":
 			r.say(who, routed, [], names)
 		for q in r.team:
