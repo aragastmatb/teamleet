@@ -1,4 +1,4 @@
-# Builds the web version of TeamLeet on every push to main and publishes it to GitHub Pages.
+# Builds the web version of Team1337 on every push to main and publishes it to GitHub Pages.
 name: Deploy to Pages
 
 on:

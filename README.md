@@ -1,4 +1,4 @@
-# TeamLeet — a team lead simulator
+# Team1337 — a team lead simulator
 
 Godot 4.6, Russian and English (switch in-game). All UI built in code; the only assets are the Inter font (OFL, `fonts/`) and interface sounds by Kenney (CC0, `sounds/`), one cue per change on screen with a sound toggle in the top bar. Run with F5.
 
