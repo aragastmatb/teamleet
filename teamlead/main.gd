@@ -264,6 +264,17 @@ func _start_run() -> void:
 	_render()
 
 
+# Back to where the last session stopped, chat and all, without replaying its sounds.
+func _continue_run() -> void:
+	if not rules.load_game():
+		_render()
+		return
+	heard = rules.history.size()
+	last_phase = rules.phase
+	chat_read = rules.history.size()
+	_clear_selection()
+
+
 func _clear_selection() -> void:
 	selected = -1
 	_render()
@@ -331,6 +342,11 @@ func _toggle_lang() -> void:
 func _render() -> void:
 	if rules.phase != "title":
 		_play(_sound_for_changes())
+	# Every action ends in a render, so this keeps the save one step behind the player at most.
+	if rules.phase == "end":
+		Rules.delete_save()
+	elif rules.phase != "title":
+		rules.save_game()
 	cue = ""
 	for key in scrolls:
 		if is_instance_valid(scrolls[key]):
@@ -409,7 +425,11 @@ func _build_title() -> void:
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 12)
 	v.add_child(buttons)
-	buttons.add_child(_button(Loc.t("start"), _start_run, 160 if mobile else 260, "primary"))
+	if Rules.has_save():
+		buttons.add_child(_button(Loc.t("continue"), _continue_run, 160 if mobile else 260, "primary"))
+		buttons.add_child(_button(Loc.t("new_game"), _start_run, 0))
+	else:
+		buttons.add_child(_button(Loc.t("start"), _start_run, 160 if mobile else 260, "primary"))
 	buttons.add_child(_button(Loc.t("lang_button"), _toggle_lang, 110 if mobile else 140))
 
 

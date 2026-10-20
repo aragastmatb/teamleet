@@ -1630,6 +1630,71 @@ func answer_review(choice: String) -> void:
 		phase = "evening"
 
 
+# ---------- saving ----------
+
+const SAVE_PATH := "user://save.bin"
+# Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
+const SAVE_VERSION := 1
+
+
+# Everything about the run is in this object's variables, so a save is all of them plus where the dice are.
+func save_game() -> void:
+	var state := {"version": SAVE_VERSION, "rng_seed": rng.seed, "rng_state": rng.state}
+	for prop in get_property_list():
+		if prop["usage"] & PROPERTY_USAGE_SCRIPT_VARIABLE and not prop["name"] in ["rng", "scenes"]:
+			state[prop["name"]] = get(prop["name"])
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f:
+		f.store_var(state)
+
+
+static func has_save() -> bool:
+	return _read_save() != null
+
+
+static func delete_save() -> void:
+	if FileAccess.file_exists(SAVE_PATH):
+		DirAccess.remove_absolute(SAVE_PATH)
+
+
+func load_game() -> bool:
+	var state = _read_save()
+	if state == null:
+		return false
+	for key in state:
+		if key in ["version", "rng_seed", "rng_state"]:
+			continue
+		var current = get(key)
+		if current is Array:
+			current.assign(state[key]) # keeps typed arrays typed
+		else:
+			set(key, state[key])
+	rng.seed = state["rng_seed"]
+	rng.state = state["rng_state"]
+	return true
+
+
+# The save if it's there, readable and still fits this version of the game (its cards still exist).
+static func _read_save():
+	if not FileAccess.file_exists(SAVE_PATH):
+		return null
+	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if f == null:
+		return null
+	var state = f.get_var()
+	if not state is Dictionary or state.get("version") != SAVE_VERSION or state.get("phase", "end") in ["title", "end"]:
+		return null
+	if not C.BOSSES.has(state.get("boss_type", "")):
+		return null
+	for id in state.get("deck", []):
+		if not C.TASKS.has(id):
+			return null
+	for t in state.get("tasks", []):
+		if not (C.TASKS.has(t["id"]) or C.INIT_TASKS.has(String(t["id"]).trim_prefix("init_"))):
+			return null
+	return state
+
+
 # ---------- moving on and the end ----------
 
 func next() -> void:
