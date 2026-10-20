@@ -98,7 +98,40 @@ const INTENT_TASTE := {
 # kind: key (key project, arrives on key_day), weekly (Monday report), deck (shuffled, `copies` of it),
 # followup (a client coming back for more), dump (Irina drops it on you). tags: debt (fires that cleaning up
 # tech debt removes and neglect brings back), client (good work here brings the client back for more).
+#
+# Templates: a row brought "from" product becomes one card per product team, brought by that team's lead;
+# a row with {bank} in its text becomes one card per client bank of its chapter. In the text, {team} and
+# {bank} become the names, {hi} and {push} the lead's own way of opening and of leaning on you.
+# Such a card's id is the row's id plus "@" and the team or bank, e.g. red_build@kyc.
 const TASKS_PATH := "res://data/tasks.tsv"
+
+const PRODUCT_TEAMS := {
+	"payments": {"lead": "stas", "ru": "«Платежи»", "en": "Payments"},
+	"kyc": {"lead": "olga", "ru": "KYC", "en": "KYC"},
+	"regulatory": {"lead": "boris", "ru": "«Регуляторка»", "en": "Regulatory"},
+}
+# Client banks by chapter.
+const BANKS := {
+	1: {"fjord": {"ru": "«Фьорд»", "en": "Fjord Bank"}, "meridian": {"ru": "«Меридиан»", "en": "Meridian Bank"}, "sahara": {"ru": "«Сахара Финанс»", "en": "Sahara Finance"}},
+}
+# How each lead opens and pushes; a card picks one of the three by its id, so it reads the same every time.
+const LEAD_VOICE := {
+	"stas": {
+		"hi_ru": ["Опять. ", "Так, срочно. ", "Ребята, горим. "], "hi_en": ["Again. ", "Right, urgent. ", "Guys, we're on fire. "],
+		"push_ru": [" У нас релиз у банка, нужно вчера.", " Я уже банку пообещал, не подведите.", " Сколько можно, а?"],
+		"push_en": [" We've got a bank release, we needed it yesterday.", " I've already promised the bank, don't let me down.", " How many times, eh?"],
+	},
+	"olga": {
+		"hi_ru": ["Добрый день! ", "Коллеги, привет! ", "Извините, что отвлекаю. "], "hi_en": ["Good afternoon! ", "Hi, colleagues! ", "Sorry to bother you. "],
+		"push_ru": [" Если несложно, на этой неделе? Я потом уточню.", " Я понимаю, что у вас много всего, но нам очень нужно.", " Напомню завтра, хорошо?"],
+		"push_en": [" If it's not too much trouble, this week? I'll check in later.", " I know you have a lot on, but we really need it.", " I'll remind you tomorrow, all right?"],
+	},
+	"boris": {
+		"hi_ru": ["Слушай-слушай. ", "Коллега! ", "Тут такое дело. "], "hi_en": ["Listen, listen. ", "Colleague! ", "Here's the thing. "],
+		"push_ru": [" Я там уже сказал, что вы быстро.", " Ну вы же можете, я знаю.", " Регулятор ждать не будет, хе-хе."],
+		"push_en": [" I've already told them you're quick.", " You can do it, I know you can.", " The regulator won't wait, heh."],
+	},
+}
 static var TASKS := {}
 # By chapter: DECK[ch] the deck cards, KEY_DAYS[ch][day of the chapter] the key project, KEY_PROJECTS[ch] all of them.
 static var DECK := {}
@@ -121,27 +154,55 @@ static func _static_init() -> void:
 		var row := {}
 		for i in header.size():
 			row[header[i]] = cells[i].strip_edges()
-		var id: String = row["id"]
-		var tags: Array = Array(row["tags"].split(",", false)).map(func(x): return x.strip_edges())
-		TASKS[id] = {"cat": row["category"], "size": float(row["size"]), "due": int(row["due"]), "public": row["public"] == "1",
-			"from": row["from"], "kind": row["kind"], "tags": tags}
 		var ch := maxi(1, int(row.get("chapter", "1")))
 		if not DECK.has(ch):
 			DECK[ch] = []
 			KEY_DAYS[ch] = {}
 			KEY_PROJECTS[ch] = []
-		match row["kind"]:
-			"deck":
-				for i in maxi(1, int(row["copies"])):
-					DECK[ch].append(id)
-			"key":
-				KEY_DAYS[ch][int(row["key_day"])] = id
-				KEY_PROJECTS[ch].append(id)
-			"dump":
-				DUMPS.append(id)
-		for lang in ["ru", "en"]:
-			TASK_TEXT[lang]["taskname." + id] = row["name_" + lang]
-			TASK_TEXT[lang]["task.%s.ask" % id] = row["ask_" + lang]
+		for v in _variants(row, ch):
+			_add_card(row, ch, v)
+
+
+# What one table row becomes: a single card, or one per product team or per bank.
+static func _variants(row: Dictionary, ch: int) -> Array:
+	if row["from"] == "product":
+		return PRODUCT_TEAMS.keys().map(func(k): return {"id": row["id"] + "@" + k, "from": PRODUCT_TEAMS[k]["lead"], "team": k})
+	var text: String = row["name_ru"] + row["ask_ru"] + row["name_en"] + row["ask_en"]
+	if text.contains("{bank}"):
+		var banks: Dictionary = BANKS.get(ch, {})
+		return banks.keys().map(func(k): return {"id": row["id"] + "@" + k, "from": row["from"], "bank": k})
+	return [{"id": row["id"], "from": row["from"]}]
+
+
+static func _add_card(row: Dictionary, ch: int, v: Dictionary) -> void:
+	var id: String = v["id"]
+	var tags: Array = Array(row["tags"].split(",", false)).map(func(x): return x.strip_edges())
+	TASKS[id] = {"cat": row["category"], "size": float(row["size"]), "due": int(row["due"]), "public": row["public"] == "1",
+		"from": v["from"], "kind": row["kind"], "tags": tags, "tpl": row["id"]}
+	match row["kind"]:
+		"deck":
+			for i in maxi(1, int(row["copies"])):
+				DECK[ch].append(id)
+		"key":
+			KEY_DAYS[ch][int(row["key_day"])] = id
+			KEY_PROJECTS[ch].append(id)
+		"dump":
+			DUMPS.append(id)
+	for lang in ["ru", "en"]:
+		TASK_TEXT[lang]["taskname." + id] = _fill(row["name_" + lang], v, lang, ch)
+		TASK_TEXT[lang]["task.%s.ask" % id] = _fill(row["ask_" + lang], v, lang, ch)
+
+
+static func _fill(text: String, v: Dictionary, lang: String, ch: int) -> String:
+	if v.has("team"):
+		text = text.replace("{team}", PRODUCT_TEAMS[v["team"]][lang])
+	if v.has("bank"):
+		text = text.replace("{bank}", BANKS[ch][v["bank"]][lang])
+	var voice: Dictionary = LEAD_VOICE.get(v["from"], {})
+	var pick: int = abs(hash(v["id"]))
+	text = text.replace("{hi}", voice["hi_" + lang][pick % 3] if voice else "")
+	text = text.replace("{push}", voice["push_" + lang][(pick / 3) % 3] if voice else "")
+	return text
 
 
 # Cards of a kind or with a tag, e.g. the weekly report or the fires tech debt brings.
@@ -161,6 +222,7 @@ const DAILY_LOAD := 7.5
 const MAX_CARDS_A_DAY := 5
 const MAX_SAME_KIND := 2
 const REPEAT_GAP := 5 # working days before the same card can come again
+const TEMPLATE_GAP := 2 # and before the same trouble comes from another team
 
 # What free people propose to do on their own, in order. Each is a small internal task; when it's
 # done, it changes the decks or the people.

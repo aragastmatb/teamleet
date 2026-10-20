@@ -262,6 +262,10 @@ func _arrivals() -> Array:
 func _can_come_again(id: String) -> bool:
 	if day - seen_day.get(id, -100) < C.REPEAT_GAP:
 		return false
+	# Variants of one template (the same trouble at another team) keep a couple of days apart too.
+	var tpl: String = C.TASKS[id].get("tpl", id)
+	if tpl != id and day - seen_day.get(tpl, -100) < C.TEMPLATE_GAP:
+		return false
 	return not tasks.any(func(t): return t["id"] == id and not t["status"] in ["done", "declined"])
 
 
@@ -295,6 +299,7 @@ func add_task_raw(id: String, cat: String, size: float, due: int, public: bool, 
 		"key": chapter_keys().has(id), "sit_today": false, "again": seen_day.has(id),
 	})
 	seen_day[id] = day
+	seen_day[C.TASKS.get(id, {}).get("tpl", id)] = day
 	next_uid += 1
 
 
