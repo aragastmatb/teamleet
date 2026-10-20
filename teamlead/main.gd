@@ -198,6 +198,18 @@ func _intervene() -> void:
 	_render()
 
 
+func _decline() -> void:
+	var uid := selected
+	_clear_selection()
+	rules.decline(uid)
+	_render()
+
+
+func _ask_stay() -> void:
+	rules.ask_stay(selected)
+	_render()
+
+
 func _prioritize() -> void:
 	rules.prioritize(selected)
 	_render()
@@ -532,6 +544,9 @@ func _person_card(p: String) -> Control:
 	v.add_child(state)
 	if st["absent"]:
 		state.add_child(_pill(Loc.t("absent.%s_label" % st["absent_reason"]), COL_WARN, Color("fff0b3")))
+	var late := rules.late_hours(p) if rules.phase == "plan" else 0
+	if late > 0:
+		state.add_child(_pill(Loc.render("late_preview", [], {"n": late}), COL_WARN, Color("fff0b3")))
 	var mood := rules.mood_word(p)
 	state.add_child(_label(Loc.t("mood." + mood), 13, MOOD_COLORS[mood]))
 	var energy := rules.energy_word(p)
@@ -811,6 +826,8 @@ func _task_detail(t: Dictionary) -> Control:
 		who.add_child(b)
 	who.add_child(_button("%s  ~%s" % [Loc.t("myself"), _days(rules.estimate(t, "me")["days"])], _direct.bind("me"), 0))
 	who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
+	if rules.can_decline(t):
+		who.add_child(_button(Loc.t("decline_button"), _decline, 0, "subtle"))
 	if t["status"] == "active":
 		var acts := _flow(6, 6)
 		v.add_child(acts)
@@ -820,6 +837,9 @@ func _task_detail(t: Dictionary) -> Control:
 		if C.TEAM.has(t["owner"]) and not t["sit_today"]:
 			acts.add_child(_button(Loc.t("sit.button") + _cost_mark(), _sit, 0, "subtle"))
 		if C.TEAM.has(t["owner"]):
+			var stay := _button(Loc.t("stay_button"), _ask_stay, 0, "subtle")
+			stay.disabled = t.get("stay_asked", -1) == rules.day
+			acts.add_child(stay)
 			var step := _button(Loc.t("intervene_button") + _cost_mark(), _intervene, 0, "subtle")
 			step.disabled = not rules.can_intervene(t)
 			acts.add_child(step)
@@ -1159,6 +1179,8 @@ func _event_prompt(list: VBoxContainer, ev: Dictionary) -> void:
 		title = Loc.t("visit_title")
 	elif ev["id"] == "intervene":
 		title = Loc.render("intervene_title", [], ev["names"]) + " — " + Loc.person(ev["target"])
+	elif ev["id"] == "decline":
+		title = Loc.render("decline_title", [], ev["names"])
 	var v := _prompt_box(list, title)
 	for choice in ev["choices"]:
 		var parts: PackedStringArray = choice.split(":")

@@ -117,8 +117,12 @@ static func tasks_with(field: String, value: String) -> Array:
 	return out
 
 
-# Size of work drawn each morning, roughly; a day never brings two cards of the same kind.
-const DAILY_LOAD := 3.4
+# Size of work drawn each morning, roughly; a day brings at most two cards of one kind. A team that
+# hands work out well gets through about 4.3 days of work a day; with key projects, the weekly report
+# and the rest on top, this brings in about one and a half times that. Not everything is meant to get done.
+const DAILY_LOAD := 7.5
+const MAX_CARDS_A_DAY := 5
+const MAX_SAME_KIND := 2
 const ATTENTION := 3
 
 # What free people propose to do on their own, in order. Each is a small internal task; when it's

@@ -15,9 +15,13 @@ const SPEED_PER_SKILL := 0.35
 const GOOD_Q := 2.6
 const OK_Q := 1.6
 const WEIRD_Q := 0.8
-const DRAIN := 1.0
-const HARD_DRAIN := 0.5
-const OVERLOAD_DRAIN := 0.5
+# Energy: a normal 8-hour day on work you can do barely tires anyone; staying late, work beyond you and
+# being pushed do. Weekends put people back on their feet.
+const DRAIN := 0.15
+const HARD_DRAIN := 0.4
+const OVERTIME_DRAIN := 0.35 # per hour past the 8
+const WEEKEND_REST := 4.0
+const MY_WEEKEND_REST := 3.0
 const OVERLOAD_AT := 3
 const IDLE_REST := 2.0
 const DAYOFF_REST := 4.0
@@ -154,10 +158,15 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS) -> void
 
 func _start_day() -> void:
 	_narrate("log.morning", ["@day.%d" % day])
+	var monday := day % 5 == 1 and day > 1
+	if monday:
+		my_energy = minf(10.0, my_energy + MY_WEEKEND_REST)
 	for p in C.TEAM:
 		var st: Dictionary = people[p]
 		if st["gone"]:
 			continue
+		if monday:
+			st["energy"] = minf(_stamina(p), st["energy"] + WEEKEND_REST)
 		st["absent"] = st["sick"] > 0 or st["off_next"]
 		st["absent_reason"] = "dayoff" if st["off_next"] else ("sick" if st["sick"] > 0 else "")
 		if st["off_next"]:
@@ -198,7 +207,7 @@ func _deliver_arrivals() -> void:
 
 
 # This morning's work: the weekly report on Mondays (unless automated), key projects on their days,
-# and a few cards from the deck — never two of the same kind on one day.
+# and a few cards from the deck — no more than two of one kind on one day.
 func _arrivals() -> Array:
 	var out: Array = []
 	if day % 5 == 1 and not flags.has("automated_report"):
@@ -212,17 +221,17 @@ func _arrivals() -> Array:
 	if flags.get("relief", false):
 		flags["relief"] = false
 		target -= 1.5
-	while load < target and out.size() < 3:
+	while load < target and out.size() < C.MAX_CARDS_A_DAY:
 		if deck.size() < 4:
 			_refill_deck()
 		var picked := -1
 		for i in deck.size():
 			var info: Dictionary = C.TASKS[deck[i]]
-			var clash := false
+			var same := 0
 			for id in out:
 				if C.TASKS[id]["cat"] == info["cat"]:
-					clash = true
-			if not clash and day + info["size"] - 1 <= C.DAYS:
+					same += 1
+			if same < C.MAX_SAME_KIND and day + info["size"] - 1 <= C.DAYS:
 				picked = i
 				break
 		if picked < 0:
@@ -1099,7 +1108,8 @@ func _work(p: String) -> void:
 		# The day is spent down the queue: whatever's left after finishing one task goes to the next.
 		# Half of it goes to the pair if they're helping someone.
 		var first: Dictionary = q[0]
-		var time := (1.0 - help_part) * meeting
+		var late := late_hours(p)
+		var time := (1.0 - help_part) * meeting + late / 8.0
 		var stuck: Array = []
 		for t in q:
 			if time < 0.05:
@@ -1144,16 +1154,15 @@ func _work(p: String) -> void:
 		var drain: float = DRAIN
 		if st["skills"][first["cat"]] < 2:
 			drain += HARD_DRAIN
-		if leans("P"):
-			drain += 0.2
 		if q.size() >= OVERLOAD_AT:
-			drain += OVERLOAD_DRAIN
 			st["mood"] -= 0.3
-		# Overloaded, rushed or pushed people stay late.
+		# The late hours are what wear people down.
 		st["week_hours"][week()] += 8
-		if q.size() >= OVERLOAD_AT or st["pushed"] > 0:
-			st["week_extra"][week()] += 2 + (1 if q.size() >= OVERLOAD_AT + 2 else 0)
+		if late > 0:
+			st["week_extra"][week()] += late
 			st["week_overtime"][week()] += 1
+			drain += OVERTIME_DRAIN * late
+			_narrate("stayed_late", [], {"who": "@name.%s.nom" % p, "hours": late, "task": "@taskname." + first["id"]})
 		st["energy"] -= drain
 		st["idle_said"] = false
 		st["idle_days"] = 0
@@ -1163,7 +1172,7 @@ func _work(p: String) -> void:
 		st["idle_days"] = 0 if help_part > 0.0 else st["idle_days"] + 1
 		if help_part > 0.0:
 			st["week_hours"][week()] += 8
-			st["energy"] -= 0.7
+			st["energy"] -= DRAIN
 		else:
 			st["energy"] = minf(_stamina(p), st["energy"] + IDLE_REST)
 			st["mood"] += C.PEOPLE[p]["idle"]
@@ -1173,6 +1182,111 @@ func _work(p: String) -> void:
 	if st["pushed"] > 0:
 		st["pushed"] -= 1
 	st["mood"] = clampf(st["mood"], -5.0, 5.0)
+
+
+# Saying no to a request in the inbox: a conversation with whoever brought it (see scenes.gd decline).
+# Key projects can't be turned down.
+func can_decline(t: Dictionary) -> bool:
+	return phase == "plan" and pending.is_empty() and t.get("status", "") == "inbox" and not t["key"]
+
+
+func decline(uid: int) -> void:
+	var t := task(uid)
+	if t.is_empty() or not can_decline(t):
+		return
+	history.append({"who": "you", "key": "decline.open", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": t["from"], "day": day})
+	_open_conversation(scenes.decline_event(self, t))
+
+
+# A turned-down task leaves the board; put off "for later", it goes back into the deck to come round again.
+func drop_task(t: Dictionary, again_later: bool) -> void:
+	t["status"] = "declined"
+	if again_later and C.TASKS.has(t["id"]):
+		deck.insert(mini(8, deck.size()), t["id"])
+
+
+# How many hours past the 8 this person will stay tonight, as things stand. The same answer drives the
+# hint on their card during the day and the evening's work. People stay for a deadline they won't make
+# otherwise (each by their own character), because you asked, because the queue has piled up, or
+# because you told them to pull themselves together.
+func late_hours(p: String) -> int:
+	var st: Dictionary = people[p]
+	if not available(p) or st["absent"]:
+		return 0
+	var q := queue_of(p)
+	if q.is_empty():
+		return 0
+	var info: Dictionary = C.PEOPLE[p]
+	var first: Dictionary = q[0]
+	var late := 0
+	var tired := _feels_tired(p)
+	# A deadline today or tomorrow that a normal day won't cover.
+	var speed := _speed(p, first)
+	var left: float = first["size"] - first["progress"]
+	var due_in: int = first["due"] - day
+	var behind: bool = first["blocked"] == 0 and ((due_in <= 0 and left > speed) or (due_in == 1 and left > 2.0 * speed))
+	if behind and not tired:
+		if info.get("workaholic", false):
+			late = 3
+		elif info.get("guards_energy", false):
+			late = 0
+		elif p == "vika":
+			late = 2 if first["public"] or first["key"] else 0
+		else:
+			late = 2
+	elif behind and info.get("workaholic", false):
+		late = 2
+	if first.get("stay_asked", -1) == day and st.get("agreed_late", -1) == day:
+		late += 2
+	if q.size() >= OVERLOAD_AT:
+		late = maxi(late, 2 + mini(2, q.size() - OVERLOAD_AT))
+	if st["pushed"] > 0:
+		late = maxi(late, 2)
+	if info.get("workaholic", false) and q.size() >= 2:
+		late = maxi(late, 1)
+	if late > 0 and leans("P"):
+		late += 1
+	return mini(late, 4)
+
+
+# You ask someone to stay late on a task tonight. How they take it depends on who they are, how tired
+# they are, and how often you've asked this week.
+func ask_stay(uid: int) -> void:
+	var t := task(uid)
+	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("stay_asked", -1) == day:
+		return
+	var p: String = t["owner"]
+	if not C.TEAM.has(p) or not available(p) or people[p]["absent"]:
+		return
+	var st: Dictionary = people[p]
+	t["stay_asked"] = day
+	lead("P", 0.5)
+	history.append({"who": "you", "key": "stay.ask", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": p, "day": day})
+	var asked: int = st.get("asked_late_week", {}).get(week(), 0) + 1
+	if not st.has("asked_late_week"):
+		st["asked_late_week"] = {}
+	st["asked_late_week"][week()] = asked
+	var info: Dictionary = C.PEOPLE[p]
+	if _feels_tired(p) and not info.get("workaholic", false):
+		_say(p, "stay.no_tired")
+		return
+	st["agreed_late"] = day
+	var reply := "yes"
+	if info.get("workaholic", false):
+		st["mood"] += 0.2
+		reply = "glad"
+	elif info.get("guards_energy", false):
+		st["mood"] -= 1.0 * asked
+		if asked >= 2:
+			st["trust"] -= 1
+		reply = "grudging"
+	elif p == "vika" and not (t["public"] or t["key"]):
+		st["mood"] -= 0.5
+		reply = "grudging"
+	else:
+		st["mood"] -= 0.3 * asked
+	st["mood"] = clampf(st["mood"], -5.0, 5.0)
+	_say(p, _first_key(["stay.%s.%s" % [reply, p], "stay." + reply]), [], {"task": "@taskname." + t["id"]})
 
 
 # Looking in the wrong place: on the first day of a task someone unsure of it may get stuck. The day goes
@@ -1551,7 +1665,7 @@ func _finish_run() -> void:
 
 
 const RESULTS_OK := 3.0
-const TEAM_OK := 3.0
+const TEAM_OK := 5.0
 
 
 # Key projects: done well and on time, done badly, slipped, still open, not here yet.

@@ -11,6 +11,8 @@ extends RefCounted
 const C = preload("res://teamlead/content.gd")
 
 const MAX_PER_MORNING := 2
+# How many times you can say no to one person before they complain to Irina.
+const DECLINES_TO_COMPLAIN := 3
 
 # How your answers lean as a lead (Adizes: P results, A order, E change, I people). Keyed "event/choice".
 const STYLE := {
@@ -30,6 +32,7 @@ const STYLE := {
 	"friday_deploy/allow": [["E", 0.3]], "friday_deploy/forbid": [["A", 0.7]], "friday_deploy/on_call": [["P", 0.5]],
 	"weekend_fire/own": [["A", 0.3], ["I", 0.3]], "weekend_fire/postmortem": [["A", 0.7]], "weekend_fire/blame": [["P", 0.3], ["I", -0.5]],
 	"chaos_meeting/all_go": [["I", 0.3]], "chaos_meeting/me_only": [["P", 0.3]], "chaos_meeting/later": [["A", 0.3]],
+	"decline/later": [["A", 0.3]], "decline/not_ours": [["E", 0.3]], "decline/irina": [["A", 0.3]], "decline/boss_no": [["E", 0.5]],
 	"intervene/faster": [["P", 0.7]], "intervene/careful": [["A", 0.7]], "intervene/cut": [["E", 0.5]],
 	"intervene/my_way": [["P", 0.5], ["E", 0.3]], "intervene/take_over": [["P", 2.0]], "intervene/trust": [["I", 0.5]],
 }
@@ -699,6 +702,56 @@ func _resolve_intervene(r, ev: Dictionary, c: String) -> String:
 	return r._first_key(["%s.%s" % [reply, p], reply])
 
 
+# ---------- saying no ----------
+
+func decline_event(r, t: Dictionary) -> Dictionary:
+	var who: String = t["from"]
+	var choices: Array = ["boss_no", "keep"] if who == "boss" else ["later", "not_ours", "irina", "keep"]
+	return {"id": "decline", "who": who, "uid": t["uid"], "names": task_names(r, t),
+		"lines": [{"who": who, "key": "event.decline.ask"}], "choices": choices}
+
+
+func _resolve_decline(r, ev: Dictionary, c: String) -> String:
+	var t: Dictionary = r.task(ev["uid"])
+	var who: String = ev["who"]
+	var reply := "event.decline.%s.reply" % c
+	# Turning down something the boss will look at doesn't go unnoticed.
+	var seen: bool = t["public"] and who != "boss"
+	match c:
+		"later", "not_ours":
+			r.drop_task(t, c == "later")
+			if seen:
+				r.boss -= 0.3
+			# Every no adds up with the person who asked ("not ours" counts double); every third time they
+			# go to Irina. Taras goes straight away when told it's not ours.
+			var before: int = r.flags.get("declined_" + who, 0)
+			var after: int = before + (2 if c == "not_ours" else 1)
+			r.flags["declined_" + who] = after
+			if (who == "taras" and c == "not_ours") or after / DECLINES_TO_COMPLAIN > before / DECLINES_TO_COMPLAIN:
+				r.boss -= 0.5
+				r.say("", "decline.escalated", [], {"who_gen": "@name.%s.gen" % who})
+				if who == "taras":
+					r.flags["taras_grudge"] = true
+		"irina":
+			r.spend_attention()
+			if r.has_weight():
+				r.drop_task(t, false)
+				r.boss -= 0.2
+				r.say("boss", "event.decline.irina.ok", [], ev["names"])
+			else:
+				r.say("boss", "event.decline.irina.no", [], ev["names"])
+			return ""
+		"boss_no":
+			if r.has_weight():
+				r.drop_task(t, false)
+				r.boss -= 0.5
+				reply = "event.decline.boss_no.ok"
+			else:
+				r.boss -= 0.3
+				reply = "event.decline.boss_no.no"
+	return r._first_key(["%s.%s" % [reply, who], reply])
+
+
 # ---------- going to Irina ----------
 
 # What you can bring her today. Each choice carries its own task name for the button.
@@ -835,7 +888,9 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 		routed = _resolve_show(r, ev, c)
 	elif ev["id"] == "intervene":
 		routed = _resolve_intervene(r, ev, c)
-	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene"]:
+	elif ev["id"] == "decline":
+		routed = _resolve_decline(r, ev, c)
+	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene", "decline"]:
 		if routed != "":
 			r.say(who, routed, [], names)
 		for q in C.TEAM:
