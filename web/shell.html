@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<title>$GODOT_PROJECT_NAME</title>
+		<style>
+html, body, #canvas {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+body {
+	background-color: #f4f5f7;
+	overflow: hidden;
+	touch-action: none;
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', Arial, sans-serif;
+	color: #172b4d;
+}
+
+#canvas {
+	display: block;
+}
+
+#canvas:focus {
+	outline: none;
+}
+
+/* The loading screen copies the game's title card: white card, orange TL badge, blue bar. */
+#status {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: #f4f5f7;
+	padding: 16px;
+	box-sizing: border-box;
+}
+
+.card {
+	background: #ffffff;
+	border: 1px solid #dfe1e6;
+	border-radius: 24px;
+	padding: 32px;
+	width: 100%;
+	max-width: 520px;
+	box-sizing: border-box;
+}
+
+.head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.logo {
+	width: 40px;
+	height: 40px;
+	border-radius: 10px;
+	background: #ff991f;
+	color: #ffffff;
+	font-weight: 700;
+	font-size: 18px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: none;
+}
+
+h1 {
+	margin: 0;
+	font-size: 30px;
+	font-weight: 700;
+}
+
+.bar {
+	margin-top: 28px;
+	height: 8px;
+	border-radius: 4px;
+	background: #ebecf0;
+	overflow: hidden;
+	position: relative;
+}
+
+.fill {
+	height: 100%;
+	width: 0;
+	background: #0052cc;
+	border-radius: 4px;
+	transition: width 0.2s;
+}
+
+/* Before the size is known, a block runs back and forth instead. */
+.bar.unknown .fill {
+	width: 30%;
+	position: absolute;
+	animation: wander 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes wander {
+	from { left: 0; }
+	to { left: 70%; }
+}
+
+.row {
+	margin-top: 12px;
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	font-size: 15px;
+	color: #5e6c84;
+	min-height: 2.6em;
+}
+
+#joke {
+	transition: opacity 0.25s;
+}
+
+#joke.fade {
+	opacity: 0;
+}
+
+#percent {
+	flex: none;
+	font-variant-numeric: tabular-nums;
+}
+
+#notice {
+	display: none;
+	margin-top: 20px;
+	padding: 14px 16px;
+	border-radius: 12px;
+	background: #ffebe6;
+	color: #bf2600;
+	font-size: 15px;
+	line-height: 1.4;
+	white-space: pre-line;
+}
+
+.failed .bar, .failed .row {
+	display: none;
+}
+
+.failed #notice {
+	display: block;
+}
+
+@media (max-width: 480px) {
+	.card { padding: 24px; border-radius: 20px; }
+	h1 { font-size: 26px; }
+}
+		</style>
+		$GODOT_HEAD_INCLUDE
+	</head>
+	<body>
+		<canvas id="canvas"></canvas>
+
+		<noscript>
+			Для игры нужен JavaScript. / The game needs JavaScript.
+		</noscript>
+
+		<div id="status">
+			<div class="card" id="card">
+				<div class="head">
+					<div class="logo">TL</div>
+					<h1>Team1337</h1>
+				</div>
+				<div class="bar unknown" id="bar"><div class="fill" id="fill"></div></div>
+				<div class="row">
+					<span id="joke"></span>
+					<span id="percent"></span>
+				</div>
+				<div id="notice"></div>
+			</div>
+		</div>
+
+		<script src="$GODOT_URL"></script>
+		<script>
+const GODOT_CONFIG = $GODOT_CONFIG;
+const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const ru = (navigator.language || '').toLowerCase().startsWith('ru');
+	const TEXT = ru ? {
+		jokes: [
+			'Согласовываем загрузку с Ириной…',
+			'Chainer уже пишет в чат…',
+			'Ищем, кто взял задачу в спринт…',
+			'Двигаем дедлайн вправо…',
+			'Переносим дейли на после дейли…',
+			'Банк «Беги Заплати» просит ETA…',
+			'Закрываем техдолг. Шутка.',
+			'Кофемашина на ревью…',
+			'Синкаемся по поводу синка…',
+		],
+		failed: 'Игра не запустилась.',
+		missing: 'Этот браузер не умеет того, что нужно игре. Попробуйте свежий Chrome, Firefox или Safari.',
+	} : {
+		jokes: [
+			'Getting the loading approved by Irina…',
+			'Chainer is typing…',
+			'Finding out who put this in the sprint…',
+			'Moving the deadline to the right…',
+			'Rescheduling the standup to after the standup…',
+			'Run & Pay Bank wants an ETA…',
+			'Paying off tech debt. Kidding.',
+			'The coffee machine is in code review…',
+			'Syncing about the sync…',
+		],
+		failed: 'The game failed to start.',
+		missing: 'This browser lacks something the game needs. Try a recent Chrome, Firefox or Safari.',
+	};
+	document.documentElement.lang = ru ? 'ru' : 'en';
+
+	const status = document.getElementById('status');
+	const card = document.getElementById('card');
+	const bar = document.getElementById('bar');
+	const fill = document.getElementById('fill');
+	const joke = document.getElementById('joke');
+	const percent = document.getElementById('percent');
+	const notice = document.getElementById('notice');
+
+	// Jokes come in a shuffled order and change every couple of seconds.
+	const order = TEXT.jokes.slice().sort(() => Math.random() - 0.5);
+	let next = 0;
+	joke.textContent = order[next++ % order.length];
+	const ticker = setInterval(() => {
+		joke.classList.add('fade');
+		setTimeout(() => {
+			joke.textContent = order[next++ % order.length];
+			joke.classList.remove('fade');
+		}, 250);
+	}, 2200);
+
+	function fail(err) {
+		console.error(err);
+		clearInterval(ticker);
+		let detail = '';
+		if (err instanceof Error) {
+			detail = err.message;
+		} else if (typeof err === 'string') {
+			detail = err;
+		}
+		notice.textContent = detail ? TEXT.failed + '\n' + detail : TEXT.failed;
+		card.classList.add('failed');
+	}
+
+	const missing = Engine.getMissingFeatures({
+		threads: GODOT_THREADS_ENABLED,
+	});
+	if (missing.length !== 0) {
+		fail(TEXT.missing + '\n\n' + missing.join('\n'));
+		return;
+	}
+
+	engine.startGame({
+		'onProgress': function (current, total) {
+			if (current > 0 && total > 0) {
+				const p = Math.min(100, Math.floor(current / total * 100));
+				bar.classList.remove('unknown');
+				fill.style.width = p + '%';
+				percent.textContent = p + '%';
+			} else {
+				bar.classList.add('unknown');
+				percent.textContent = '';
+			}
+		},
+	}).then(() => {
+		clearInterval(ticker);
+		status.remove();
+	}, fail);
+}());
+		</script>
+	</body>
+</html>
