@@ -87,6 +87,18 @@ var pick_tips := true
 # The short reference behind "?", and the last of Gena's tips the phone banner was closed on.
 var help_open := false
 var tip_closed := ""
+# The chat plays out like a messenger: entries of rules.history up to `shown` are on screen, the rest come
+# one by one, with "… is typing" before each. A click on the chat shows everything at once.
+const TYPE_PAUSE := 0.6
+const NARRATION_PAUSE := 0.25
+var shown := 0
+var reveal_wait := 0.0
+var chat_list: VBoxContainer
+var chat_scroll: ScrollContainer
+var chat_last := ""
+var typing_row: Control
+# Once the evening comes, the morning folds into one line; this opens it again for that day.
+var morning_open_day := 0
 
 
 func _ready() -> void:
@@ -284,6 +296,7 @@ func _start_run() -> void:
 	rules.start_run(-1, C.BOSS_KINDS.pick_random() if pick_boss == "random" else pick_boss, pick_profile)
 	rules.tips = pick_tips
 	tip_closed = ""
+	shown = 0
 	_clear_selection()
 	_render()
 
@@ -364,6 +377,79 @@ func _pick_option(kind: String, value: String) -> void:
 	_render()
 
 
+func _process(delta: float) -> void:
+	if rules.phase == "title" or shown >= rules.history.size():
+		return
+	while shown < rules.history.size() and not _on_screen(shown):
+		shown += 1
+	if shown >= rules.history.size():
+		return
+	# Chat on another tab (phone): nothing to play out, just catch up for the unread count.
+	if not is_instance_valid(chat_list) or not chat_list.is_inside_tree():
+		_show_all()
+		return
+	reveal_wait += delta
+	if reveal_wait < _pause_before(rules.history[shown]):
+		return
+	reveal_wait = 0.0
+	_reveal_next()
+
+
+# Your own lines show at once; narration quickly; people take a moment to type.
+func _pause_before(e: Dictionary) -> float:
+	if e["who"] == "you":
+		return 0.0
+	if e["who"] == "" or e["key"].begins_with("log."):
+		return NARRATION_PAUSE
+	return TYPE_PAUSE
+
+
+func _reveal_next() -> void:
+	var e: Dictionary = rules.history[shown]
+	shown += 1
+	if shown >= rules.history.size() or not is_instance_valid(chat_list):
+		# The last one is in: the full render brings the answers and buttons.
+		_render()
+		return
+	if typing_row and is_instance_valid(typing_row):
+		typing_row.queue_free()
+	_append_entry(chat_list, e)
+	if e["who"] != "you" and e["who"] != "":
+		_play("message")
+	typing_row = _typing_row()
+	if typing_row:
+		chat_list.add_child(typing_row)
+	_scroll_to_end(chat_scroll)
+
+
+func _show_all() -> void:
+	if shown < rules.history.size():
+		shown = rules.history.size()
+		reveal_wait = 0.0
+		_render()
+
+
+# Is this entry in today's chat (and not folded away with the morning)?
+func _on_screen(i: int) -> bool:
+	var e: Dictionary = rules.history[i]
+	return e["day"] == rules.day and not _folded(i)
+
+
+func _folded(i: int) -> bool:
+	return i < rules.evening_from and _evening_today() and morning_open_day != rules.day
+
+
+# The evening has begun today: its first line (rules.evening_from) belongs to this day.
+func _evening_today() -> bool:
+	var i: int = rules.evening_from
+	return i < rules.history.size() and rules.history[i]["day"] == rules.day and rules.history[i]["key"] == "log.evening"
+
+
+func _open_morning() -> void:
+	morning_open_day = rules.day
+	_render()
+
+
 # Back to where the last session stopped, chat and all, without replaying its sounds.
 func _continue_run() -> void:
 	if not rules.load_game():
@@ -372,6 +458,7 @@ func _continue_run() -> void:
 	heard = rules.history.size()
 	last_phase = rules.phase
 	chat_read = rules.history.size()
+	shown = rules.history.size()
 	_clear_selection()
 
 
@@ -421,7 +508,7 @@ func _sound_for_changes() -> String:
 		return "question"
 	if moved and phase == "evening":
 		return "day_end"
-	for name in ["assign", "message"]:
+	for name in ["assign"]: # people's messages sound as they appear (_reveal_next)
 		if found.has(name):
 			return name
 	return cue
@@ -1290,35 +1377,76 @@ func _chat() -> Control:
 	var list := _vbox(4)
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_padded(list, 14, 12))
-	var last := ""
-	for e in rules.history:
-		if e["day"] != rules.day:
-			continue
-		var key: String = e["key"]
-		if key.begins_with("log."):
-			list.add_child(_spacer(4))
-			var sep := _label(Loc.render(key, e.get("args", []), e.get("names", {})).replace("—", "").strip_edges(), 12, COL_FAINT, true, true)
-			sep.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			list.add_child(sep)
-			last = ""
-			continue
-		var body := Loc.render(key, e.get("args", []), e.get("names", {}))
-		if e["who"] == "":
-			if last != "":
-				list.add_child(_spacer(4))
-			list.add_child(_label(body, 13, COL_MUTED, true))
-			last = ""
-			continue
-		var speaker: String = e["who"] + ">" + e.get("to", "")
-		# A new task always starts its own message, even from someone who was just talking.
-		if speaker != last or key.begins_with("task."):
-			list.add_child(_spacer(4))
-			list.add_child(_message_head(e))
-		last = speaker
-		list.add_child(_indented(_label(body, 15, COL_MUTED if body.begins_with("(") else COL_TEXT, true)))
-	_chat_prompt(list)
+	chat_list = list
+	chat_scroll = scroll
+	chat_last = ""
+	typing_row = null
+	shown = mini(shown, rules.history.size())
+	var folded := 0
+	for i in shown:
+		if rules.history[i]["day"] == rules.day and _folded(i):
+			folded += 1
+	if folded > 0:
+		var open := _button(Loc.t("chat.morning_folded", [folded]), _open_morning, 0, "subtle")
+		open.add_theme_font_size_override("font_size", 13)
+		list.add_child(open)
+	for i in shown:
+		if _on_screen(i):
+			_append_entry(list, rules.history[i])
+	if shown < rules.history.size():
+		typing_row = _typing_row()
+		if typing_row:
+			list.add_child(typing_row)
+		# A click (not a scroll) on the chat shows the rest at once.
+		panel.gui_input.connect(func(event: InputEvent):
+			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+				if event.pressed:
+					press_pos = event.global_position
+				elif event.global_position.distance_to(press_pos) < 12.0:
+					_show_all.call_deferred())
+	else:
+		_chat_prompt(list)
 	_scroll_to_end(scroll)
 	return panel
+
+
+# One chat entry: a day-part divider, narration, or a line under its speaker's name.
+func _append_entry(list: VBoxContainer, e: Dictionary) -> void:
+	var key: String = e["key"]
+	if key.begins_with("log."):
+		list.add_child(_spacer(4))
+		var sep := _label(Loc.render(key, e.get("args", []), e.get("names", {})).replace("—", "").strip_edges(), 12, COL_FAINT, true, true)
+		sep.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		list.add_child(sep)
+		chat_last = ""
+		return
+	var body := Loc.render(key, e.get("args", []), e.get("names", {}))
+	if e["who"] == "":
+		if chat_last != "":
+			list.add_child(_spacer(4))
+		list.add_child(_label(body, 13, COL_MUTED, true))
+		chat_last = ""
+		return
+	var speaker: String = e["who"] + ">" + e.get("to", "")
+	# A new task or tip always starts its own message, even from someone who was just talking.
+	if speaker != chat_last or key.begins_with("task.") or key.begins_with("tip."):
+		list.add_child(_spacer(4))
+		list.add_child(_message_head(e))
+	chat_last = speaker
+	list.add_child(_indented(_label(body, 15, COL_MUTED if body.begins_with("(") else COL_TEXT, true)))
+
+
+# "Gena is typing…" under the chat while the next person's line is on its way.
+func _typing_row() -> Control:
+	for i in range(shown, rules.history.size()):
+		if not _on_screen(i):
+			continue
+		var who: String = rules.history[i]["who"]
+		if who == "you" or who == "":
+			return null
+		var l := _label(Loc.t("chat.typing", [Loc.t("you") if who == "me" else Loc.person(who)]), 12, COL_FAINT, true)
+		return _indented(l)
+	return null
 
 
 func _message_head(e: Dictionary) -> Control:
