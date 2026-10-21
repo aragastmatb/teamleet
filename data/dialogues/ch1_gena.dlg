@@ -25,10 +25,14 @@ gena [annoyed]: Мне и в vim нормально. Двадцать лет н�
   en: Why don't you want to? Honestly.
 
 -- why
-gena [tired]: Честно? Я видел много таких «переходов». После них обычно кто-то становится не нужен.
-  en: Honestly? I've seen a lot of these "transitions". Afterwards someone usually stops being needed.
-gena [neutral]: Ладно. Неважно. Тебе решать.
-  en: Never mind. It doesn't matter. Your call.
+gena [neutral]: В двенадцатом году я тоже всем ставил. Новую систему сборки.
+  en: Back in 2012 I set everyone up with something too. A new build system.
+gena [tired]: Отличная была система. Всё сама делала.
+  en: Great system, it was. Did everything by itself.
+- Он замолкает, будто договорил. Хотя явно нет.
+  en: He stops as if he's finished. He clearly hasn't.
+gena [neutral]: Ладно. Тебе решать.
+  en: Anyway. Your call.
 > flag gena_why
 * Переходи. Со всеми. -> force
   en: Switch. With everyone.
