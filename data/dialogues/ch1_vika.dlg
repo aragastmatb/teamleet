@@ -52,8 +52,8 @@ oleg [neutral]: Хорошо, ждём.
 -- myself
 oleg [happy]: Отлично, спасибо!
   en: Great, thanks!
-- Ответ правильный. На вопрос, который был не к вам и не к Алексею.
-  en: The answer is right. To a question that was meant for neither you nor Alex.
+- Олег записывает и благодарит — вас. Вика всё это время молчит.
+  en: Oleg takes notes and thanks you. Vika says nothing the whole time.
 vika [sarcastic]: Спасибо, что ответили за меня.
   en: Thanks for answering for me.
 > flag vika_overridden

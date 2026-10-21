@@ -24,10 +24,10 @@ when: chapter 2, day 10-18
   en: So it wore off for you, did it?
 
 -- drink
-- В баре Тарас рассказывает, как «оптимизировал» отдел в прошлом году. Смешно. Почти.
-  en: At the bar Taras tells how he "optimised" a department last year. It's funny. Almost.
-- Под конец вечера он хлопает вас по плечу: «Ты свой». Звучит как комплимент. Наверное.
-  en: At the end of the night he claps you on the shoulder: "You're one of us." It sounds like a compliment. Probably.
+- В баре Тарас рассказывает, как «оптимизировал» отдел в прошлом году, и сам смеётся громче всех.
+  en: At the bar Taras tells how he "optimised" a department last year, and laughs louder than anyone.
+- Под конец вечера он хлопает вас по плечу: «Ты свой».
+  en: At the end of the night he claps you on the shoulder: "You're one of us."
 > flag taras_drink
 > taras +1
 -> end
