@@ -61,7 +61,7 @@ const CAT_COLORS := {
 }
 const AVATAR_COLORS := {
 	"alex": Color("0065ff"), "vika": Color("ff5630"), "gena": Color("36b37e"), "dima": Color("6554c0"),
-	"boss": Color("253858"), "marina": Color("00a3bf"), "taras": Color("ff8b00"), "me": Color("0747a6"), "palych": Color("8777d9"), "oleg": Color("5e6c84"), "buyer": Color("403294"),
+	"boss": Color("7a2048"), "marina": Color("00a3bf"), "taras": Color("ff8b00"), "me": Color("0747a6"), "palych": Color("8777d9"), "oleg": Color("5e6c84"), "buyer": Color("403294"),
 	"contractor": Color("7a869a"), "stas": Color("de350b"), "olga": Color("8777d9"), "boris": Color("5e6c84"),
 }
 
