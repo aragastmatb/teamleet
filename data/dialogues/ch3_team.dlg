@@ -1,0 +1,342 @@
+# Глава 3. Третьи зацепки (дни 2–7, до приказа «сократите одного» на 8-й день)
+# и раскрытия: после приказа каждый из первой команды сам приходит поговорить — пока решение не принято.
+# Кто решил быстро, услышит не всех. Знание приходит, когда отступать уже поздно (docs/characters.md).
+
+# Алексей срывается на Диму: «вкатун». Ночью — «сорри, перегнул», и сообщение тут же удалено.
+== alex_snap
+when: chapter 3, day 2-6, here alex, here dima
+
+- Стендап. Дима рассказывает, что второй день не может поднять раннер.
+  en: Stand-up. Dima says he's been stuck on a runner for two days.
+alex [annoyed]: Второй день? Там на пять минут работы — вас на курсах вообще чему-то учат или только сертификаты выдают?
+  en: Two days? It's a five-minute job — do they teach you anything on those courses, or just hand out certificates?
+- Дима краснеет и замолкает. Остальные смотрят в ноутбуки.
+  en: Dima goes red and falls silent. Everyone else looks at their laptops.
+* Алексей, давай после стендапа поговорим. -> later
+  en: Alex, let's talk after the stand-up.
+* Дима, после стендапа разберём раннер вместе. -> with_dima
+  en: Dima, we'll go through the runner together after the stand-up.
+* (Продолжить стендап.) -> go_on
+  en: (Carry on with the stand-up.)
+
+-- later
+alex [annoyed]: Да что я такого сказал-то?
+  en: What did I even say?
+> flag alex_snap_talked
+-> night
+
+-- with_dima
+dima [embarrassed]: Да я сам… ну ладно, давай.
+  en: I can do it myself… OK, fine, let's.
+> mood dima +0.5
+> flag alex_snap_dima_helped
+-> night
+
+-- go_on
+> mood dima -1
+> flag alex_snap_ignored
+-> night
+
+-- night
+- Ночью в чате появляется сообщение Алексея Диме: «сорри, перегнул». Через минуту оно удалено. Судя по отметке «прочитано», Дима успел увидеть.
+  en: That night a message from Alex to Dima appears in the chat: "sorry, went too far." A minute later it's deleted. The "read" mark says Dima saw it.
+-> end
+
+
+# Вика просит письменно подтвердить, что подключение сделала она. Если игрок вступился за неё на разборе, разговор идёт на её синке.
+== vika_letter
+when: chapter 3, day 3-7, here vika
+
+{if flag vika_credited} - На её пятнадцатиминутном синке по банкам Вика вдруг закрывает ноутбук.
+  en: At her fifteen-minute bank sync, Vika suddenly closes her laptop.
+{if not flag vika_credited} - Вика ловит вас у кофемашины.
+  en: Vika catches you at the coffee machine.
+vika [neutral]: Можно странную просьбу? Пришлите мне письмом, что подключение «Кредита Доверия» сделала я — просто письмом, для истории.
+  en: Can I ask something odd? Send me an email saying I did the Trust Credit Bank onboarding — just an email, for the record.
+* Пришлю. -> send
+  en: I'll send it.
+* А зачем? -> why
+  en: What for?
+* Это же все и так знают. -> everyone
+  en: Everyone knows that anyway.
+
+-- why
+{if flag vika_credited} vika [neutral]: Привычка, с прошлой работы.
+  en: Habit, from my last job.
+{if not flag vika_credited} vika [annoyed]: Ну надо мне, ладно?
+  en: I just need it, OK?
+* Пришлю. -> send
+  en: I'll send it.
+* Это же все и так знают. -> everyone
+  en: Everyone knows that anyway.
+
+-- send
+vika [neutral]: Спасибо.
+  en: Thanks.
+- Через минуту после отправки письмо у неё уже в папке, которую она назвала «На всякий случай».
+  en: A minute after you send it, the email is already in a folder she's named "Just in case".
+> flag vika_letter_sent
+> trust vika +1
+-> end
+
+-- everyone
+vika [neutral]: Сейчас — знают.
+  en: Right now — they do.
+> flag vika_letter_refused
+> mood vika -1
+-> end
+
+
+# Дима хватает пять задач перед раундом; «я ещё курсы не выплатил».
+== dima_grab
+when: chapter 3, day 2-7, here dima
+
+- Утром у Димы в работе пять задач. Три он взял сам, ночью, пока никто не видел.
+  en: In the morning Dima has five tasks in progress. He took three of them himself, overnight, when nobody was looking.
+dima [excited]: Я успею, честно, там всё мелкое — раунд же скоро, надо показать, что мы тянем!
+  en: I'll make it, honestly, they're all small — the round's coming, we have to show we can pull it off!
+* Оставь две, остальные раздадим. -> trim
+  en: Keep two, we'll hand out the rest.
+* Зачем тебе пять? -> why
+  en: Why five?
+* Ну раз успеешь — давай. -> let
+  en: Well, if you'll make it — go on.
+
+-- why
+dima [embarrassed]: Ну… если раунд не поднимут, кого первыми? Новеньких. А я ещё курсы не выплатил.
+  en: Well… if the round falls through, who goes first? The new ones. And I still haven't paid off the course.
+- Последнее он говорит куда-то в сторону, будто не вам.
+  en: He says the last part off to one side, as if not to you.
+> flag dima_grab_why
+* Оставь две, остальные раздадим. -> trim
+  en: Keep two, we'll hand out the rest.
+* Ну раз успеешь — давай. -> let
+  en: Well, if you'll make it — go on.
+
+-- trim
+dima [sad]: Ладно… как скажешь.
+  en: OK… your call.
+> days focus_until_dima 5
+> mood dima -0.5
+> style A 0.3
+-> end
+
+-- let
+dima [happy]: Спасибо! Не подведу!
+  en: Thanks! I won't let you down!
+> energy dima -2
+> flag dima_grab_let
+> style P 0.3
+-> end
+
+
+# Гена на планёрке по переезду на OpenShift: «подержу старый параллельно».
+== gena_parallel
+when: chapter 3, day 2-7, here gena
+
+- Планёрка по переезду Chainer на OpenShift. Алексей рисует схему: через месяц старый Jenkins выключаем.
+  en: Planning for moving Chainer to OpenShift. Alex draws the diagram: in a month old Jenkins gets switched off.
+gena [neutral]: Я подержу старый параллельно. На всякий случай.
+  en: I'll keep the old one running alongside. Just in case.
+{if here alex} alex [sarcastic]: Гена, «на всякий случай» — это навсегда.
+  en: Gena, "just in case" means forever.
+* Держи параллельно до конца переезда. -> keep
+  en: Keep it running until the move is done.
+* Нет, выключаем по плану. -> off
+  en: No, we switch it off as planned.
+* А кто, кроме тебя, его поднимет, если что? -> who
+  en: And who besides you could bring it back up, if it came to that?
+
+-- who
+gena [neutral]: Никто.
+  en: Nobody.
+- Он говорит это без гордости. Скорее как диагноз.
+  en: He says it without pride. More like a diagnosis.
+> flag gena_parallel_who
+* Держи параллельно до конца переезда. -> keep
+  en: Keep it running until the move is done.
+* Нет, выключаем по плану. -> off
+  en: No, we switch it off as planned.
+
+-- keep
+gena [neutral]: Хорошо.
+  en: Good.
+> flag gena_parallel
+> mood gena +0.5
+> mood alex -0.3
+-> end
+
+-- off
+gena [neutral]: Как скажешь.
+  en: Your call.
+> flag gena_switched_off
+> mood gena -1
+> style E 0.3
+-> end
+
+
+# ---------- после приказа: каждый приходит сам ----------
+
+# Алексей — вечером того же дня.
+== reveal_alex
+at: evening
+when: chapter 3, flag layoff_until, here alex
+
+- Вечер. Алексей не уходит домой — сидит в переговорке с выключенным светом.
+  en: Evening. Alex hasn't gone home — he's sitting in a meeting room with the lights off.
+alex [neutral]: Слышал про приказ… знаешь, у меня такое уже было.
+  en: I heard about the order… you know, I've been through this before.
+alex [tired]: На прошлой работе я положил прод, банк лежал полдня — а уволили моего лида: он сказал наверху, что это было его решение, и всё взял на себя.
+  en: At my last job I took prod down, the bank was out for half a day — and they fired my lead: he told the people upstairs it was his call and took the whole thing on himself.
+alex [neutral]: Он за мной всегда перепроверял, а в тот раз не успел — и я его не попросил.
+  en: He always double-checked after me, but that time he didn't get round to it — and I didn't ask him to.
+- Он смотрит на свои руки.
+  en: He looks at his hands.
+* Ты кому-нибудь сказал, что это был ты? -> told
+  en: Did you ever tell anyone it was you?
+* Спасибо, что рассказал. -> thanks
+  en: Thanks for telling me.
+* (Промолчать.) -> silent
+  en: (Say nothing.)
+
+-- told
+alex [tired]: Сказал, через неделю, когда его уже не было… ничего не изменилось.
+  en: I did, a week later, when he was already gone… nothing changed.
+-> last
+
+-- thanks
+alex [annoyed]: Да не за что тут спасибо говорить.
+  en: There's nothing to thank me for.
+-> last
+
+-- silent
+-> last
+
+-- last
+alex [neutral]: Только если будешь выбирать — не того, кто за кого-то вписывается. Это потом хуже всего.
+  en: Just, if you're choosing — not the one who stands up for someone else. That's the worst, after.
+> flag alex_revealed
+-> end
+
+
+# Вика — утром.
+== reveal_vika
+when: chapter 3, flag layoff_until, here vika
+
+- На столе у Вики пустая коробка из-под бумаги. Пока пустая.
+  en: There's an empty paper box on Vika's desk. Empty, for now.
+vika [neutral]: Можете не подбирать слова — я знаю, как это бывает: сокращают обычно сначала нас.
+  en: You don't have to choose your words — I know how this goes: they usually cut us first.
+{if flag vika_credited} - Она говорит это без своей обычной полуулыбки.
+  en: She says it without her usual half-smile.
+* Кого — «нас»? -> us
+  en: Who's "us"?
+* Никто ещё ничего не решил. -> undecided
+  en: Nobody's decided anything yet.
+* (Промолчать.) -> silent
+  en: (Say nothing.)
+
+-- us
+vika [neutral]: На прошлой работе нас в отделе было четыре девушки, и на каждом разборе нам объясняли, что мы сделали не то, а то, что сделали, — это вообще-то сделал кто-то другой.
+  en: At my last job there were four of us women in the department, and at every review they'd explain to us that what we'd done was wrong, and that what we'd done right — well, actually someone else did that.
+vika [sarcastic]: Потом пришло сокращение — угадайте, с кого начали.
+  en: Then the layoffs came — guess who they started with.
+- Она поправляет коробку, чтобы та стояла ровно.
+  en: She straightens the box so it sits square.
+-> last
+
+-- undecided
+vika [sarcastic]: Ну конечно.
+  en: Of course.
+-> last
+
+-- silent
+- Вика кивает, будто именно этого и ждала.
+  en: Vika nods, as if that's exactly what she expected.
+-> last
+
+-- last
+{if flag vika_letter_sent} vika [neutral]: Письмо ваше я, кстати, сохранила.
+  en: I kept your email, by the way.
+> flag vika_revealed
+-> end
+
+
+# Дима — вечером.
+== reveal_dima
+at: evening
+when: chapter 3, flag layoff_until, here dima
+
+- Дима задерживается и мнётся у вашего стола.
+  en: Dima hangs back and hovers by your desk.
+dima [worried]: Можно честно? Если что… то меня, да? Я же новенький, с курсов.
+  en: Can I ask straight? If it comes to it… it's me, right? I'm the new one, off a course.
+* С чего ты взял? -> why
+  en: What makes you think that?
+* А почему ты вообще пошёл в IT? -> past
+  en: Why did you go into IT in the first place?
+* Я сейчас ничего не могу обещать. -> honest
+  en: I can't promise anything right now.
+
+-- why
+dima [sad]: Ну а кого ещё… На прошлом месте лид при всех говорил, что таких, как я, после курсов надо пачками отсеивать.
+  en: Well, who else… At my last place the lead used to say in front of everyone that people like me, off courses, should be weeded out in batches.
+-> past
+
+-- past
+dima [neutral]: Я восемь лет в школе информатику вёл — а потом понял, что объясняю детям то, чего сам ни разу по-настоящему не делал.
+  en: I taught computing at a school for eight years — and then I realised I was explaining things to kids I'd never actually done myself.
+dima [neutral]: Продал машину, пошёл на курсы, до сих пор за них плачу… В школу меня, наверное, обратно возьмут, только ребята же спросят, как оно там, в айти.
+  en: Sold my car, went on a course, I'm still paying for it… The school would probably take me back, only the kids are bound to ask what it was like, in IT.
+- Он улыбается, будто это шутка.
+  en: He smiles, as if it were a joke.
+> flag dima_revealed
+-> end
+
+-- honest
+dima [sad]: Понял… спасибо, что хоть не врёшь.
+  en: Got it… thanks for not lying, at least.
+> flag dima_revealed_partly
+-> end
+
+
+# Гена — утром, раньше всех.
+== reveal_gena
+when: chapter 3, flag layoff_until, here gena
+
+- Гена приходит раньше всех и ждёт у вашего стола. Такого раньше не было.
+  en: Gena comes in before everyone and waits by your desk. He's never done that before.
+gena [neutral]: Я пятнадцать лет назад сокращал. Свою команду. Шестерых.
+  en: Fifteen years ago I did layoffs. My own team. Six people.
+gena [neutral]: Тоже приказ был.
+  en: There was an order then too.
+- Долгая пауза.
+  en: A long pause.
+gena [tired]: Тогда и ушёл из начальников. Решил: буду там, где без меня не обойдутся.
+  en: That's when I stopped being a manager. Decided I'd be where they couldn't do without me.
+{if flag gena_tools} gena [tired]: Обходятся, как видишь. Сам к этому и привёл.
+  en: They manage, as you can see. I brought it on myself.
+{if not flag gena_tools} gena [tired]: Знаю, как это выглядит со стороны. Сам к этому и привёл.
+  en: I know how it looks from outside. I brought it on myself.
+* Ты поэтому держишься за старый Jenkins? -> jenkins
+  en: Is that why you hold on to old Jenkins?
+* Спасибо, что сказал. -> thanks
+  en: Thanks for telling me.
+* (Промолчать.) -> advice
+  en: (Say nothing.)
+
+-- jenkins
+gena [neutral]: Держался.
+  en: Held on.
+-> advice
+
+-- thanks
+gena [neutral]: Не за что.
+  en: Don't.
+-> advice
+
+-- advice
+gena [neutral]: Совет хочешь? Решай быстро. Дольше тянешь — всем хуже.
+  en: Want some advice? Decide quickly. The longer you drag it out, the worse for everyone.
+> flag gena_revealed
+-> end

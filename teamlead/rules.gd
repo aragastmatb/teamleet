@@ -592,8 +592,14 @@ func let_go(p: String, with_warning: bool) -> void:
 		# The cut the board asked for: no scandal, no opening back, and everyone feels it.
 		flags.erase("layoff_until")
 		flags["layoff_done"] = true
+		flags["laid_off"] = p
 		team_mood = -0.5
 		line = "layoff.team"
+		# Cutting someone who once stood in for Alex is his old story all over again.
+		if p != "alex" and available("alex") and ((p == "gena" and flags.has("alex_hotfix_helped")) or (p == "vika" and flags.has("alex_reports:pair_insist"))):
+			people["alex"]["mood"] -= 2.0
+			people["alex"]["trust"] -= 1
+			_narrate("layoff.alex_breaks")
 	elif not with_warning:
 		team_mood = -0.8
 		line = "fire.team.shock"
@@ -622,25 +628,21 @@ func layoff_on() -> bool:
 	return flags.has("layoff_until")
 
 
-# Nobody picked by the deadline: Irina picks, the newest hire first, then whoever she thinks is weakest.
+# Nobody picked by the deadline: Irina picks by the numbers — whoever closed the fewest tasks over the
+# last two weeks. Not the one you'd have picked, often: she doesn't know who fixed what at night.
 func _layoff_deadline() -> void:
 	if not layoff_on() or day < flags["layoff_until"]:
 		return
 	var pick := ""
+	var fewest := 1 << 30
+	var w := week()
 	for p in team:
-		if available(p) and hires.has(p):
+		if not available(p):
+			continue
+		var done: int = people[p]["week_done"][w] + (people[p]["week_done"][w - 1] if w > 0 else 0)
+		if done < fewest:
+			fewest = done
 			pick = p
-	if pick == "":
-		var weakest := 99
-		for p in team:
-			if not available(p):
-				continue
-			var total := 0
-			for cat in C.CATEGORIES:
-				total += people[p]["skills"][cat]
-			if total < weakest:
-				weakest = total
-				pick = p
 	boss -= 0.5
 	_say("boss", "layoff.irina_chose", [], {"who": "@name.%s.acc" % pick})
 	let_go(pick, true)
