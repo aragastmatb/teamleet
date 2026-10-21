@@ -879,6 +879,8 @@ func story_true(terms: Array) -> bool:
 				ok = _compare(taras_score(), t[1], float(t[2]))
 			"irina":
 				ok = t.slice(1).has(boss_type)
+			"busy":
+				ok = people.has(t[1]) and _compare(queue_of(t[1]).size(), t[2], float(t[3]))
 			_:
 				ok = flags.has(t[0])
 		if ok == neg:
@@ -994,6 +996,10 @@ func _story_fx(w: Array) -> void:
 				_reveal(w[1], w[2])
 		"give":
 			_story_give(w)
+		"grab":
+			_story_grab(w[1], int(w[2]))
+		"drop":
+			_story_drop(w[1], int(w[2]))
 
 
 # give <improvement or task id> <who> [helper <who>]: handed over right there in the conversation, no objections.
@@ -1019,6 +1025,51 @@ func _story_give(w: Array) -> void:
 	t["assigned_day"] = day
 	if w.size() >= 5 and w[3] == "helper" and available(w[4]) and w[4] != p:
 		t["helper"] = w[4]
+
+
+# grab <who> <N>: they took work on themselves overnight until they have N. Smallest waiting tasks first,
+# then this morning's arrivals, then fresh ones from the deck, so the scene's "five" is really five.
+func _story_grab(p: String, n: int) -> void:
+	if not available(p):
+		return
+	var waiting := inbox()
+	waiting.sort_custom(func(a, b): return a["size"] < b["size"])
+	for t in waiting:
+		if queue_of(p).size() >= n:
+			return
+		_story_take(t, p)
+	while queue_of(p).size() < n and not arriving.is_empty():
+		_story_take_new(arriving.pop_front(), p)
+	var tries := 0
+	while queue_of(p).size() < n and tries < 20:
+		tries += 1
+		if deck.size() < 4:
+			_refill_deck()
+		var id: String = deck.pop_front()
+		if day + C.TASKS[id]["size"] - 1 <= last_day() and _improved_by("remove", id).is_empty() and _bank_here(id):
+			_story_take_new(id, p)
+
+
+func _story_take_new(id: String, p: String) -> void:
+	var before := tasks.size()
+	add_task(id)
+	if tasks.size() > before:
+		_story_take(tasks[tasks.size() - 1], p)
+
+
+func _story_take(t: Dictionary, p: String) -> void:
+	t["owner"] = p
+	t["status"] = "active"
+	t["assigned_day"] = day
+	t["first"] = false
+
+
+# drop <who> <N>: keep the N they've got furthest with, the rest go back to the inbox.
+func _story_drop(p: String, n: int) -> void:
+	var q := queue_of(p)
+	q.sort_custom(func(a, b): return a["progress"] > b["progress"])
+	for i in range(n, q.size()):
+		unassign_now(q[i])
 
 
 func _story_end() -> void:

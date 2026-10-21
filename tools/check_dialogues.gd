@@ -27,7 +27,7 @@ func _initialize() -> void:
 				var w: Array = op["words"]
 				if w[0] == "give" and not (C.IMPROVEMENTS.has(w[1]) or C.TASKS.has(w[1])):
 					bad.append("%s: give %s — no such task or improvement" % [sc["where"], w[1]])
-				if w[0] in ["mood", "trust", "energy", "give", "days"] and w.size() < 3:
+				if w[0] in ["mood", "trust", "energy", "give", "days", "grab", "drop"] and w.size() < 3:
 					bad.append("%s: %s needs more words" % [sc["where"], " ".join(w)])
 	print("scenes: ", D.ORDER.size(), "  problems: ", bad.size())
 	for b in bad: print("  ", b)
