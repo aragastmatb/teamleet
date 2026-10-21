@@ -163,7 +163,7 @@ gena [neutral]: Никто.
   en: No, we switch it off as planned.
 
 -- keep
-gena [neutral]: Хорошо.
+gena [happy]: Хорошо.
   en: Good.
 > flag gena_parallel
 > mood gena +0.5
