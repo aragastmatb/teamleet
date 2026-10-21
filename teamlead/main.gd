@@ -82,15 +82,17 @@ var mobile := false
 var tab := "board"
 var lane := "inbox"
 var chat_read := 0
-# Where the chat was left: it follows new messages only if you were at the bottom, and otherwise stays put.
+# Where the chat was left. Anything new in it (a message, a question, answer buttons) brings it to the
+# bottom; otherwise it stays where you scrolled it.
 var chat_pos := 0
+var chat_seen := ""
+var chat_to_end := false # a scroll to the bottom is on its way; until it lands, the bottom is where the chat is
 # The first question of a run shades the board to teach where answers go; after that the board stays
 # open to look at while you think, with only the actions held until you answer.
 var taught_now := false
 const HELD_WHILE_ASKED := ["_helper", "_end_day", "_visit_boss", "_unassign", "_talk_to", "_sit", "_reject_candidate",
 	"_prioritize", "_pick", "_interview", "_intervene", "_hire", "_fire", "_direct", "_decline", "_days", "_ask_stay",
 	"_accept_initiative"]
-var chat_at_bottom := true
 var press_pos := Vector2.ZERO
 # The setup screen before a run, and what's picked on it (remembered between runs).
 var setup_open := false
@@ -435,9 +437,7 @@ func _reveal_next() -> void:
 	typing_row = _typing_row()
 	if typing_row:
 		chat_list.add_child(typing_row)
-	var bar := chat_scroll.get_v_scroll_bar()
-	if chat_scroll.scroll_vertical >= bar.max_value - bar.page - 24:
-		_scroll_to_end(chat_scroll)
+	_scroll_to_end(chat_scroll)
 
 
 func _show_all() -> void:
@@ -555,9 +555,7 @@ func _render() -> void:
 		rules.save_game()
 	cue = ""
 	if is_instance_valid(chat_scroll):
-		var bar := chat_scroll.get_v_scroll_bar()
-		chat_pos = chat_scroll.scroll_vertical
-		chat_at_bottom = chat_pos >= bar.max_value - bar.page - 24
+		chat_pos = 1 << 30 if chat_to_end else chat_scroll.scroll_vertical
 	for key in scrolls:
 		if is_instance_valid(scrolls[key]):
 			scroll_memory[key] = scrolls[key].scroll_vertical
@@ -1616,7 +1614,9 @@ func _chat() -> Control:
 					_show_all.call_deferred())
 	else:
 		_chat_prompt(list)
-	if chat_at_bottom:
+	var now := "%d/%d/%s/%d/%d/%d/%d" % [shown, rules.history.size(), rules.phase, rules.events.size(), rules.review.size(), rules.pending.size(), morning_open_day]
+	if now != chat_seen:
+		chat_seen = now
 		_scroll_to_end(scroll)
 	else:
 		_scroll_to(scroll, chat_pos)
@@ -1793,13 +1793,19 @@ func _scroll_to(scroll: ScrollContainer, pos: int) -> void:
 		await get_tree().process_frame
 	if is_instance_valid(scroll):
 		scroll.scroll_vertical = pos
+		if scroll == chat_scroll:
+			chat_to_end = false
 
 
 func _scroll_to_end(scroll: ScrollContainer) -> void:
+	if scroll == chat_scroll:
+		chat_to_end = true
 	for i in 2:
 		await get_tree().process_frame
 	if is_instance_valid(scroll):
 		scroll.scroll_vertical = int(scroll.get_v_scroll_bar().max_value)
+		if scroll == chat_scroll:
+			chat_to_end = false
 
 
 # ---------- documents over the board ----------
