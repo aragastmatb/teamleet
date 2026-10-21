@@ -1179,6 +1179,10 @@ func assign(uid: int, p: String) -> void:
 		_say(previous, "taken_away", [], names)
 	_check_commitments(t, p)
 	var reason := _objection(p, t) if p != "me" else ""
+	# Starting an improvement nobody asked for is changing how things are done.
+	if t.get("backlog", false) and not t.get("started", false):
+		t["started"] = true
+		lead("E", 0.7)
 	t["owner"] = p
 	t["status"] = "active"
 	t["assigned_day"] = day
@@ -1390,6 +1394,7 @@ func prioritize(uid: int) -> void:
 		other["first"] = false
 	t["first"] = true
 	lead("A", 0.3)
+	flags["ordered_w%d" % week()] = true
 	if head["progress"] > 0.0:
 		people[p]["mood"] = clampf(people[p]["mood"] - 0.3, -5.0, 5.0)
 	history.append({"who": "you", "key": "prioritize.say", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": p, "day": day})
@@ -2541,8 +2546,8 @@ func _ask_review() -> void:
 
 func review_choices(item: Dictionary) -> Array:
 	if item["kind"] == "success":
-		return ["credit_owner", "team", "self"]
-	return ["own", "overload", "blame"]
+		return ["credit_owner", "team", "self", "scale"]
+	return ["own", "overload", "blame", "change"]
 
 
 # Is this answer true? The weekly report is the evidence for "we were swamped".
@@ -2630,6 +2635,15 @@ func answer_review(choice: String) -> void:
 			else:
 				_say("boss", "review.boss.blame_false", [], names)
 			_say(p, "review.blamed", [], names)
+		"scale":
+			# What worked here, everywhere: Irina likes it as much as she likes change.
+			boss += boss_like("E", 0.6) - 0.3
+			st["mood"] += 0.3
+			_say("boss", "review.boss.scale", [], names)
+		"change":
+			# Not who failed but how it's done: an E-minded Irina hears a plan, another hears an excuse.
+			boss += boss_like("E", 0.6) - 0.6
+			_say("boss", "review.boss.change", [], names)
 		"overload":
 			if truth:
 				boss += boss_like("A", 1.0)
@@ -3076,6 +3090,7 @@ func _level_of(w: float) -> int:
 const REVIEW_STYLE := {
 	"credit_owner": [["I", 0.5]], "team": [["I", 0.5]], "self": [["P", 0.5], ["I", -0.5]],
 	"own": [["A", 0.5]], "blame": [["P", 0.3], ["I", -0.7]], "overload": [["A", 0.5]],
+	"scale": [["E", 0.6]], "change": [["E", 0.6]],
 }
 # Some kinds of leading come up every hour (talking to people), some rarely (changing how things
 # are done). Each letter is weighed by how hard it is to show, so a few bold moves count.
@@ -3178,8 +3193,9 @@ func _style_week() -> void:
 	for t in tasks:
 		if t["late"] and int((t["late_day"] - 1) / 5.0) == w:
 			late += 1
+	# A clean week is order only if you were the one keeping it.
 	if late == 0:
-		lead("A", 1.0)
+		lead("A", 1.0 if flags.has("ordered_w%d" % w) else 0.3)
 	if _style_total(week_style) >= 2.0:
 		var top := _style_top(week_style)
 		boss += 0.5 * C.BOSSES[boss_type][top]
