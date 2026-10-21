@@ -268,10 +268,14 @@ alex [neutral]: Позвонить ему всё собирался, потом 
   en: (Say nothing.)
 
 -- call
-alex [sarcastic]: Через четыре года? Ага, привет, это я, как жизнь…
-  en: Four years later? Sure, hi, it's me, how's life…
-- Но телефон он из кармана достаёт и какое-то время просто на него смотрит.
-  en: But he takes the phone out of his pocket and just looks at it for a while.
+alex [sarcastic]: Через четыре года?
+  en: Four years later?
+- Он достаёт телефон и прикладывает к уху, изображая звонок.
+  en: He takes out his phone and holds it to his ear, miming a call.
+alex [sarcastic]: Алё, привет, это я, тот самый, как жизнь, как работа, нашёл уже что-нибудь?
+  en: Hello, hi, it's me, yeah, that one, how's life, how's work, found anything yet?
+- На последнем слове он запинается, опускает телефон и какое-то время просто смотрит на экран.
+  en: He stumbles on the last word, lowers the phone and just looks at the screen for a while.
 -> last
 
 -- not_you
