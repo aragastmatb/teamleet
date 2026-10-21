@@ -9,6 +9,7 @@ extends RefCounted
 const C = preload("res://teamlead/content.gd")
 const L = preload("res://teamlead/locale.gd")
 const Scenes = preload("res://teamlead/scenes.gd")
+const Dialogue = preload("res://teamlead/dialogue.gd")
 
 const SPEED_BASE := 0.65
 const SPEED_PER_SKILL := 0.35
@@ -101,6 +102,8 @@ var profile: String = C.DEFAULT_PROFILE
 var style := {}
 var week_style := {}
 var events: Array[Dictionary] = []
+# A story conversation under way (data/dialogues): {"id", "pos", "wait": "line"/"choice", "log": [{"who", "emo", "ru", "en"}]}.
+var story := {}
 # The morning's cards, held back until the morning scenes are answered.
 var arriving: Array = []
 var review: Array[Dictionary] = []
@@ -231,6 +234,13 @@ func _start_day() -> void:
 	elif not queue_of("me").is_empty():
 		# Doing a task yourself takes most of your day.
 		attention = maxi(0, attention - 2)
+	# A story conversation comes first, on its own screen; the morning's chat waits for it.
+	_queue_story()
+	if story.is_empty():
+		_open_morning()
+
+
+func _open_morning() -> void:
 	_queue_events()
 	if events.is_empty():
 		_deliver_arrivals()
@@ -786,6 +796,175 @@ func resolve_event(choice: String) -> void:
 		phase = "plan"
 	else:
 		_say_event_lines()
+
+
+# ---------- story conversations ----------
+
+# The first scene in data/dialogues whose conditions hold, once per run.
+func _queue_story() -> void:
+	story = {}
+	for id in Dialogue.ORDER:
+		if not flags.has("story_" + id) and story_true(Dialogue.SCENES[id]["when"]):
+			flags["story_" + id] = true
+			story = {"id": id, "pos": 0, "wait": "", "log": []}
+			phase = "story"
+			_story_run()
+			return
+
+
+func story_true(terms: Array) -> bool:
+	for term in terms:
+		var t: Array = term
+		var neg: bool = t[0] == "not"
+		if neg:
+			t = t.slice(1)
+			if t.is_empty():
+				continue
+		var ok := false
+		match t[0]:
+			"chapter":
+				ok = Dialogue.in_range(t[1], chapter)
+			"day":
+				ok = Dialogue.in_range(t[1], chapter_day())
+			"here":
+				ok = t.slice(1).all(func(p): return available(p) and not people[p]["absent"])
+			"flag":
+				ok = flags.has(t[1])
+			_:
+				ok = flags.has(t[0])
+		if ok == neg:
+			return false
+	return true
+
+
+# Walks the scene to the next thing to show: a line (wait for "next") or a choice.
+func _story_run() -> void:
+	var sc: Dictionary = Dialogue.SCENES[story["id"]]
+	var ops: Array = sc["ops"]
+	while story["pos"] < ops.size():
+		var op: Dictionary = ops[story["pos"]]
+		story["pos"] += 1
+		match op["op"]:
+			"label":
+				break
+			"line":
+				if story_true(op["if"]):
+					story["log"].append({"who": op["who"], "emo": op["emo"], "ru": op["ru"], "en": op["en"]})
+					story["wait"] = "line"
+					return
+			"choices":
+				story["pos"] -= 1
+				if not story_choices().is_empty():
+					story["wait"] = "choice"
+					return
+				story["pos"] += 1
+			"fx":
+				if story_true(op["if"]):
+					_story_fx(op["words"])
+			"jump":
+				if story_true(op["if"]):
+					_story_jump(op["to"])
+	_story_end()
+
+
+func _story_jump(to: String) -> void:
+	var sc: Dictionary = Dialogue.SCENES[story["id"]]
+	story["pos"] = sc["ops"].size() if to == "end" else sc["labels"][to] + 1
+
+
+# The choices you can make right now: [{"i", "ru", "en"}].
+func story_choices() -> Array:
+	var out: Array = []
+	if story.is_empty():
+		return out
+	var ops: Array = Dialogue.SCENES[story["id"]]["ops"]
+	if story["pos"] >= ops.size() or ops[story["pos"]]["op"] != "choices":
+		return out
+	var items: Array = ops[story["pos"]]["items"]
+	for i in items.size():
+		if story_true(items[i]["if"]):
+			out.append({"i": i, "ru": items[i]["ru"], "en": items[i]["en"]})
+	return out
+
+
+func story_next() -> void:
+	if phase != "story" or story.get("wait", "") != "line":
+		return
+	story["wait"] = ""
+	_story_run()
+
+
+func story_choose(i: int) -> void:
+	if phase != "story" or story.get("wait", "") != "choice":
+		return
+	if not story_choices().any(func(c): return c["i"] == i):
+		return
+	var item: Dictionary = Dialogue.SCENES[story["id"]]["ops"][story["pos"]]["items"][i]
+	story["log"].append({"who": "you", "emo": "", "ru": item["ru"], "en": item["en"]})
+	# Every answer is remembered as <scene>:<where it led>, so later scenes can ask about it.
+	flags["%s:%s" % [story["id"], item["to"]]] = true
+	story["wait"] = ""
+	_story_jump(item["to"])
+	_story_run()
+
+
+# What a scene can change: see docs/dialogues.md.
+func _story_fx(w: Array) -> void:
+	match w[0]:
+		"flag":
+			flags[w[1]] = true
+		"unflag":
+			flags.erase(w[1])
+		"mood", "trust", "energy":
+			if people.has(w[1]) and available(w[1]):
+				people[w[1]][w[0]] += float(w[2])
+				people[w[1]]["mood"] = clampf(people[w[1]]["mood"], -5.0, 5.0)
+		"style":
+			lead(w[1], float(w[2]))
+		"boss":
+			boss += float(w[1])
+		"reveal":
+			if people.has(w[1]):
+				_reveal(w[1], w[2])
+		"give":
+			_story_give(w)
+
+
+# give <improvement or task id> <who> [helper <who>]: handed over right there in the conversation, no objections.
+func _story_give(w: Array) -> void:
+	var id: String = w[1]
+	var p: String = w[2]
+	if not available(p):
+		return
+	var t: Dictionary = {}
+	for x in tasks:
+		if (x["id"] == "init_" + id or x["id"] == id) and x["status"] == "inbox":
+			t = x
+	if t.is_empty():
+		if C.IMPROVEMENTS.has(id) and not improved.has(id):
+			t = _add_improvement(id)
+		elif C.TASKS.has(id):
+			add_task(id)
+			t = tasks[tasks.size() - 1]
+	if t.is_empty():
+		return
+	t["owner"] = p
+	t["status"] = "active"
+	t["assigned_day"] = day
+	if w.size() >= 5 and w[3] == "helper" and available(w[4]) and w[4] != p:
+		t["helper"] = w[4]
+
+
+func _story_end() -> void:
+	var who := ""
+	for e in story["log"]:
+		if e["who"] != "you" and e["who"] != "":
+			who = e["who"]
+			break
+	story = {}
+	if who != "":
+		history.append({"who": "", "key": "story.log", "args": [], "names": {"who": "@name.%s.ins" % who}, "day": day})
+	_open_morning()
 
 
 # ---------- planning ----------
@@ -2373,6 +2552,10 @@ static func _read_save():
 		var bare := String(t["id"]).trim_prefix("init_")
 		if not (C.TASKS.has(t["id"]) or C.INIT_TASKS.has(bare) or C.IMPROVEMENTS.has(bare)):
 			return null
+	# Saved in the middle of a conversation the scripts no longer have (or have rewritten past that point).
+	var st: Dictionary = state.get("story", {})
+	if not st.is_empty() and (not Dialogue.SCENES.has(st.get("id", "")) or st.get("pos", 0) > Dialogue.SCENES[st["id"]]["ops"].size()):
+		return null
 	return state
 
 

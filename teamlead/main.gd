@@ -6,6 +6,7 @@ extends Control
 const Rules = preload("res://teamlead/rules.gd")
 const Loc = preload("res://teamlead/locale.gd")
 const C = preload("res://teamlead/content.gd")
+const Dialogue = preload("res://teamlead/dialogue.gd")
 
 const BASE_FONT := 15
 const SIDEBAR_W := 250
@@ -40,6 +41,12 @@ const COL_ON_TOP := Color("ffffff")
 const COL_ON_TOP_MUTED := Color("b3d4ff")
 const COL_ON_TOP_GOOD := Color("79f2c0")
 const COL_ON_TOP_DANGER := Color("ffbdad")
+# How someone feels in a story conversation: the ring around their portrait and the tag under it.
+const EMO_COLORS := {
+	"happy": Color("00875a"), "excited": Color("ff991f"), "annoyed": Color("de350b"), "angry": Color("bf2600"),
+	"tired": Color("5e6c84"), "sad": Color("0065ff"), "worried": Color("b65c02"), "embarrassed": Color("e774bb"),
+	"sarcastic": Color("6554c0"),
+}
 
 const MOOD_COLORS := {"happy": COL_GOOD, "good": COL_GOOD, "neutral": COL_MUTED, "down": COL_WARN, "angry": COL_DANGER}
 const ENERGY_COLORS := {"fresh": COL_GOOD, "ok": COL_MUTED, "tired": COL_WARN, "drained": COL_DANGER}
@@ -580,6 +587,8 @@ func _render() -> void:
 		if _teach_chat():
 			_block_board()
 	match rules.phase:
+		"story":
+			_build_story()
 		"report":
 			_build_report()
 		"end", "chapter_end":
@@ -1835,6 +1844,156 @@ func _document(width: int) -> VBoxContainer:
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_padded(v, 16 if mobile else 28, 16 if mobile else 24))
 	return v
+
+
+# ---------- story conversations ----------
+
+# Its own screen: whoever is talking, big, with how they feel; the talk so far; "next" or your answers.
+func _build_story() -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(0.035, 0.118, 0.259, 0.7)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(dim)
+	var view := get_viewport().get_visible_rect().size
+	var w := minf(880.0, view.x - (16.0 if mobile else 64.0))
+	var h := view.y - 16.0 if mobile else minf(600.0, view.y - 64.0)
+	var panel := PanelContainer.new()
+	panel.anchor_left = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -w / 2.0
+	panel.offset_right = w / 2.0
+	panel.offset_top = -h / 2.0
+	panel.offset_bottom = h / 2.0
+	var style := _box(COL_SURFACE, COL_BORDER, 1, 0)
+	style.set_corner_radius_all(16)
+	panel.add_theme_stylebox_override("panel", style)
+	ui.add_child(panel)
+	var log: Array = rules.story["log"]
+	var speaker := ""
+	var emo := ""
+	for e in log:
+		if e["who"] != "you" and e["who"] != "":
+			speaker = e["who"]
+			emo = e["emo"]
+	# Before anyone has spoken, the one who is about to.
+	if speaker == "":
+		for op in Dialogue.SCENES[rules.story["id"]]["ops"]:
+			if op["op"] == "line" and op["who"] != "" and op["who"] != "you":
+				speaker = op["who"]
+				break
+	var body: BoxContainer = VBoxContainer.new() if mobile else HBoxContainer.new()
+	body.add_theme_constant_override("separation", 0)
+	panel.add_child(body)
+	if speaker != "":
+		body.add_child(_story_portrait(speaker, emo))
+	var right := _vbox(0)
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(right)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right.add_child(scroll)
+	var list := _vbox(12)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_padded(list, 18 if mobile else 28, 18 if mobile else 24))
+	for i in log.size():
+		list.add_child(_story_entry(log[i], i == log.size() - 1))
+	var actions := _vbox(8)
+	var foot := _padded(actions, 18 if mobile else 28, 16)
+	foot.size_flags_vertical = Control.SIZE_SHRINK_END
+	right.add_child(foot)
+	if rules.story["wait"] == "choice":
+		for c in rules.story_choices():
+			actions.add_child(_answer_button(_story_text(c), _story_choose.bind(c["i"])))
+	else:
+		var next := _button(Loc.t("story.next"), _story_next, 200, "primary")
+		next.size_flags_horizontal = Control.SIZE_SHRINK_END
+		actions.add_child(next)
+	_scroll_to_end(scroll)
+
+
+func _story_portrait(p: String, emo: String) -> Control:
+	var box := PanelContainer.new()
+	var style := _flat(COL_BG)
+	if mobile:
+		style.corner_radius_top_left = 16
+		style.corner_radius_top_right = 16
+	else:
+		style.corner_radius_top_left = 16
+		style.corner_radius_bottom_left = 16
+	style.set_content_margin_all(16 if mobile else 24)
+	box.add_theme_stylebox_override("panel", style)
+	var inner: BoxContainer = HBoxContainer.new() if mobile else VBoxContainer.new()
+	inner.add_theme_constant_override("separation", 12)
+	inner.alignment = BoxContainer.ALIGNMENT_BEGIN if mobile else BoxContainer.ALIGNMENT_CENTER
+	box.add_child(inner)
+	var size := 64 if mobile else 168
+	# Placeholder portrait until there's art: their letter, ringed in the colour of the mood.
+	var ring := PanelContainer.new()
+	var ring_style := _flat(EMO_COLORS.get(emo, COL_BORDER))
+	ring_style.set_corner_radius_all(int(size / 2.0) + 6)
+	ring_style.set_content_margin_all(5)
+	ring.add_theme_stylebox_override("panel", ring_style)
+	ring.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	ring.add_child(_avatar(p, size))
+	inner.add_child(ring)
+	var names := _vbox(4)
+	names.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	inner.add_child(names)
+	var name := _label(Loc.person(p), 20 if mobile else 22, COL_TEXT, false, true)
+	if not mobile:
+		name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.custom_minimum_size.x = 240
+	names.add_child(name)
+	if emo != "" and Loc.has_key("emo." + emo):
+		var tag := _pill(Loc.t("emo." + emo), COL_SURFACE, EMO_COLORS.get(emo, COL_MUTED))
+		tag.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if mobile else Control.SIZE_SHRINK_CENTER
+		names.add_child(tag)
+	return box
+
+
+func _story_text(e: Dictionary) -> String:
+	return e["en"] if Loc.lang == "en" and e["en"] != "" else e["ru"]
+
+
+# The latest line is the big one; what came before stays above it, quieter.
+func _story_entry(e: Dictionary, latest: bool) -> Control:
+	var text := _story_text(e)
+	var size := 19 if latest else 15
+	match e["who"]:
+		"":
+			return _label(text, size - 1, COL_MUTED if latest else COL_FAINT, true)
+		"you":
+			var row := HBoxContainer.new()
+			var gap := Control.new()
+			gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			gap.size_flags_stretch_ratio = 0.25
+			row.add_child(gap)
+			var bubble := PanelContainer.new()
+			bubble.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			var style := _box(COL_SELECTED, COL_SELECTED, 0, 10)
+			style.set_corner_radius_all(12)
+			bubble.add_theme_stylebox_override("panel", style)
+			bubble.add_child(_label(text, size, COL_PRIMARY if latest else Color(COL_PRIMARY, 0.7), true))
+			row.add_child(bubble)
+			return row
+	var v := _vbox(2)
+	v.add_child(_label(Loc.person(e["who"]), 13, COL_MUTED, false, true))
+	v.add_child(_label(text, size, COL_TEXT if latest else COL_MUTED, true))
+	return v
+
+
+func _story_next() -> void:
+	rules.story_next()
+	_render()
+
+
+func _story_choose(i: int) -> void:
+	rules.story_choose(i)
+	_render()
 
 
 func _build_report() -> void:
