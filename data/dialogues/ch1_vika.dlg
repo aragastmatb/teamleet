@@ -33,6 +33,7 @@ vika [neutral]: Вопросы? …Ну, раз нет, тогда всё.
 - После созвона от неё одно сообщение: «Можно было не вступаться, я бы справилась».
   en: After the call, a single message from her: "You didn't have to step in, I'd have managed."
 > flag vika_defended
+> flag vika_covered
 > trust vika +1
 > style I 0.5
 -> end

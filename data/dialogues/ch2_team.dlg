@@ -92,6 +92,7 @@ boss [neutral]: Принято.
 - Через час в календаре от неё приглашение: «Синк по банкам, 15 минут». Раньше она таких не ставила.
   en: An hour later there's an invite from her in your calendar: "Bank sync, 15 minutes." She never sent those before.
 > flag vika_credited
+> flag vika_covered
 > trust vika +1
 > taras -0.5
 > style I 0.5
@@ -105,6 +106,7 @@ boss [neutral]: По делу так по делу, дальше.
 - Вика ничего не говорит, но следующий слайд рассказывает на полтона твёрже.
   en: Vika says nothing, but she presents the next slide half a tone firmer.
 > flag vika_cut_boris
+> flag vika_covered
 > trust vika +1
 > style A 0.3
 -> end

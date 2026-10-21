@@ -347,7 +347,7 @@ func add_task(id: String) -> void:
 		seen_day[info["tpl"]] = day
 		_narrate("imp.self", [], {"who": "@name.%s.gen" % info["from"], "task": "@taskname." + id})
 		return
-	var size: float = info["size"]
+	var size: float = info["size"] * flags.get("shrink:" + id, 1.0)
 	for imp in _improved_by("shrink", id):
 		for e in C.IMPROVEMENTS[imp]["effects"]:
 			if e["kind"] == "shrink":
@@ -599,7 +599,14 @@ func let_go(p: String, with_warning: bool) -> void:
 		if p != "alex" and available("alex") and ((p == "gena" and flags.has("alex_hotfix_helped")) or (p == "vika" and flags.has("alex_reports:pair_insist"))):
 			people["alex"]["mood"] -= 2.0
 			people["alex"]["trust"] -= 1
+			flags["alex_lost_helper"] = true
 			_narrate("layoff.alex_breaks")
+		elif p != "alex":
+			for h in ["gena", "vika"]:
+				var helped: bool = flags.has("alex_hotfix_helped") if h == "gena" else flags.has("alex_reports:pair_insist")
+				if h != p and helped and available(h) and not flags.has("alex_helper"):
+					flags["alex_helper"] = h
+					flags["alex_helper_" + h] = true
 	elif not with_warning:
 		team_mood = -0.8
 		line = "fire.team.shock"
@@ -879,6 +886,10 @@ func story_true(terms: Array) -> bool:
 				ok = _compare(taras_score(), t[1], float(t[2]))
 			"irina":
 				ok = t.slice(1).has(boss_type)
+			"laid_off":
+				ok = flags.get("laid_off", "") == t[1]
+			"incident":
+				ok = not _open_incidents().is_empty()
 			"busy":
 				ok = people.has(t[1]) and _compare(queue_of(t[1]).size(), t[2], float(t[3]))
 			_:
@@ -1000,6 +1011,11 @@ func _story_fx(w: Array) -> void:
 			_story_grab(w[1], int(w[2]))
 		"drop":
 			_story_drop(w[1], int(w[2]))
+		"task":
+			if C.TASKS.has(w[1]):
+				add_task(w[1])
+		"shrink":
+			_story_shrink(w[1], float(w[2]))
 
 
 # give <improvement or task id> <who> [helper <who>]: handed over right there in the conversation, no objections.
@@ -1070,6 +1086,20 @@ func _story_drop(p: String, n: int) -> void:
 	q.sort_custom(func(a, b): return a["progress"] > b["progress"])
 	for i in range(n, q.size()):
 		unassign_now(q[i])
+
+
+# shrink <task id> <factor>: the work turns out smaller than it looked (someone's docs, a hint on the phone).
+# Applies to the open task and to one that hasn't arrived yet. "incident" means every open incident.
+func _story_shrink(id: String, factor: float) -> void:
+	var targets: Array = _open_incidents() if id == "incident" else tasks.filter(func(t): return t["id"] == id and t["status"] != "done")
+	for t in targets:
+		t["size"] = maxf(t["progress"] + 0.3, t["size"] * factor)
+	if id != "incident":
+		flags["shrink:" + id] = factor
+
+
+func _open_incidents() -> Array:
+	return tasks.filter(func(t): return t["status"] != "done" and C.TASKS.get(t["id"], {}).get("tags", []).has("incident"))
 
 
 func _story_end() -> void:
@@ -1364,6 +1394,9 @@ func set_helper(uid: int, p: String) -> void:
 	if flags.has("no_pair_alex_vika") and [p, t["owner"]].has("alex") and [p, t["owner"]].has("vika"):
 		_say("alex", "helper.no_vika")
 		return
+	if p != "" and t["owner"] == "alex" and flags.has("alex_alone"):
+		_say("alex", "helper.alex_alone")
+		return
 	t["helper"] = p
 	if p != "":
 		lead("I", 0.2)
@@ -1635,6 +1668,7 @@ func end_day() -> void:
 	flags.erase("tip_hl")
 	evening_from = history.size()
 	_narrate("log.evening")
+	_alex_nights()
 	shares.clear()
 	for t in tasks:
 		var share := help_share(t)
@@ -1832,6 +1866,19 @@ func add_my_hours(n: int) -> void:
 	my_week_hours[week()] += n
 
 
+# Chapter 4, after the one who stood in for him was cut: Alex works nights, alone, on his first task.
+func _alex_nights() -> void:
+	if not flags.has("alex_alone") or not available("alex") or people["alex"]["absent"]:
+		return
+	var q := queue_of("alex")
+	if q.is_empty():
+		return
+	for t in q:
+		t["helper"] = ""
+	people["alex"]["energy"] -= 0.3
+	q[0]["progress"] = minf(q[0]["size"], q[0]["progress"] + 0.3)
+
+
 func _speed(p: String, t: Dictionary) -> float:
 	var st: Dictionary = people[p]
 	var skill: int = st["skills"][t["cat"]]
@@ -1858,6 +1905,9 @@ func _speed(p: String, t: Dictionary) -> float:
 			s *= 1.0 - 0.15 * share # explaining takes time
 		else:
 			s += share * 0.3 * (SPEED_BASE + SPEED_PER_SKILL * hs)
+		# The first time he asks for it himself, he actually listens.
+		if p == "alex" and flags.has("alex_asks_help"):
+			s *= 1.1
 	return s
 
 

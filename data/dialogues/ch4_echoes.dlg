@@ -1,0 +1,395 @@
+# Глава 4. Отголоски: что стало с первой командой после сокращения (docs/characters.md, «Цепочки раскрытия»).
+# У каждого отголоска есть и механика: карточка, размер задачи, чужая помощь, ночные смены.
+
+# Гену сократили: первая авария в старом Jenkins, и пароль от него знает только он.
+== echo_gena_gone
+when: chapter 4, day 2-6, laid_off gena
+
+- Утром в чате Стас: ночная сборка «Платежей» не прошла, та самая, что до сих пор живёт на старом Jenkins.
+  en: In the morning Stas writes in the chat: the "Payments" nightly build failed, the one that still lives on old Jenkins.
+- Старый Jenkins просит пароль. Ни в одном хранилище его нет.
+  en: Old Jenkins asks for a password. It isn't in any vault.
+{if flag gena_parallel, here alex} alex [embarrassed]: Ну вот и «на всякий случай»…
+  en: Well, there's your "just in case"…
+> task old_jenkins_down
+* Позвонить Гене. -> call
+  en: Call Gena.
+* Разберёмся сами. -> alone
+  en: We'll sort it out ourselves.
+
+-- call
+- Гудки идут долго.
+  en: It rings for a long time.
+gena [neutral]: Да.
+  en: Yes.
+* Гена, старый Jenkins лёг. -> fact
+  en: Gena, old Jenkins is down.
+* Гена, неудобно, конечно, звонить… -> sorry
+  en: Gena, I know it's awkward to call…
+
+-- fact
+gena [neutral]: Знаю. Бот мне до сих пор пишет.
+  en: I know. The bot still messages me.
+-> hint
+
+-- sorry
+gena [neutral]: Не надо. Что легло?
+  en: Don't. What's down?
+-> hint
+
+-- hint
+gena [neutral]: Репозиторий infra-old. README. Последняя строка.
+  en: The infra-old repo. README. Last line.
+- Он вешает трубку раньше, чем вы успеваете что-то сказать.
+  en: He hangs up before you can say anything.
+> shrink old_jenkins_down 0.5
+> flag gena_called
+-> end
+
+-- alone
+- Команда открывает старый Jenkins вслепую.
+  en: The team starts on old Jenkins blind.
+> flag jenkins_blind
+-> end
+
+
+# Гена остался: на due diligence покупатель видит, насколько он медленнее остальных.
+== echo_gena_dd
+when: chapter 4, day 4-9, here gena
+
+- Аналитик покупателя листает таблицу по людям: задачи, сроки, скорость. Гена сидит через стол и всё слышит.
+  en: The buyer's analyst scrolls through a spreadsheet of people: tasks, deadlines, speed. Gena sits across the table and hears every word.
+{if flag gena_tools} buyer [neutral]: Вот у вас Геннадий, он закрывает задачи заметно медленнее остальных, мы такое обычно отмечаем как риск.
+  en: Now, Gennady here closes tasks noticeably slower than the others, we usually flag that as a risk.
+{if not flag gena_tools} buyer [neutral]: Вот у вас Геннадий, он закрывает задачи почти вдвое медленнее остальных, мы такое обычно отмечаем как риск.
+  en: Now, Gennady here closes tasks nearly twice as slow as the others, we usually flag that as a risk.
+* Он единственный, кто знает старый Jenkins. -> knows
+  en: He's the only one who knows old Jenkins.
+* Скорость не всё, запишите, что он нам нужен. -> defend
+  en: Speed isn't everything, put down that we need him.
+* Отмечайте. -> mark
+  en: Flag it.
+
+-- knows
+buyer [neutral]: То есть ещё и bus factor, хорошо, так и запишу.
+  en: So a bus factor too, fine, I'll put that down.
+- Гена не поднимает глаз от монитора.
+  en: Gena doesn't look up from his monitor.
+> flag gena_dd_knows
+> mood gena -0.3
+-> end
+
+-- defend
+buyer [neutral]: Запишу, только отвечать за это потом будете вы.
+  en: I'll put it down, only you'll be answering for it later.
+- Вечером от Гены сообщение: «Зря». Через минуту второе: «Спасибо».
+  en: In the evening a message from Gena: "Shouldn't have." A minute later a second one: "Thanks."
+> flag gena_dd_defended
+> boss -0.5
+> trust gena +1
+> mood gena +0.5
+> style I 0.3
+-> end
+
+-- mark
+- Гена кивает, будто сам сказал бы так же.
+  en: Gena nods, as if he'd have said the same.
+> flag gena_dd_marked
+> mood gena -1
+> taras +0.5
+> style P 0.3
+-> end
+
+
+# Тот, кто вписывался за Алексея, остался: Алексей первый раз сам просит помощи.
+== echo_alex_help
+when: chapter 4, day 3-10, here alex, flag alex_helper
+
+- Алексей подходит к вашему столу с ноутбуком под мышкой, и по нему видно, что он долго собирался.
+  en: Alex comes over to your desk with his laptop under his arm, and you can tell it took him a while to get here.
+{if flag alex_helper_gena} alex [embarrassed]: Слушай, там в релизе миграция по всем банкам… Гена не мог бы со мной глянуть? Ну, перепроверить, просто чтобы…
+  en: Listen, the release has a migration across all the banks… could Gena look at it with me? Double-check, just so…
+{if flag alex_helper_vika} alex [embarrassed]: Слушай, там в релизе миграция по всем банкам… Вика не могла бы со мной глянуть? Ну, перепроверить, просто чтобы…
+  en: Listen, the release has a migration across all the banks… could Vika look at it with me? Double-check, just so…
+- Он не договаривает.
+  en: He doesn't finish.
+* Конечно, бери. -> yes
+  en: Of course, go ahead.
+* Ты? Помощи просишь? -> tease
+  en: You? Asking for help?
+* А сам что, не справишься? -> cold
+  en: What, can't you manage on your own?
+
+-- tease
+alex [sarcastic]: Не привыкай.
+  en: Don't get used to it.
+-> yes
+
+-- yes
+alex [neutral]: Ага… ну, спасибо.
+  en: Yeah… well, thanks.
+- Он уходит быстро, будто боится передумать.
+  en: He leaves quickly, as if afraid he'll change his mind.
+> flag alex_asks_help
+> trust alex +1
+> mood alex +0.5
+> style I 0.3
+-> end
+
+-- cold
+alex [annoyed]: Справлюсь. Забудь.
+  en: I'll manage. Forget it.
+> flag alex_alone
+> mood alex -1
+> taras +0.5
+-> end
+
+
+# Того, кто вписывался за Алексея, сократили: он уходит в работу и никого к себе не подпускает.
+== echo_alex_alone
+when: chapter 4, day 3-10, here alex, flag alex_lost_helper
+
+- Третью ночь подряд около трёх в чате горит зелёная точка Алексея. Коммиты идут без ревью.
+  en: For the third night running there's a green dot by Alex's name at around three. The commits go in without review.
+* Давай с тобой кто-нибудь сядет. -> pair
+  en: Let's have someone sit with you.
+* Ночью не работаем. -> order
+  en: No working at night.
+* (Ничего не говорить.) -> nothing
+  en: (Say nothing.)
+
+-- pair
+alex [neutral]: Не надо никого. Последний, кто со мной садился, сам знаешь, где теперь.
+  en: No one, thanks. The last person who sat with me, you know where they are now.
+-> alone
+
+-- order
+alex [neutral]: Как скажешь.
+  en: Your call.
+- Следующей ночью точка серая. Коммиты приходят в шесть утра.
+  en: The next night the dot is grey. The commits arrive at six in the morning.
+-> alone
+
+-- nothing
+-> alone
+
+-- alone
+> flag alex_alone
+-> end
+
+
+# Алексея сократили: ночью авария, а вытягивать её некому. Он пишет сам.
+== echo_alex_gone
+at: evening
+when: chapter 4, day 2-18, laid_off alex, incident
+
+- Два часа ночи, авария всё ещё висит. Команда гадает в чате по очереди.
+  en: Two in the morning, and the outage is still open. The team takes turns guessing in the chat.
+{if here dima} dima [worried]: Алексей бы это за полчаса…
+  en: Alex would have had this in half an hour…
+- 02:14, сообщение с незнакомого номера: «у вас там опять раннеры? смотрите autoscaler, max_nodes, его вечно кто-то ставит в ноль».
+  en: 02:14, a message from an unknown number: "runners again? check the autoscaler, max_nodes, someone always sets it to zero."
+{if flag alex_revealed} - Сообщение так и остаётся в чате.
+  en: The message stays in the chat.
+{if not flag alex_revealed} - Через минуту сообщение удалено, но его уже прочитали.
+  en: A minute later the message is deleted, but it has already been read.
+> shrink incident 0.5
+* Написать «спасибо». -> thanks
+  en: Write "thanks".
+* Ничего не отвечать. -> end
+  en: Don't reply.
+
+-- thanks
+- Ответа нет. Через минуту под вашим сообщением появляется отметка «прочитано».
+  en: No reply. A minute later your message shows as read.
+> flag alex_thanked
+-> end
+
+
+# Вика осталась: покупатель хочет поговорить с тем, кто ведёт банки. Как она ответит, зависит от всей цепочки.
+== echo_vika_buyer
+when: chapter 4, day 5-9, here vika
+
+- Встреча с покупателем, разговор доходит до банков.
+  en: A meeting with the buyer, and the talk turns to the banks.
+buyer [neutral]: А кто у вас ведёт банки? Нам бы с этим человеком поговорить отдельно.
+  en: And who runs the banks for you? We'd like a separate word with that person.
+{if flag vika_revealed} vika [neutral]: Я веду. Давайте я сейчас и покажу, у меня всё с собой.
+  en: I do. Let me show you right now, I've got it all with me.
+{if not flag vika_revealed, flag vika_letter_sent} vika [neutral]: Я веду. Давайте я покажу.
+  en: I do. Let me show you.
+{if not flag vika_revealed, not flag vika_letter_sent} vika [neutral]: Я пришлю всё письмом. В копии будут все.
+  en: I'll send everything by email. Everyone will be in copy.
+{if not flag vika_revealed, not flag vika_letter_sent} - Аналитик переводит взгляд на вас.
+  en: The analyst turns to you.
+* (Дать Вике вести.) -> lead
+  en: (Let Vika lead.)
+* Давайте я дополню. -> add
+  en: Let me add something.
+
+-- lead
+{if flag vika_revealed} - Вика двадцать минут рассказывает про банки так, что у аналитика заканчивается место в блокноте.
+  en: For twenty minutes Vika talks about the banks, and the analyst runs out of room in the notebook.
+{if not flag vika_revealed, flag vika_letter_sent} - Вика рассказывает коротко и по делу. Аналитик кивает.
+  en: Vika keeps it short and to the point. The analyst nods.
+{if not flag vika_revealed, not flag vika_letter_sent} - Вечером приходит письмо Вики: сорок страниц, в копии все, включая Ирину Викторовну.
+  en: In the evening Vika's email arrives: forty pages, everyone in copy, Irina included.
+> flag vika_led_buyer
+> trust vika +1
+> boss +0.5
+-> after
+
+-- add
+- Вы начинаете рассказывать. Вика замолкает и больше за встречу не говорит ни слова.
+  en: You start talking. Vika goes quiet and doesn't say another word the whole meeting.
+> flag vika_talked_over
+> mood vika -1
+> taras +0.5
+> style P 0.3
+-> after
+
+-- after
+{if flag vika_promised} - Коробки под её столом больше нет.
+  en: The box under her desk is gone.
+-> end
+
+
+# Вику сократили: «Кредит Доверия» спрашивает, где она.
+== echo_vika_gone
+when: chapter 4, day 4-9, laid_off vika
+
+oleg [neutral]: Добрый день! А где Вика? Мы с ней по новому стенду договаривались, а у вас теперь никто не отвечает.
+  en: Good afternoon! Where's Vika? We'd agreed on the new environment with her, and now nobody on your side answers.
+{if flag vika_letter_sent} oleg [neutral]: Она нам, кстати, перед уходом ваше письмо переслала, где сказано, что подключение делала она. Сказала, на случай, если будут вопросы.
+  en: By the way, before she left she forwarded us your email saying she did the onboarding. Said it was in case there were any questions.
+> task bank_orphaned
+* Вика у нас больше не работает, теперь по всем вопросам ко мне. -> me
+  en: Vika no longer works here, everything comes to me now.
+* Сейчас разберёмся, что было обещано. -> sort
+  en: We'll work out what was promised.
+
+-- me
+oleg [neutral]: Понятно… ну, давайте с вами.
+  en: I see… well, let's do it with you, then.
+> style P 0.3
+-> end
+
+-- sort
+oleg [neutral]: Хорошо, только побыстрее, у нас тоже покупатель спрашивает.
+  en: Fine, just quickly, our buyer's asking too.
+-> end
+
+
+# Дима остался: на передаче знаний покупатель находит его страницу в вики.
+== echo_dima_docs
+when: chapter 4, day 8-13, here dima
+
+- Передача знаний: инженеры покупателя открывают вики.
+  en: Knowledge handover: the buyer's engineers open the wiki.
+{if flag dima_docs_seen} buyer [happy]: А это кто писал, про выкатку на стенд, с картинками? Первый раз вижу, чтобы у кого-то такое было понятно.
+  en: And who wrote this, about deploying to a test environment, with pictures? First time I've seen anyone make that clear.
+{if flag dima_docs_seen} - Дима краснеет и смотрит в стол.
+  en: Dima goes red and looks at the table.
+{if flag dima_docs_seen} > shrink bus_factor 0.5
+{if flag dima_docs_seen} * Дима писал. -> credit
+  en: Dima wrote it.
+{if flag dima_docs_seen} * Командой писали. -> team
+  en: We wrote it as a team.
+{if not flag dima_docs_seen} buyer [neutral]: Вики у вас, честно говоря, так себе, половина страниц на одного читателя.
+  en: Your wiki, honestly, isn't great, half the pages make sense to one reader only.
+{if not flag dima_docs_seen} dima [excited]: А можно я распишу? С картинками, я умею, правда!
+  en: Can I write it up? With pictures, I'm good at that, honestly!
+{if not flag dima_docs_seen} * Давай. -> write
+  en: Go for it.
+{if not flag dima_docs_seen} * Не до картинок сейчас. -> no_time
+  en: No time for pictures right now.
+
+-- credit
+buyer [happy]: Он у вас ещё и объяснять умеет? Нам бы такого на онбординг.
+  en: He can explain things too? We could use someone like that for onboarding.
+dima [happy]: Да я так… восемь лет практики.
+  en: Oh, it's nothing… eight years' practice.
+- Последнее он говорит очень тихо.
+  en: He says the last part very quietly.
+> flag dima_credited
+> trust dima +1
+> mood dima +1
+> style I 0.3
+-> end
+
+-- team
+- Дима кивает вместе со всеми.
+  en: Dima nods along with everyone else.
+> flag dima_uncredited
+> mood dima -0.5
+> taras +0.5
+-> end
+
+-- write
+dima [happy]: Я быстро! Ну, в смысле, хорошо!
+  en: I'll be quick! I mean, I'll do it well!
+> shrink bus_factor 0.75
+> energy dima -1
+> mood dima +1
+-> end
+
+-- no_time
+dima [neutral]: А… ну да, конечно.
+  en: Oh… right, of course.
+> mood dima -0.5
+-> end
+
+
+# Диму сократили: его страница в вики осталась и делает своё дело без него.
+== echo_dima_gone
+when: chapter 4, day 8-13, laid_off dima
+
+- Передача знаний: инженеры покупателя открывают вики.
+  en: Knowledge handover: the buyer's engineers open the wiki.
+buyer [happy]: А это кто писал, про выкатку на стенд, с картинками? Можно с этим человеком поговорить?
+  en: And who wrote this, about deploying to a test environment, with pictures? Could we talk to that person?
+> shrink bus_factor 0.6
+* Он у нас больше не работает. -> gone
+  en: He doesn't work here any more.
+* Дам контакт. -> contact
+  en: I'll give you his contact.
+
+-- gone
+buyer [neutral]: Жаль. Ладно, по картинкам разберёмся.
+  en: Pity. Fine, we'll manage from the pictures.
+-> end
+
+-- contact
+- Вечером от Димы сообщение: «Мне звонили!! Спасибо!!»
+  en: In the evening a message from Dima: "They called me!! Thanks!!"
+> flag dima_referred
+-> end
+
+
+# Ирина: одна реплика, в которой видна её броня. Только если игрок хоть раз прикрыл Вику.
+== irina_armor
+when: chapter 4, day 10-16, flag vika_covered
+
+- Ирина Викторовна задерживает вас после планёрки с покупателем.
+  en: Irina keeps you back after the planning meeting with the buyer.
+{if here vika} boss [neutral]: Вы Вику не прикрывайте так, она у вас взрослая. Меня вот никто никогда не прикрывал, и ничего, выросла.
+  en: Don't cover for Vika like that, she's a grown-up. Nobody ever covered for me, and look, I turned out fine.
+{if not here vika} boss [neutral]: Вику вы зря тогда прикрывали. Меня вот никто никогда не прикрывал, и ничего, выросла.
+  en: You shouldn't have covered for Vika back then. Nobody ever covered for me, and look, I turned out fine.
+- На секунду она замолкает, будто сказала больше, чем собиралась.
+  en: For a second she falls silent, as if she said more than she meant to.
+* Может, поэтому и стоило. -> maybe
+  en: Maybe that's exactly why it was worth it.
+* (Промолчать.) -> silent
+  en: (Say nothing.)
+
+-- maybe
+boss [annoyed]: Давайте по сделке.
+  en: Let's talk about the deal.
+> flag irina_answered
+-> end
+
+-- silent
+boss [neutral]: Ладно. По сделке.
+  en: Right. The deal.
+-> end
