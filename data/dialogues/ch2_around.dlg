@@ -6,10 +6,10 @@
 at: evening
 when: chapter 2, day 10-18
 
-- Вечер. У лифта — Тарас.
+- Вечер. У лифта Тарас.
   en: Evening. Taras is by the lift.
-{if taras >= 3} taras [happy]: О, вот и ты — слушай, мы с ребятами в бар собрались, пойдём? Ты, я смотрю, нормальный оказался, без этих вот…
-  en: Oh, there you are — listen, a few of us are heading to the bar, coming? You turned out all right, I see, none of that…
+{if taras >= 3} taras [happy]: О, вот и ты, слушай, мы с ребятами в бар собрались, пойдём? Ты, я смотрю, нормальный оказался, без этих вот…
+  en: Oh, there you are, listen, a few of us are heading to the bar, coming? You turned out all right, I see, none of that…
 {if taras >= 3} - Он неопределённо машет рукой, будто отгоняет что-то липкое.
   en: He waves a hand vaguely, as if brushing off something sticky.
 {if taras < 3} taras [sarcastic]: Всё со своими нянчишься? Ну-ну, это поначалу у всех так.
@@ -53,13 +53,13 @@ when: chapter 2, flag palych_sent
 
 - Марина приводит кандидата на короткое знакомство. Мужчина лет шестидесяти, в свитере с оленями, с термосом.
   en: Marina brings a candidate in for a quick hello. A man of about sixty in a reindeer jumper, holding a thermos.
-palych [happy]: Здравствуйте-здравствуйте! Виктор Павлович — можно просто Палыч, меня все так зовут.
-  en: Hello, hello! Viktor Pavlovich — just Palych is fine, everyone calls me that.
-palych [excited]: Я про ваш Chainer почитал — интересно! Мы в девяностые сборки вообще на дискетах возили, а тут красота.
-  en: I read up on your Chainer — interesting! Back in the nineties we carried builds around on floppy disks, and this is lovely.
+palych [happy]: Здравствуйте-здравствуйте! Виктор Павлович, можно просто Палыч, меня все так зовут.
+  en: Hello, hello! Viktor Pavlovich, just Palych is fine, everyone calls me that.
+palych [excited]: Я про ваш Chainer почитал, интересно! Мы в девяностые сборки вообще на дискетах возили, а тут красота.
+  en: I read up on your Chainer, interesting! Back in the nineties we carried builds around on floppy disks, and this is lovely.
 marina [neutral]: Резюме у Виктора Павловича большое и очень… разнообразное.
   en: Viktor Pavlovich has a long and very… varied CV.
-palych [happy]: Возьмёте — не пожалеете, я на любую движуху! Вы не смотрите, что я в возрасте, я быстро вникаю.
+palych [happy]: Возьмёте, не пожалеете, я на любую движуху! Вы не смотрите, что я в возрасте, я быстро вникаю.
   en: Take me on, you won't regret it, I'm up for anything! Don't mind my age, I pick things up quickly.
 * А что вы делали на последнем месте? -> last
   en: What did you do at your last job?
@@ -67,8 +67,8 @@ palych [happy]: Возьмёте — не пожалеете, я на любую
   en: Thank you, we'll think about it.
 
 -- last
-palych [neutral]: Да всего понемногу — сервера, сеть, принтеры, кофемашину однажды чинил. Все ко мне шли, и я никому не отказывал.
-  en: A bit of everything — servers, network, printers, fixed the coffee machine once. Everyone came to me, and I never turned anyone away.
+palych [neutral]: Да всего понемногу: сервера, сеть, принтеры, кофемашину однажды чинил. Все ко мне шли, и я никому не отказывал.
+  en: A bit of everything: servers, network, printers, fixed the coffee machine once. Everyone came to me, and I never turned anyone away.
 - Вот этим он явно гордится.
   en: That, clearly, is what he's proud of.
 -> end

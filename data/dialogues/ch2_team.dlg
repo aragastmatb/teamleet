@@ -7,8 +7,8 @@ when: chapter 2, day 3-9, here alex
 
 - 23:40. В чат падает алерт: у «Кредита Доверия» не проходят выкладки. Через минуту пишет Алексей.
   en: 23:40. An alert drops into the chat: Trust Credit Bank's deliveries are failing. A minute later Alex writes.
-alex [neutral]: Видел, я на связи — сам починю, никого не дёргай.
-  en: Seen it, I'm on it — I'll fix it myself, don't wake anyone.
+alex [neutral]: Видел, я на связи, сам починю, никого не дёргай.
+  en: Seen it, I'm on it, I'll fix it myself, don't wake anyone.
 {if here gena} * Подключи Гену, он этот кусок знает. -> pair
   en: Bring Gena in, he knows that part.
 * Хорошо, держи в курсе. -> alone
@@ -31,8 +31,8 @@ alex [neutral]: Да неважно, справлюсь.
 -- pair_insist
 gena [tired]: Подключился. Показывай, что накрутил.
   en: I'm on. Show me what you've done.
-- В 01:20 выкладки проходят. Алексей пишет «спасибо» — Гене, не вам, и то через полчаса.
-  en: At 01:20 the deliveries go through. Alex writes "thanks" — to Gena, not you, and half an hour later at that.
+- В 01:20 выкладки проходят. Алексей пишет «спасибо». Гене, не вам, и то через полчаса.
+  en: At 01:20 the deliveries go through. Alex writes "thanks". To Gena, not you, and half an hour later at that.
 > energy alex -1
 > energy gena -1
 > mood alex -0.5
@@ -70,14 +70,14 @@ when: chapter 2, day 5-12, here vika
 vika [neutral]: Подключение закрыли на два дня раньше плана, банк уже подписал акт.
   en: We closed the onboarding two days ahead of plan, and the bank has already signed off.
 {if irina P X} boss [annoyed]: Это вы сами сделали или, как обычно, команда сделала, а показываете вы?
-  en: Did you do this yourself, or is it the usual — the team did it and you're presenting it?
+  en: Did you do this yourself, or is it the usual, the team did it and you're presenting it?
 {if irina A E I} boss [neutral]: Хорошо, только в следующий раз без слайдов, просто цифры.
   en: Fine, but next time no slides, just the numbers.
-boris [happy]: Ирина Викторовна, ну что вы, Вика у нас лицо команды — с таким лицом любой акт подпишут!
-  en: Oh, Irina, come on, Vika's the face of the team — with a face like that, anyone would sign off!
-- Кто-то из продуктовых смеётся. Вика улыбается — ровно настолько, насколько положено.
-  en: Someone from the product teams laughs. Vika smiles — exactly as much as is expected.
-* Подключение от начала до конца — работа Вики. -> credit
+boris [happy]: Ирина Викторовна, ну что вы, Вика у нас лицо команды, с таким лицом любой акт подпишут!
+  en: Oh, Irina, come on, Vika's the face of the team, with a face like that, anyone would sign off!
+- Кто-то из продуктовых смеётся. Вика улыбается ровно настолько, насколько положено.
+  en: Someone from the product teams laughs. Vika smiles exactly as much as is expected.
+* Подключение от начала до конца сделала Вика. -> credit
   en: The onboarding, start to finish, is Vika's work.
 * Борис Аркадьевич, давайте по делу. -> cut_boris
   en: Boris, let's stick to the point.
@@ -174,10 +174,10 @@ dima [neutral]: Ещё пять минуточек…
 == gena_night
 when: chapter 2, day 4-12, here gena
 
-- Утром в рабочем чате висят ночные уведомления от бота: «Гена отправил изменения в старый Jenkins» — в 03:12, в 03:40 и в 04:05.
-  en: In the morning the work chat has overnight notifications from the bot: "Gena pushed changes to old Jenkins" — at 03:12, 03:40 and 04:05.
-{if not flag gena_tools} alex [sarcastic]: Гена опять всю ночь в своём vim сидел — днём-то не успевает, у нас теперь всё быстрее.
-  en: Gena was up all night in his vim again — can't keep up in the day, everything's faster for the rest of us now.
+- Утром в рабочем чате висят ночные уведомления от бота: «Гена отправил изменения в старый Jenkins», в 03:12, в 03:40 и в 04:05.
+  en: In the morning the work chat has overnight notifications from the bot: "Gena pushed changes to old Jenkins", at 03:12, 03:40 and 04:05.
+{if not flag gena_tools} alex [sarcastic]: Гена опять всю ночь в своём vim сидел, днём-то не успевает, у нас теперь всё быстрее.
+  en: Gena was up all night in his vim again, can't keep up in the day, everything's faster for the rest of us now.
 gena [tired]: Доброе.
   en: Morning.
 * Гена, что там ночью было? -> ask
@@ -190,8 +190,8 @@ gena [tired]: Доброе.
 -- ask
 gena [neutral]: Не спалось. Подкрутил кое-что.
   en: Couldn't sleep. Tweaked a few things.
-gena [neutral]: Если старый Jenkins однажды встанет — лучше, чтобы было кому поднять.
-  en: If old Jenkins ever goes down — better there's someone to bring it back.
+gena [neutral]: Если старый Jenkins однажды встанет, лучше, чтобы было кому поднять.
+  en: If old Jenkins ever goes down, better there's someone to bring it back.
 - «Кому» он произносит так, будто это может быть только один человек.
   en: He says "someone" as if it could only ever be one person.
 > flag gena_night_asked
@@ -200,8 +200,8 @@ gena [neutral]: Если старый Jenkins однажды встанет — 
 -- order
 gena [annoyed]: Как скажешь.
   en: Your call.
-- Следующей ночью уведомлений нет. Через ночь они снова приходят — только уже от имени сервисной учётки.
-  en: The next night there are no notifications. The night after, they're back — only now from a service account.
+- Следующей ночью уведомлений нет. Через ночь они снова приходят, только уже от имени сервисной учётки.
+  en: The next night there are no notifications. The night after, they're back, only now from a service account.
 > mood gena -0.5
 > flag gena_night_ordered
 -> end

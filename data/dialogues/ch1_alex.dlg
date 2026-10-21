@@ -6,8 +6,8 @@ when: chapter 1, day 3-8, here alex, not flag init_automate_report, not flag aut
 
 - Алексей заходит без стука, ноутбук под мышкой.
   en: Alex walks in without knocking, laptop under one arm.
-alex [excited]: Слушай, эти еженедельные отчёты для Ирины Викторовны — это же позор какой-то: мы платформа автоматизации, а отчёт руками собираем.
-  en: Listen, these weekly reports for Irina are kind of embarrassing — we're an automation platform and we put the report together by hand.
+alex [excited]: Слушай, эти еженедельные отчёты для Ирины Викторовны это же позор какой-то, мы платформа автоматизации, а отчёт руками собираем.
+  en: Listen, these weekly reports for Irina are kind of embarrassing, we're an automation platform and we put the report together by hand.
 alex [excited]: Давай я сделаю, чтобы он сам из Chainer собирался, там работы на пару вечеров.
   en: Let me make it build itself from Chainer, it's a couple of evenings' work.
 {if here vika} vika [annoyed]: Вообще-то этот отчёт каждую пятницу делаю я.
@@ -18,8 +18,8 @@ alex [excited]: Давай я сделаю, чтобы он сам из Chainer 
   en: Vika gives him a look that drops the room a couple of degrees.
 * Делай, идея отличная. -> himself
   en: Go ahead, it's a great idea.
-{if here vika} * Идея отличная, но пусть лучше Вика сделает — она этот отчёт знает лучше всех. -> to_vika
-  en: Great idea, but let Vika do it — she knows that report better than anyone.
+{if here vika} * Идея отличная, но пусть лучше Вика сделает, она этот отчёт знает лучше всех. -> to_vika
+  en: Great idea, but let Vika do it, she knows that report better than anyone.
 {if here vika} * Делай, но вместе с Викой. -> pair
   en: Do it, but together with Vika.
 * Давай не сейчас, у нас и так завал. -> later
@@ -86,14 +86,14 @@ when: chapter 1, day 8-16, here alex, flag story_alex_reports
   en: Evening. The office is almost empty; only Alex's monitor is still on.
 alex [tired]: А, ты ещё здесь? Я раннеры добиваю.
   en: Oh, you're still here? I'm finishing off the runners.
-* Поздно уже, иди домой — это не просьба. -> home
-  en: It's late, go home — that's not a request.
+* Поздно уже, иди домой, это не просьба. -> home
+  en: It's late, go home, that's not a request.
 * Помочь? -> help
   en: Need a hand?
 * Слушай, а где ты раньше работал? -> past
   en: Say, where did you work before this?
-* (Не мешать — уйти тихо.) -> leave
-  en: (Don't disturb him — leave quietly.)
+* (Не мешать, уйти тихо.) -> leave
+  en: (Don't disturb him, leave quietly.)
 
 -- home
 alex [annoyed]: Ещё полчасика…

@@ -7,8 +7,8 @@ when: chapter 1, day 4-10, here gena, here alex
 
 - Алексей ставит всей команде ИИ-ассистента в редактор. К обеду без него уже никто не может.
   en: Alex installs an AI assistant in everyone's editor. By lunch nobody can work without it.
-alex [excited]: Всё, у всех стоит: автодополнение, ревью, даже тесты сам пишет — работаем быстрее.
-  en: Done, everyone's got it: autocomplete, reviews, it even writes the tests — we're faster now.
+alex [excited]: Всё, у всех стоит: автодополнение, ревью, даже тесты сам пишет, работаем быстрее.
+  en: Done, everyone's got it: autocomplete, reviews, it even writes the tests, we're faster now.
 {if here dima} dima [happy]: Оно мне за минуту написало то, что я вчера весь день писал!
   en: It wrote in a minute what took me all of yesterday!
 gena [neutral]: Посмотрю. Потом.
@@ -37,7 +37,7 @@ gena [neutral]: Ладно. Тебе решать.
 > flag gena_why
 * Переходи, со всеми вместе. -> force
   en: Switch, along with everyone.
-* Не хочешь — не надо. -> own_way
+* Не хочешь, не надо. -> own_way
   en: If you don't want to, don't.
 
 -- force

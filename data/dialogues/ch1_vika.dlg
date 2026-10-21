@@ -4,22 +4,22 @@
 == vika_call
 when: chapter 1, day 4-12, here vika, here alex
 
-- Созвон с «Кредитом Доверия»: банк подключает новый стенд к порталу. С их стороны — Олег, руководитель платформы.
+- Созвон с «Кредитом Доверия»: банк подключает новый стенд к порталу. С их стороны Олег, руководитель платформы.
   en: A call with Trust Credit Bank: they're connecting a new environment to the portal. On their side is Oleg, head of their platform.
-oleg [neutral]: Коллеги, у нас вопрос по подключению — Алексей, вы же инженер, расскажите, как нам доступы на портале заводить?
-  en: Colleagues, a question about onboarding — Alex, you're the engineer, tell us how we set up access on the portal?
-vika [neutral]: Подключение банков веду я, давайте расскажу —
-  en: I run bank onboarding, let me walk you through —
+oleg [neutral]: Коллеги, у нас вопрос по подключению: Алексей, вы же инженер, расскажите, как нам доступы на портале заводить?
+  en: Colleagues, a question about onboarding: Alex, you're the engineer, tell us how we set up access on the portal?
+vika [neutral]: Подключение банков веду я, давайте расскажу…
+  en: I run bank onboarding, let me walk you through…
 oleg [neutral]: Да-да, секундочку… Алексей?
   en: Yes, yes, just a second… Alex?
 - Алексей смотрит на Вику. Потом на вас.
   en: Alex looks at Vika. Then at you.
-alex [embarrassed]: Ну… там, в общем, через заявку, или через Тараса — сейчас гляну…
-  en: Well… it's, uh, through a request, or through Taras — let me check…
+alex [embarrassed]: Ну… там, в общем, через заявку, или через Тараса, сейчас гляну…
+  en: Well… it's, uh, through a request, or through Taras, let me check…
 * Олег, по подключению это к Вике, она ведёт ваш банк. -> defend
   en: Oleg, onboarding questions go to Vika, she runs your account.
-* (Промолчать — пусть Алексей разбирается.) -> silent
-  en: (Say nothing — let Alex figure it out.)
+* (Промолчать, пусть Алексей разбирается.) -> silent
+  en: (Say nothing, let Alex figure it out.)
 * Давайте я отвечу. -> myself
   en: Let me answer that.
 
@@ -53,7 +53,7 @@ oleg [neutral]: Хорошо, ждём.
 -- myself
 oleg [happy]: Отлично, спасибо!
   en: Great, thanks!
-- Олег записывает и благодарит — вас. Вика всё это время молчит.
+- Олег записывает и благодарит. Вас. Вика всё это время молчит.
   en: Oleg takes notes and thanks you. Vika says nothing the whole time.
 vika [sarcastic]: Спасибо, что ответили за меня.
   en: Thanks for answering for me.
