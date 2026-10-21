@@ -6,40 +6,40 @@ when: chapter 1, day 3-8, here alex, not flag init_automate_report, not flag aut
 
 - Алексей заходит без стука, ноутбук под мышкой.
   en: Alex walks in without knocking, laptop under one arm.
-alex [excited]: Слушай, эти еженедельные отчёты для Ирины Викторовны — позор. Мы платформа автоматизации, а отчёт собираем руками.
-  en: Listen, these weekly reports for Irina are embarrassing. We're an automation platform and we put the report together by hand.
-alex [excited]: Давай я сделаю, чтобы он сам собирался из Chainer. Пара вечеров.
-  en: Let me make it build itself from Chainer. A couple of evenings.
-{if here vika} vika [annoyed]: Отчёт вообще-то делаю я. Каждую пятницу.
-  en: I'm the one who does that report, actually. Every Friday.
-{if here vika} alex: Вот именно. Больше не придётся.
-  en: Exactly. You won't have to anymore.
+alex [excited]: Слушай, эти еженедельные отчёты для Ирины Викторовны — это же позор какой-то: мы платформа автоматизации, а отчёт руками собираем.
+  en: Listen, these weekly reports for Irina are kind of embarrassing — we're an automation platform and we put the report together by hand.
+alex [excited]: Давай я сделаю, чтобы он сам из Chainer собирался, там работы на пару вечеров.
+  en: Let me make it build itself from Chainer, it's a couple of evenings' work.
+{if here vika} vika [annoyed]: Вообще-то этот отчёт каждую пятницу делаю я.
+  en: Actually, I'm the one who does that report every Friday.
+{if here vika} alex: Ну вот, больше не придётся.
+  en: Well, now you won't have to.
 {if here vika} - Вика смотрит на него так, что в комнате становится на пару градусов холоднее.
   en: Vika gives him a look that drops the room a couple of degrees.
-* Делай. Идея отличная. -> himself
-  en: Go ahead. Great idea.
-{if here vika} * Идея отличная. Но пусть сделает Вика — она этот отчёт знает лучше всех. -> to_vika
-  en: Great idea. But let Vika do it — she knows that report better than anyone.
+* Делай, идея отличная. -> himself
+  en: Go ahead, it's a great idea.
+{if here vika} * Идея отличная, но пусть лучше Вика сделает — она этот отчёт знает лучше всех. -> to_vika
+  en: Great idea, but let Vika do it — she knows that report better than anyone.
 {if here vika} * Делай, но вместе с Викой. -> pair
   en: Do it, but together with Vika.
 * Давай не сейчас, у нас и так завал. -> later
   en: Not now, we're swamped as it is.
 
 -- himself
-alex [happy]: Вот. Хоть кто-то понимает. К пятнице будет.
-  en: See? Finally someone gets it. Done by Friday.
+alex [happy]: Вот, хоть кто-то понимает! К пятнице будет.
+  en: See, finally someone gets it! Done by Friday.
 > give automate_report alex
 > mood alex +1
 > style E 0.5
 -> end
 
 -- to_vika
-alex [annoyed]: Вике? Это же я придумал.
-  en: Vika? It was my idea.
-alex [annoyed]: …Ладно. Как скажешь.
-  en: …Fine. Your call.
-vika [neutral]: Сделаю. Нормально сделаю.
-  en: I'll do it. And I'll do it properly.
+alex [annoyed]: Вике? Это же я придумал…
+  en: Vika? But it was my idea…
+alex [annoyed]: Ладно, как скажешь.
+  en: Fine, your call.
+vika [neutral]: Сделаю, и нормально сделаю.
+  en: I'll do it, and I'll do it properly.
 > give automate_report vika
 > mood alex -1
 > mood vika +0.5
@@ -48,16 +48,16 @@ vika [neutral]: Сделаю. Нормально сделаю.
 -> end
 
 -- pair
-alex [annoyed]: Мне не нужна помощь. Я сам справлюсь.
-  en: I don't need help. I can handle it.
-* Это не помощь. Это чтобы Вика потом могла его поддерживать. -> pair_insist
-  en: It's not help. It's so Vika can look after it later.
+alex [annoyed]: Да не нужна мне помощь, я сам справлюсь.
+  en: I don't need any help, I can handle it myself.
+* Это не помощь, это чтобы Вика потом могла его поддерживать. -> pair_insist
+  en: It's not help, it's so Vika can look after it later.
 * Ладно, сам так сам. -> himself
   en: Fine, on your own then.
 
 -- pair_insist
-alex [tired]: …Хорошо. Пусть смотрит.
-  en: …Fine. She can watch.
+alex [tired]: …Хорошо, пусть смотрит.
+  en: …Fine, she can watch.
 - «Пусть смотрит» звучит так, будто Вика будет стоять у него за спиной с секундомером.
   en: "She can watch" comes out as if Vika will be standing behind him with a stopwatch.
 vika [sarcastic]: Постараюсь не дышать.
@@ -68,8 +68,8 @@ vika [sarcastic]: Постараюсь не дышать.
 -> end
 
 -- later
-alex [neutral]: Как скажешь. Идея никуда не денется.
-  en: Your call. The idea isn't going anywhere.
+alex [neutral]: Как скажешь, идея никуда не денется.
+  en: Your call, the idea isn't going anywhere.
 - Через час в чате команды появляется ссылка на его черновик: «если что, вот».
   en: An hour later a link to his draft shows up in the team chat: "in case anyone wants it."
 > mood alex -0.5
@@ -84,10 +84,10 @@ when: chapter 1, day 8-16, here alex, flag story_alex_reports
 
 - Вечер. Офис почти пустой, только у Алексея горит монитор.
   en: Evening. The office is almost empty; only Alex's monitor is still on.
-alex [tired]: А, ты ещё здесь. Я раннеры добиваю.
-  en: Oh, you're still here. I'm finishing off the runners.
-* Поздно уже. Иди домой — это не просьба. -> home
-  en: It's late. Go home — that's not a request.
+alex [tired]: А, ты ещё здесь? Я раннеры добиваю.
+  en: Oh, you're still here? I'm finishing off the runners.
+* Поздно уже, иди домой — это не просьба. -> home
+  en: It's late, go home — that's not a request.
 * Помочь? -> help
   en: Need a hand?
 * Слушай, а где ты раньше работал? -> past
@@ -96,28 +96,26 @@ alex [tired]: А, ты ещё здесь. Я раннеры добиваю.
   en: (Don't disturb him — leave quietly.)
 
 -- home
-alex [annoyed]: Ещё полчаса.
-  en: Half an hour more.
-alex [tired]: …Ладно. Ухожу.
-  en: …Fine. I'm going.
+alex [annoyed]: Ещё полчасика…
+  en: Just half an hour more…
+alex [tired]: Ладно-ладно, ухожу.
+  en: OK, OK, I'm going.
 > energy alex +2
 > mood alex -0.3
 > style I 0.3
 -> end
 
 -- help
-alex [annoyed]: Не надо. Я сам.
-  en: No need. I've got it.
+alex [annoyed]: Не надо, я сам.
+  en: No need, I've got it.
 - Это «сам» звучит не как гордость. Скорее как правило.
   en: That "I've got it" doesn't sound like pride. More like a rule.
 > flag alex_refused_help
 -> end
 
 -- past
-alex [neutral]: В банке. Большом.
-  en: At a bank. A big one.
-alex [neutral]: Неважно.
-  en: Doesn't matter.
+alex [neutral]: В банке, в большом… да неважно.
+  en: At a bank, a big one… doesn't matter.
 - Он закрывает ноутбук чуть резче, чем нужно. Через минуту его уже нет.
   en: He shuts the laptop a little harder than he needs to. A minute later he's gone.
 > flag alex_deflected

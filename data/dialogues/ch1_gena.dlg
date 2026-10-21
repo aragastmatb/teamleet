@@ -1,27 +1,28 @@
 # Глава 1. Гена, зацепка 1: новый инструмент и «мне и в vim нормально».
 # С этой сцены у команды есть ИИ-ассистент: все работают быстрее, кроме Гены, пока он не перейдёт.
+# Гена говорит коротко и сдержанно — это его манера, остальные говорят свободнее.
 
 == team_tools
 when: chapter 1, day 4-10, here gena, here alex
 
 - Алексей ставит всей команде ИИ-ассистента в редактор. К обеду без него уже никто не может.
   en: Alex installs an AI assistant in everyone's editor. By lunch nobody can work without it.
-alex [excited]: Всё, у всех стоит. Автодополнение, ревью, тесты сам пишет. Работаем быстрее.
-  en: Done, everyone has it. Autocomplete, reviews, it writes the tests. We're faster now.
+alex [excited]: Всё, у всех стоит: автодополнение, ревью, даже тесты сам пишет — работаем быстрее.
+  en: Done, everyone's got it: autocomplete, reviews, it even writes the tests — we're faster now.
 {if here dima} dima [happy]: Оно мне за минуту написало то, что я вчера весь день писал!
   en: It wrote in a minute what took me all of yesterday!
-gena [neutral]: Я посмотрю. Потом.
-  en: I'll take a look. Later.
+gena [neutral]: Посмотрю. Потом.
+  en: I'll look. Later.
 alex [sarcastic]: Гена, «потом» было в прошлом году.
   en: Gena, "later" was last year.
 gena [annoyed]: Мне и в vim нормально. Двадцать лет нормально было.
   en: I'm fine in vim. Been fine for twenty years.
 > flag team_tools
-* Гена, давай со всеми. Это не обсуждается. -> force
-  en: Gena, switch with everyone. That's not up for discussion.
-* Как тебе удобно, так и работай. -> own_way
+* Гена, давай со всеми, это не обсуждается. -> force
+  en: Gena, switch with everyone, that's not up for discussion.
+* Работай, как тебе удобно. -> own_way
   en: Work however suits you.
-* А почему не хочешь? Честно. -> why
+* А почему не хочешь? Только честно. -> why
   en: Why don't you want to? Honestly.
 
 -- why
@@ -34,14 +35,14 @@ gena [tired]: Отличная была система. Всё сама дела
 gena [neutral]: Ладно. Тебе решать.
   en: Anyway. Your call.
 > flag gena_why
-* Переходи. Со всеми. -> force
-  en: Switch. With everyone.
+* Переходи, со всеми вместе. -> force
+  en: Switch, along with everyone.
 * Не хочешь — не надо. -> own_way
   en: If you don't want to, don't.
 
 -- force
-gena [annoyed]: Как скажешь. Только первые дни толку от меня будет меньше, а не больше.
-  en: Your call. Just know that for the first few days I'll be slower, not faster.
+gena [annoyed]: Как скажешь. Первые дни толку от меня будет меньше.
+  en: Your call. For the first few days I'll be slower.
 - Гена ставит ассистента с таким лицом, будто ему ставят пломбу.
   en: Gena installs the assistant with the face of a man getting a filling.
 > flag gena_tools
@@ -55,7 +56,7 @@ gena [annoyed]: Как скажешь. Только первые дни толк
 gena [neutral]: Спасибо.
   en: Thanks.
 alex [annoyed]: Ну и сиди в своём vim.
-  en: Fine, stay in your vim.
+  en: Fine, stay in your vim then.
 - Разница в скорости станет видна не сразу. Но станет.
   en: The difference in speed won't show right away. But it will.
 > mood gena +0.5
