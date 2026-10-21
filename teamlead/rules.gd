@@ -822,6 +822,8 @@ func _say_event_lines() -> void:
 func resolve_event(choice: String) -> void:
 	if phase != "event" or events.is_empty() or not events[0]["choices"].has(choice):
 		return
+	# Remembered like story answers (<event>:<choice>), so a later scene can quote what was said back then.
+	flags["%s:%s" % [events[0]["id"], choice]] = true
 	scenes.resolve(self, events.pop_front(), choice)
 	_weight_check()
 	if events.is_empty():
@@ -886,6 +888,8 @@ func story_true(terms: Array) -> bool:
 				ok = _compare(taras_score(), t[1], float(t[2]))
 			"irina":
 				ok = t.slice(1).has(boss_type)
+			"style":
+				ok = t.slice(1).has(_style_top(style))
 			"laid_off":
 				ok = flags.get("laid_off", "") == t[1]
 			"incident":
@@ -1082,7 +1086,8 @@ func _story_take(t: Dictionary, p: String) -> void:
 
 # drop <who> <N>: keep the N they've got furthest with, the rest go back to the inbox.
 func _story_drop(p: String, n: int) -> void:
-	var q := queue_of(p)
+	# Late ones stay: they're already on Friday's review, and handing them over now helps nobody.
+	var q := queue_of(p).filter(func(t): return not t["late"])
 	q.sort_custom(func(a, b): return a["progress"] > b["progress"])
 	for i in range(n, q.size()):
 		unassign_now(q[i])
@@ -2560,6 +2565,8 @@ func answer_review(choice: String) -> void:
 	var t := task(item["uid"])
 	t["reviewed"] = true
 	var p: String = t["owner"]
+	if not people.has(p):
+		return
 	var st: Dictionary = people[p]
 	var names := _review_names(t)
 	var truth := review_true(item, choice)

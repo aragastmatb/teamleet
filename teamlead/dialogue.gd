@@ -13,7 +13,7 @@ extends RefCounted
 
 const DIR := "res://data/dialogues"
 const FX := ["flag", "unflag", "days", "mood", "trust", "energy", "style", "boss", "taras", "give", "grab", "drop", "task", "shrink", "reveal"]
-const TERMS := ["chapter", "day", "here", "flag", "not", "taras", "irina", "busy", "laid_off", "incident"]
+const TERMS := ["chapter", "day", "here", "flag", "not", "taras", "irina", "busy", "laid_off", "incident", "style"]
 
 static var SCENES := {}
 static var ORDER: Array[String] = []

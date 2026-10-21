@@ -1,0 +1,204 @@
+# Главы 3-4. Тарас-зеркало (docs/characters.md, «Тарас — зеркало»).
+# Каким он стал, зависит от ведущего стиля игрока (style P/A/E/I): испорченная версия того же стиля.
+# Насколько он к вам тёпел, зависит только от поступков (taras >= N).
+# Его фразы из первых глав в главе 4 всегда есть среди ваших вариантов, слово в слово. Тёплым его видят только «свои».
+
+# Глава 3: ИТ объединили с безопасностью, и Тарас теперь согласует ваши релизы. Своим быстро, чужим по форме.
+== taras_mirror
+when: chapter 3, day 3-7
+
+- Тарас заглядывает к вам: ИТ объединили с безопасностью, и теперь он ещё и согласует ваши релизы. По этому поводу он в новом пиджаке.
+  en: Taras drops by: IT has been merged with security, and now he signs off your releases too. He's wearing a new jacket for the occasion.
+taras [happy]: Ну что, соседи, теперь без меня ни шагу! Да расслабьтесь, я по-человечески.
+  en: Well, neighbours, not a step without me now! Relax, I'm human about it.
+{if style P} taras [happy]: Я у себя вообще всё упростил: человек выработался, меняем. За квартал двоих поменял, скорость выросла, все довольны. Ну, кто остался.
+  en: I've made it all simple on my side: someone's worn out, you swap them. Swapped two this quarter, speed went up, everyone's happy. Well, everyone who's left.
+{if style A} taras [happy]: У меня теперь на всё регламент: хочешь в отпуск, пишешь служебку, три подписи. Ни одного вопроса ко мне за месяц, представляешь?
+  en: I've got a procedure for everything now: want a holiday, you write a memo, three signatures. Not one question to me all month, can you imagine?
+{if style E} taras [excited]: Я своим на той неделе пять новых идей накидал, пусть крутят. Прошлые? Да прошлые уже неактуальны, ты что.
+  en: Last week I threw five new ideas at my lot, let them run with it. The old ones? The old ones aren't relevant any more, come on.
+{if style I} taras [happy]: А я опрос запустил, анонимный: как настроение, чего не хватает. Сорок ответов! Читать, конечно, некогда, но цифра красивая, Ирине понравилась.
+  en: And I've launched a survey, anonymous: how's morale, what's missing. Forty replies! No time to read them, of course, but it's a nice number, Irina liked it.
+{if taras >= 3} taras [neutral]: Твои заявки, кстати, пропускаю без очереди, свои же люди.
+  en: I'll wave your requests through, by the way, we're on the same side.
+{if taras >= 3} > shrink taras_security 0.5
+{if taras < 0} taras [sarcastic]: Заявки только по форме и за три дня, без обид, у меня процесс.
+  en: Requests on the form only and three days ahead, no offence, I have a process.
+{if taras < 0} > shrink taras_security 1.5
+* И как, работает? -> works
+  en: And does it work?
+* А люди что говорят? -> people
+  en: And what do the people say?
+* Учту. -> noted
+  en: Noted.
+
+-- works
+taras [happy]: Цифры видел? Вот и весь ответ.
+  en: Seen the numbers? That's your answer.
+-> end
+
+-- people
+taras [sarcastic]: Люди всегда что-то говорят, на то они и люди.
+  en: People always say something, that's what people are for.
+-> end
+
+-- noted
+taras [happy]: Учись, пока я добрый.
+  en: Learn while I'm in a good mood.
+-> end
+
+
+# Глава 4: Дима спрашивает, почему его работу покупателю показывали не он. Среди ответов фраза Тараса из главы 1.
+== mirror_credit
+when: chapter 4, day 6-12, here dima
+
+- После встречи с покупателем Дима догоняет вас в коридоре.
+  en: After the meeting with the buyer, Dima catches up with you in the corridor.
+dima [embarrassed]: Слушай, а почему про шаблоны пайплайнов покупателю рассказывал не я? Я же их делал… Не, я не в претензии, просто…
+  en: Listen, how come it wasn't me who told the buyer about the pipeline templates? I made them… No, I'm not complaining, it's just…
+* Ты прав, в следующий раз рассказываешь ты. -> fair
+  en: You're right, next time you present.
+* Так быстрее было. -> faster
+  en: It was quicker that way.
+{if flag taras_brag:who_did} * Видно того, кто рассказывает. -> quote
+  en: People see the one who's talking.
+{if not flag taras_brag:who_did} * Учись. Наверху любят тех, кого видно. -> quote
+  en: Learn. Upstairs they like the ones they can see.
+
+-- fair
+dima [happy]: Правда? Я тогда слайды сделаю, с картинками!
+  en: Really? I'll make slides, then, with pictures!
+> trust dima +1
+> mood dima +0.5
+> style I 0.3
+-> end
+
+-- faster
+dima [neutral]: А… ну да.
+  en: Oh… right.
+> mood dima -0.5
+> style P 0.3
+-> end
+
+-- quote
+dima [sad]: …Понял.
+  en: …Got it.
+- Мимо как раз проходит Тарас.
+  en: Taras happens to be walking past.
+taras [happy]: О, моими словами уже говоришь.
+  en: Oh, using my words now.
+> flag taras_quoted
+> taras +1
+> mood dima -1
+> trust dima -1
+-> end
+
+
+# Глава 4: Алексей просит разгрузить его. Среди ответов фраза Тараса из главы 2 (или из его заявок).
+== mirror_tired
+at: evening
+when: chapter 4, day 10-16, here alex, not flag alex_alone
+
+- Половина двенадцатого ночи, Алексей пишет вам в личку.
+  en: Half past eleven at night, Alex messages you directly.
+alex [tired]: Слушай, я третью неделю до ночи сижу, может, хоть что-то с меня снимешь до сделки?
+  en: Listen, it's my third week sitting here till night, could you take at least something off me before the deal?
+* Давай разгружу, лишнее раздам. -> relief
+  en: I'll lighten your load, I'll hand out the extra.
+* Потерпи до сделки, немного осталось. -> endure
+  en: Hang on till the deal, not long now.
+{if flag taras_drink:end} * Это поначалу у всех так. -> quote
+  en: Everyone's like that at first.
+{if flag taras_drink:smoothed} * Это поначалу у всех так. -> quote
+  en: Everyone's like that at first.
+{if not flag taras_drink:end, not flag taras_drink:smoothed} * Тебе же несложно. -> quote
+  en: It's not hard for you, is it.
+
+-- relief
+alex [neutral]: Спасибо… серьёзно.
+  en: Thanks… really.
+> drop alex 2
+> trust alex +1
+> style I 0.3
+-> end
+
+-- endure
+alex [neutral]: Ага.
+  en: Yeah.
+> energy alex -1
+> style P 0.3
+-> end
+
+-- quote
+alex [annoyed]: …Понял.
+  en: …Got it.
+- Утром у кофемашины Тарас хлопает вас по плечу: «Слышал, ты своих уже строишь. Растёшь».
+  en: In the morning at the coffee machine Taras claps you on the shoulder: "Heard you're keeping your lot in line now. You're growing."
+> flag taras_quoted
+> taras +1
+> mood alex -1
+> trust alex -1
+-> end
+
+
+# Глава 4: вердикт Тараса. Своим он показывает себя настоящего; остальным только снисхождение.
+== taras_verdict
+at: evening
+when: chapter 4, day 14-18
+
+{if taras >= 6} - Вечер. У лифта Тарас, в руках два стакана кофе, один он протягивает вам.
+  en: Evening. Taras is by the lift with two cups of coffee, and he holds one out to you.
+{if taras >= 6} taras [neutral]: Слушай, тут такое дело… после сделки ИТ, говорят, порежут, мне Ирина намекнула. Ты тут единственный человек, кому я это могу сказать, остальные сразу побегут резюме обновлять.
+  en: Listen, here's the thing… after the deal they say IT gets cut, Irina hinted. You're the only person here I can tell, the rest would run off to update their CVs.
+{if taras >= 6} - Он листает телефон и показывает старую фотографию: шесть человек на фоне серверной стойки, все в одинаковых футболках.
+  en: He scrolls through his phone and shows you an old photo: six people in front of a server rack, all in matching T-shirts.
+{if taras >= 6} taras [happy]: Это мои первые, десятый год. Я тогда за каждого глотку рвал, представляешь?
+  en: My first lot, 2010. Back then I'd have gone to war for every one of them, can you imagine?
+{if taras >= 6} * Где они сейчас? -> where
+  en: Where are they now?
+{if taras >= 6} * А что изменилось? -> changed
+  en: So what changed?
+{if taras >= 6} * (Взять кофе и промолчать.) -> friend
+  en: (Take the coffee and say nothing.)
+{if taras < 2} - Вечер. У лифта Тарас.
+  en: Evening. Taras is by the lift.
+{if taras < 2} taras [sarcastic]: Всё со своими? Ну ничего, пообтешешься. Если успеешь.
+  en: Still with your lot? Never mind, you'll get the corners knocked off. If there's time.
+{if taras < 2} * Посмотрим. -> end
+  en: We'll see.
+{if taras < 2} * Ты-то уже? -> already
+  en: And you already have?
+{if taras >= 2, taras < 6} - Вечер. У лифта Тарас, кивает вам.
+  en: Evening. Taras is by the lift and nods to you.
+{if taras >= 2, taras < 6} taras [neutral]: Держишься? После сделки, говорят, всех перетрясут. Ладно, бывай.
+  en: Holding up? After the deal they say everyone gets shaken up. Right, see you.
+-> end
+
+-- already
+taras [neutral]: Я-то давно.
+  en: Me, long ago.
+- Двери лифта закрываются.
+  en: The lift doors close.
+-> end
+
+-- where
+taras [neutral]: Да кто где. Я как-то перестал следить.
+  en: All over the place. I sort of stopped keeping track.
+- Он убирает телефон.
+  en: He puts the phone away.
+-> friend
+
+-- changed
+taras [sarcastic]: Ничего. Просто понял, как всё работает.
+  en: Nothing. I just figured out how it all works.
+taras [neutral]: Ну и ты понял, я же вижу.
+  en: And so have you, I can see it.
+-> friend
+
+-- friend
+{if flag taras_quoted} taras [happy]: Ты вон уже и говоришь как я.
+  en: Look at you, you even talk like me now.
+taras [happy]: Ладно, не грузись. Ты свой, я серьёзно.
+  en: Right, don't overthink it. You're one of us, I mean it.
+> flag taras_friend
+-> end
