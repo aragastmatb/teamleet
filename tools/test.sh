@@ -14,4 +14,4 @@ if [ -z "$1" ]; then
 	echo "  chapter2  chapter3  chapter4"
 	exit 0
 fi
-exec "$GODOT" --path . -- --test "$1"
+exec "$GODOT" --path . -- --start "$1"

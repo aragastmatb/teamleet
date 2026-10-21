@@ -160,7 +160,7 @@ func _ready() -> void:
 	add_child(bg)
 	_render()
 	var args := OS.get_cmdline_user_args()
-	var at := args.find("--test")
+	var at := args.find("--start")
 	if at >= 0 and at + 1 < args.size():
 		_start_test(args[at + 1])
 
