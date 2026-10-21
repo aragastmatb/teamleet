@@ -447,14 +447,35 @@ func _new_candidate() -> void:
 	_say("marina", "hire.cv", [], {"who": "@name.%s.nom" % id})
 
 
+# Palych: the one candidate who isn't made up. Kind, keen, slow, and without a check halfway through he
+# brings back something other than what was asked. Chapter two's first candidate (docs/characters.md).
+const PALYCH := {
+	"name": -1, "arch": "plodder", "skills": {"pipelines": 2, "infra": 2, "portal": 1, "support": 1},
+	"cv": {"pipelines": 2, "infra": 2, "portal": 1, "support": 1}, "drive": "peace", "likes": ["support"], "hates": [],
+	"idle": -0.5, "stamina": 7, "paei": "I", "rest_at": 0.3, "initiative": 0.7, "fast_learner": false, "touchy": false,
+}
+const PLODDER_PACE := 0.75
+const PLODDER_WARMTH := 0.1 # mood a day for everyone else while he's around
+
+
+func _new_palych() -> void:
+	flags["palych_sent"] = true
+	hires["palych"] = PALYCH.duplicate(true)
+	_register_hire("palych")
+	candidates.append({"id": "palych", "until": day + CANDIDATE_DAYS + 2, "asked": [], "known": {}})
+	_say("marina", "hire.cv", [], {"who": "@name.palych.nom"})
+
+
 # A hire's name in every case, and whose lines they borrow (their archetype's, then any hire's).
 func _register_hire(id: String) -> void:
+	L.STAND_IN[id] = ["hire_" + hires[id]["arch"], "hire"]
+	if hires[id]["name"] < 0:
+		return # a named character: their names are in locale.gd
 	var n: Dictionary = C.HIRE_NAMES[hires[id]["name"]]
 	var cases := ["nom", "gen", "dat", "acc", "ins"]
 	for i in cases.size():
 		L.EXTRA["ru"]["name.%s.%s" % [id, cases[i]]] = n["ru"][i]
 		L.EXTRA["en"]["name.%s.%s" % [id, cases[i]]] = n["en"] + ("'s" if cases[i] == "gen" else "")
-	L.STAND_IN[id] = ["hire_" + hires[id]["arch"], "hire"]
 
 
 # Each morning: candidates who waited too long take another offer, and Marina sends more while there are openings.
@@ -466,7 +487,9 @@ func _hiring_morning() -> void:
 		if c["until"] < day:
 			candidates.erase(c)
 			_narrate("hire.gone", [], {"who": "@name.%s.nom" % c["id"]})
-	if openings > 0 and candidates.size() < MAX_CANDIDATES and (candidates.is_empty() or day % 2 == 0):
+	if openings > 0 and candidates.size() < MAX_CANDIDATES and chapter == 2 and not flags.has("palych_sent"):
+		_new_palych()
+	elif openings > 0 and candidates.size() < MAX_CANDIDATES and (candidates.is_empty() or day % 2 == 0):
 		_new_candidate()
 
 
@@ -559,6 +582,7 @@ func let_go(p: String, with_warning: bool) -> void:
 	var st: Dictionary = people[p]
 	st["gone"] = true
 	st["fired"] = true
+	taras_like(2.0)
 	_drop_tasks(p)
 	lead("P", 1.0)
 	var arch := archetype(p)
@@ -798,6 +822,23 @@ func resolve_event(choice: String) -> void:
 		_say_event_lines()
 
 
+# ---------- Taras ----------
+
+# How much you lead like Taras, counted by deeds, not by style: people let go, people who quit, late hours
+# asked for, credit taken or blame passed at reviews, weeks without a one-on-one; giving people credit counts
+# the other way. It never sinks below TARAS_FLOOR, so a lead who hardens later can still get there.
+# Story scenes ask about it (taras >= 3) and Taras warms to you as it grows.
+const TARAS_FLOOR := -3.0
+
+
+func taras_like(amount: float) -> void:
+	flags["taras"] = maxf(TARAS_FLOOR, flags.get("taras", 0.0) + amount)
+
+
+func taras_score() -> float:
+	return flags.get("taras", 0.0)
+
+
 # ---------- story conversations ----------
 
 # The first scene in data/dialogues for this time of day whose conditions hold, once per run.
@@ -832,6 +873,10 @@ func story_true(terms: Array) -> bool:
 				ok = t.slice(1).all(func(p): return available(p) and not people[p]["absent"])
 			"flag":
 				ok = flags.has(t[1])
+			"taras":
+				ok = _compare(taras_score(), t[1], float(t[2]))
+			"irina":
+				ok = t.slice(1).has(boss_type)
 			_:
 				ok = flags.has(t[0])
 		if ok == neg:
@@ -867,6 +912,19 @@ func _story_run() -> void:
 				if story_true(op["if"]):
 					_story_jump(op["to"])
 	_story_end()
+
+
+func _compare(value: float, op: String, than: float) -> bool:
+	match op:
+		">=":
+			return value >= than
+		"<":
+			return value < than
+		">":
+			return value > than
+		"<=":
+			return value <= than
+	return false
 
 
 func _story_jump(to: String) -> void:
@@ -927,6 +985,8 @@ func _story_fx(w: Array) -> void:
 			lead(w[1], float(w[2]))
 		"boss":
 			boss += float(w[1])
+		"taras":
+			taras_like(float(w[1]))
 		"reveal":
 			if people.has(w[1]):
 				_reveal(w[1], w[2])
@@ -1276,6 +1336,7 @@ func start_talk(p: String) -> void:
 	if not can_talk(p):
 		return
 	talked[p] = true
+	flags["talks_w%d" % week()] = flags.get("talks_w%d" % week(), 0) + 1
 	_tip_used("talk")
 	lead("I", 0.3)
 	spend_attention()
@@ -1559,6 +1620,10 @@ func end_day() -> void:
 	_check_lies()
 	for p in team:
 		_check_person(p)
+	if team.has("palych") and available("palych") and not people["palych"]["absent"]:
+		for q in team:
+			if q != "palych" and available(q):
+				people[q]["mood"] = clampf(people[q]["mood"] + PLODDER_WARMTH, -5.0, 5.0)
 	_weight_check()
 	if C.SURVEY_AT.has(chapter_day()):
 		_run_survey()
@@ -1726,6 +1791,8 @@ func _speed(p: String, t: Dictionary) -> float:
 	# Told to hurry or to take care when you stepped in.
 	s *= t.get("pace", 1.0)
 	s *= tools_factor(p)
+	if archetype(p) == "plodder":
+		s *= PLODDER_PACE
 	var share: float = shares.get(t["uid"], 0.0)
 	# New people are slow at first, unless someone who knows the work sits with them.
 	if day - st["joined"] < NEWBIE_DAYS and not (share > 0.0 and people.has(t["helper"]) and people[t["helper"]]["skills"][t["cat"]] >= 2):
@@ -2064,6 +2131,7 @@ func ask_stay(uid: int) -> void:
 		return
 	var st: Dictionary = people[p]
 	t["stay_asked"] = day
+	taras_like(0.5)
 	lead("P", 0.5)
 	history.append({"who": "you", "key": "stay.ask", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": p, "day": day})
 	var asked: int = st.get("asked_late_week", {}).get(week(), 0) + 1
@@ -2135,6 +2203,13 @@ func _learn(p: String, cat: String, amount: float) -> void:
 
 
 func _finish(p: String, t: Dictionary) -> void:
+	# Nobody looked in halfway (stepped in, sat with him, paired someone up): he did it the way he understood it.
+	if archetype(p) == "plodder" and not t.get("redone", false) and not t["involved"] and t.get("checked_day", 0) == 0 and t["helped"].is_empty():
+		t["redone"] = true
+		t["progress"] = t["size"] * 0.2
+		_say(p, "plodder.oops", [], {"task": "@taskname." + t["id"]})
+		_narrate("plodder.redo", [], {"who": "@name.%s.nom" % p, "task": "@taskname." + t["id"]})
+		return
 	t["quality"] = _quality_of(t)
 	# Irina adores a genius: anything visible they deliver lifts them in her eyes, and you with them.
 	if archetype(p) == "genius" and t["public"] and t["quality"] in ["good", "ok"]:
@@ -2233,6 +2308,7 @@ func _check_person(p: String) -> void:
 	if st["mood"] <= QUIT_MOOD or (p == "alex" and flags.has("alex_leaving") and day > flags["alex_leaving"] and st["mood"] < -1.0):
 		st["gone"] = true
 		quits += 1
+		taras_like(1.0)
 		_say(p, "quit.%s" % p)
 		_drop_tasks(p)
 		return
@@ -2390,6 +2466,7 @@ func answer_review(choice: String) -> void:
 		lead(pair[0], pair[1])
 	match choice:
 		"credit_owner":
+			taras_like(-0.5)
 			boss += boss_like("I", 0.3)
 			st["mood"] += 1.0
 			st["trust"] += 1
@@ -2408,6 +2485,7 @@ func answer_review(choice: String) -> void:
 				_say(p, "review.team." + p if L.has_key("review.team." + p) else "review.hurt", [], names)
 			_say("boss", "review.boss.team", [], names)
 		"self":
+			taras_like(1.0)
 			boss += boss_like("P", 2.0)
 			_say("boss", "review.boss.self", [], names)
 			if truth:
@@ -2429,6 +2507,7 @@ func answer_review(choice: String) -> void:
 			st["trust"] += 1
 			_say("boss", "review.boss.own", [], names)
 		"blame":
+			taras_like(1.0)
 			st["mood"] -= 2.0
 			st["trust"] -= 1 if truth else 2
 			if truth:
@@ -2978,6 +3057,9 @@ func style_fit() -> float:
 # the people whose kind of lead that was warm up, and someone who got none of what they need says so.
 func _style_week() -> void:
 	var w := week()
+	# A week without a single one-on-one.
+	if not flags.has("talks_w%d" % w):
+		taras_like(0.5)
 	var late := 0
 	for t in tasks:
 		if t["late"] and int((t["late_day"] - 1) / 5.0) == w:

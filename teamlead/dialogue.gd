@@ -12,8 +12,8 @@ extends RefCounted
 # A condition term is [word, args...]: chapter / day / here / flag / not.
 
 const DIR := "res://data/dialogues"
-const FX := ["flag", "unflag", "days", "mood", "trust", "energy", "style", "boss", "give", "reveal"]
-const TERMS := ["chapter", "day", "here", "flag", "not"]
+const FX := ["flag", "unflag", "days", "mood", "trust", "energy", "style", "boss", "taras", "give", "reveal"]
+const TERMS := ["chapter", "day", "here", "flag", "not", "taras", "irina"]
 
 static var SCENES := {}
 static var ORDER: Array[String] = []

@@ -1,0 +1,81 @@
+# Глава 2. Вокруг команды: Тарас и Палыч.
+
+# Тарас: если игрок поступает как он (taras >= 3), он зовёт «к своим»; если нет — снисходителен.
+== taras_drink
+at: evening
+when: chapter 2, day 10-18
+
+- Вечер. У лифта — Тарас.
+  en: Evening. Taras is by the lift.
+{if taras >= 3} taras [happy]: О, вот и ты. Слушай, а ты молодец. Я сначала думал: очередной «давайте поговорим о чувствах». А ты нормально. Ресурсы бережёшь, лишнего не разводишь.
+  en: Oh, there you are. You know, you're all right. I thought you'd be another "let's talk about our feelings" type. But you're fine. You look after resources, no fuss.
+{if taras >= 3} taras [happy]: Мы с ребятами в бар. Пошли.
+  en: A few of us are heading to the bar. Come along.
+{if taras < 3} taras [sarcastic]: Всё со своими носишься? Один на один, отгулы, «как ты себя чувствуешь»…
+  en: Still fussing over your lot? One-on-ones, days off, "how are you feeling"…
+{if taras < 3} taras [neutral]: Ничего. Пообтешешься. Все пообтёсываются.
+  en: Never mind. You'll smooth out. Everyone does.
+{if taras >= 3} * Пошли. -> drink
+  en: Let's go.
+{if taras >= 3} * В другой раз. -> another_time
+  en: Another time.
+{if taras < 3} * Посмотрим. -> end
+  en: We'll see.
+{if taras < 3} * А ты, значит, пообтесался? -> smoothed
+  en: So you've smoothed out, have you?
+
+-- drink
+- В баре Тарас рассказывает, как «оптимизировал» отдел в прошлом году. Смешно. Почти.
+  en: At the bar Taras tells how he "optimised" a department last year. It's funny. Almost.
+taras [happy]: Главное — не привязываться. Привяжешься — потом резать больно.
+  en: The main thing is not to get attached. Get attached and it hurts when you have to cut.
+> flag taras_drink
+> taras +1
+-> end
+
+-- another_time
+taras [neutral]: Как знаешь. Предложение в силе.
+  en: Suit yourself. The offer stands.
+-> end
+
+-- smoothed
+taras [neutral]: Я? Я с самого начала такой.
+  en: Me? I was always like this.
+- Кнопку лифта он держит чуть дольше, чем нужно.
+  en: He holds the lift button a little longer than he needs to.
+> flag taras_asked
+-> end
+
+
+# Палыч: знакомство, когда Марина присылает его резюме (первый кандидат главы 2).
+== palych_meet
+when: chapter 2, flag palych_sent
+
+- Марина приводит кандидата на короткое знакомство. Мужчина лет шестидесяти, в свитере с оленями, с термосом.
+  en: Marina brings a candidate in for a quick hello. A man of about sixty in a reindeer jumper, holding a thermos.
+palych [happy]: Здравствуйте-здравствуйте! Виктор Павлович. Можно просто Палыч, меня все так зовут.
+  en: Hello, hello! Viktor Pavlovich. Just Palych is fine, everyone calls me that.
+palych [excited]: Я про ваш Chainer почитал. Интересно! Мы в девяностые сборки вообще на дискетах возили. А тут красота.
+  en: I read up on your Chainer. Interesting! Back in the nineties we carried builds around on floppy disks. This is lovely.
+marina [neutral]: Резюме у Виктора Павловича большое. Очень… разнообразное.
+  en: Viktor Pavlovich has a long CV. Very… varied.
+palych [happy]: Возьмёте — не пожалеете. Я на любую движуху. Только объясняйте мне подробно, я не всё с первого раза.
+  en: Take me on, you won't regret it. I'm up for anything. Just explain things to me in detail, I don't always get it the first time.
+* А что вы делали на последнем месте? -> last
+  en: What did you do at your last job?
+* Спасибо, мы подумаем. -> later
+  en: Thank you, we'll think about it.
+
+-- last
+palych [neutral]: Да всего понемногу. Сервера, сеть, принтеры чинил. Кофемашину однажды. Все ко мне шли.
+  en: A bit of everything. Servers, network, fixed the printers. The coffee machine once. Everyone came to me.
+palych [happy]: Медленно, но верно — это про меня.
+  en: Slow but sure — that's me.
+- Он говорит это с гордостью.
+  en: He says it with pride.
+-> end
+
+-- later
+palych [happy]: Конечно-конечно. Термос оставить? Хороший чай, с чабрецом.
+  en: Of course, of course. Shall I leave the thermos? Good tea, with thyme.
+-> end

@@ -1,0 +1,210 @@
+# Глава 2. Вторые зацепки первой команды (docs/characters.md, «Цепочки раскрытия»).
+
+# Алексей: ночной хотфикс, «я сам» и обмолвка про человека, который за ним перепроверял.
+== alex_hotfix
+at: evening
+when: chapter 2, day 3-9, here alex
+
+- 23:40. В чат падает алерт: у «Кредита Доверия» не проходят выкладки. Через минуту — сообщение от Алексея.
+  en: 23:40. An alert drops into the chat: Trust Credit Bank's deliveries are failing. A minute later, a message from Alex.
+alex [neutral]: Видел. Я на связи, сам починю. Никого не дёргай.
+  en: Seen it. I'm on it, I'll fix it myself. Don't wake anyone.
+{if here gena} * Подключи Гену, он знает этот кусок. -> pair
+  en: Bring Gena in, he knows that part.
+* Хорошо. Держи в курсе. -> alone
+  en: OK. Keep me posted.
+* Отбой. Утром починим всей командой. -> morning
+  en: Stand down. We'll fix it in the morning, all of us.
+
+-- pair
+alex [annoyed]: Не надо Гену. Раньше за мной один человек всегда перепроверял.
+  en: Leave Gena out of it. There used to be someone who always double-checked after me.
+- «Печатает…» появляется и пропадает. Дважды.
+  en: "Typing…" appears and disappears. Twice.
+alex [neutral]: Неважно. Справлюсь.
+  en: Never mind. I'll manage.
+* Это не обсуждается. Гена подключается. -> pair_insist
+  en: Not up for discussion. Gena's joining.
+* Ладно. Сам так сам. -> alone
+  en: Fine. On your own, then.
+
+-- pair_insist
+gena [tired]: Подключился. Алексей, показывай, что ты там уже накрутил.
+  en: I'm on. Alex, show me what you've done so far.
+- В 01:20 выкладки проходят. Алексей пишет «спасибо» — Гене, не вам. И то через полчаса.
+  en: At 01:20 the deliveries go through. Alex writes "thanks" — to Gena, not you. Half an hour later.
+> energy alex -1
+> energy gena -1
+> mood alex -0.5
+> flag alex_hotfix_helped
+> style I 0.3
+-> end
+
+-- alone
+- В 03:05: «Починил». Без подробностей.
+  en: At 03:05: "Fixed." No details.
+- Утром Алексей приходит с красными глазами и делает вид, что всё как обычно.
+  en: In the morning Alex comes in with red eyes and acts as if nothing happened.
+> energy alex -3
+> flag alex_hotfix_alone
+> style P 0.5
+-> end
+
+-- morning
+alex [annoyed]: Утром у банка уже будет совещание про нас. Ладно. Как скажешь.
+  en: By morning the bank will already be holding a meeting about us. Fine. Your call.
+- Утром он всё равно в офисе раньше всех.
+  en: In the morning he's in the office before everyone anyway.
+> energy alex -1
+> boss -0.5
+> style A 0.3
+-> end
+
+
+# Вика: Ирина осаживает её на разборе, Борис Аркадьевич «шутит». Жёсткость Ирины — у жёстких типов (P, X).
+== vika_review
+when: chapter 2, day 5-12, here vika
+
+- Разбор недели у Ирины Викторовны. Вика показывает подключение «Кредита Доверия»: сроки, цифры, ни одной заминки.
+  en: The weekly review with Irina. Vika presents the Trust Credit Bank onboarding: dates, numbers, not a single hitch.
+vika [neutral]: Подключение закрыто на два дня раньше плана. Банк подписал акт.
+  en: Onboarding closed two days ahead of plan. The bank has signed off.
+{if irina P X} boss [annoyed]: Это вы сами сделали? Или как обычно: команда сделала, а показываете вы?
+  en: Did you do this yourself? Or the usual: the team did it and you present it?
+{if irina A E I} boss [neutral]: Хорошо. В следующий раз без слайдов, просто цифры.
+  en: Fine. Next time, no slides, just the numbers.
+boris [happy]: Ирина Викторовна, ну что вы. Вика у нас — лицо команды. С таким лицом любой акт подпишут.
+  en: Oh, Irina, come on. Vika is the face of the team. With a face like that, anyone would sign off.
+- Кто-то из продуктовых смеётся. Вика улыбается — ровно настолько, насколько положено.
+  en: Someone from the product teams laughs. Vika smiles — exactly as much as is expected.
+* Подключение от начала до конца — работа Вики. -> credit
+  en: The onboarding, start to finish, is Vika's work.
+* Борис Аркадьевич, давайте по делу. -> cut_boris
+  en: Boris, let's stick to the point.
+* (Промолчать.) -> silent
+  en: (Say nothing.)
+
+-- credit
+boss [neutral]: Принято.
+  en: Noted.
+- После разбора Вика проходит мимо вашего стола и, не останавливаясь, бросает: «Не стоило».
+  en: After the review Vika walks past your desk and, without stopping, says: "You shouldn't have."
+- Через час в календаре от неё приглашение: «Синк по банкам, 15 минут». Раньше она таких не ставила.
+  en: An hour later there's an invite from her in your calendar: "Bank sync, 15 minutes." She never sent those before.
+> flag vika_credited
+> trust vika +1
+> taras -0.5
+> style I 0.5
+-> end
+
+-- cut_boris
+boris [embarrassed]: Да я же шучу. Совсем шуток не понимаете.
+  en: I'm only joking. Nobody gets a joke anymore.
+boss [neutral]: По делу так по делу. Дальше.
+  en: The point it is. Next.
+- Вика ничего не говорит. Но следующий слайд она рассказывает на полтона твёрже.
+  en: Vika says nothing. But she presents the next slide half a tone firmer.
+> flag vika_cut_boris
+> trust vika +1
+> style A 0.3
+-> end
+
+-- silent
+- Разбор идёт дальше. Вика досказывает свой слайд так, будто ничего не было.
+  en: The review moves on. Vika finishes her slide as if nothing happened.
+- Вечером у неё в мессенджере статус «не беспокоить».
+  en: In the evening her status reads "do not disturb".
+> flag vika_review_silent
+> mood vika -1
+> taras +0.5
+-> end
+
+
+# Дима: засиживается с документацией, обмолвка «у нас в школе».
+== dima_docs
+at: evening
+when: chapter 2, day 6-14, here dima
+
+- Вечер. Дима всё ещё сидит над вики: схемы, стрелочки, жёлтые плашки «важно!».
+  en: Evening. Dima is still at the wiki: diagrams, arrows, yellow "important!" boxes.
+dima [excited]: Смотри, я расписал, как выкатывается на стенд. С картинками. У нас в школе так объясняли: сначала картинка, потом…
+  en: Look, I wrote up how we deploy to a test environment. With pictures. At school we explained it like that: first the picture, then…
+- Он осекается на полуслове.
+  en: He stops mid-sentence.
+dima [embarrassed]: Ну, в смысле, на курсах. Неважно.
+  en: I mean, on the course. Never mind.
+* В школе? -> school
+  en: At school?
+* Покажи, что получилось. -> show
+  en: Show me what you've got.
+* Иди домой, завтра доделаешь. -> home
+  en: Go home, finish it tomorrow.
+
+-- school
+dima [embarrassed]: А? Да так. Оговорился.
+  en: Huh? Oh, nothing. Slip of the tongue.
+- Он слишком быстро закрывает вкладку.
+  en: He closes the tab a little too quickly.
+> flag dima_slip
+-> end
+
+-- show
+- Страница понятная. Понятнее всего, что есть в вики. Так не пишет даже Гена.
+  en: The page is clear. Clearer than anything else in the wiki. Not even Gena writes like this.
+dima [happy]: Правда нормально? Я три раза переделывал.
+  en: Is it really OK? I redid it three times.
+> flag dima_docs_seen
+> mood dima +1
+> reveal dima drive
+> style I 0.3
+-> end
+
+-- home
+dima [neutral]: Ещё пять минут.
+  en: Five more minutes.
+- Через час он всё ещё онлайн.
+  en: An hour later he's still online.
+> energy dima -1
+-> end
+
+
+# Гена: ночные коммиты в старый Jenkins. Если он остался в vim, Алексей не упустит случая.
+== gena_night
+when: chapter 2, day 4-12, here gena
+
+- Утром в ленте коммитов: старый Jenkins, 03:12, 03:40, 04:05. Автор — Гена.
+  en: In the morning, the commit feed: old Jenkins, 03:12, 03:40, 04:05. Author: Gena.
+{if not flag gena_tools} alex [sarcastic]: Гена опять ночью в vim сидел. Днём не успевает — у нас-то всё теперь быстрее.
+  en: Gena was up in vim all night again. Can't keep up in the day — everything's faster for the rest of us now.
+gena [tired]: Доброе.
+  en: Morning.
+* Гена, что там ночью было? -> ask
+  en: Gena, what was that last night?
+* Ночью не работаем. Это не просьба. -> order
+  en: No working at night. That's not a request.
+* (Ничего не говорить.) -> nothing
+  en: (Say nothing.)
+
+-- ask
+gena [neutral]: Не спалось. Подкрутил кое-что.
+  en: Couldn't sleep. Tweaked a few things.
+gena [neutral]: Если старый Jenkins однажды встанет, лучше, чтобы было кому его поднять.
+  en: If old Jenkins ever goes down, it's better if there's someone to bring it back up.
+- «Кому» он произносит так, будто это может быть только один человек.
+  en: He says "someone" as if it could only ever be one person.
+> flag gena_night_asked
+-> end
+
+-- order
+gena [annoyed]: Как скажешь.
+  en: Your call.
+- Следующей ночью коммитов нет. Через ночь — снова есть, только от сервисной учётки.
+  en: The next night there are no commits. The night after, there are again — from a service account.
+> mood gena -0.5
+> flag gena_night_ordered
+-> end
+
+-- nothing
+> energy gena -1
+> flag gena_night_ignored
+-> end
