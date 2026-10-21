@@ -2327,6 +2327,11 @@ func _entry_text(entry: Dictionary) -> String:
 # in fractions of the picture). No picture yet: the coloured circle with a letter.
 const PORTRAIT_DIR := "res://art/portraits/"
 const PORTRAIT_FACE := {"gena": Rect2(0.19, 0.04, 0.56, 0.56)}
+# A character needs only a few pictures: an emotion without its own falls back to the nearest one there is.
+const PORTRAIT_NEAREST := {
+	"tired": ["sad"], "worried": ["sad"], "embarrassed": ["sad"], "angry": ["annoyed"],
+	"excited": ["happy"], "sarcastic": ["happy", "annoyed"],
+}
 const PORTRAIT_FACE_DEFAULT := Rect2(0.2, 0.05, 0.6, 0.6)
 const FACE_SHADER := """
 shader_type canvas_item;
@@ -2345,7 +2350,10 @@ func _portrait(p: String, emo: String = "") -> Texture2D:
 	var key := p + "_" + emo
 	if not portrait_cache.has(key):
 		var found: Texture2D = null
-		for name in ([p + "_" + emo] if emo != "" else []) + [p + "_neutral"]:
+		var names: Array = []
+		for e in ([emo] if emo != "" else []) + PORTRAIT_NEAREST.get(emo, []) + ["neutral"]:
+			names.append(p + "_" + e)
+		for name in names:
 			var path: String = PORTRAIT_DIR + name + ".png"
 			if ResourceLoader.exists(path):
 				found = load(path)
