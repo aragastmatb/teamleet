@@ -2052,6 +2052,17 @@ func _story_portrait(p: String, emo: String) -> Control:
 	inner.alignment = BoxContainer.ALIGNMENT_BEGIN if mobile else BoxContainer.ALIGNMENT_CENTER
 	box.add_child(inner)
 	var size := 64 if mobile else 168
+	var tex := _portrait(p, emo)
+	if tex != null and not mobile:
+		# The whole picture, the mood in the pill under the name.
+		var pic := TextureRect.new()
+		pic.texture = tex
+		pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		pic.custom_minimum_size = Vector2(220, 220)
+		pic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		inner.add_child(pic)
 	# Placeholder portrait until there's art: their letter, ringed in the colour of the mood.
 	var ring := PanelContainer.new()
 	var ring_style := _flat(EMO_COLORS.get(emo, COL_BORDER))
@@ -2059,8 +2070,9 @@ func _story_portrait(p: String, emo: String) -> Control:
 	ring_style.set_content_margin_all(5)
 	ring.add_theme_stylebox_override("panel", ring_style)
 	ring.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	ring.add_child(_avatar(p, size))
-	inner.add_child(ring)
+	ring.add_child(_avatar(p, size, emo))
+	if tex == null or mobile:
+		inner.add_child(ring)
 	var names := _vbox(4)
 	names.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	inner.add_child(names)
@@ -2310,7 +2322,61 @@ func _entry_text(entry: Dictionary) -> String:
 
 # ---------- widget helpers ----------
 
-func _avatar(p: String, size: int) -> Control:
+# Art, where there is some: art/portraits/<who>_<emotion>.png, falling back to <who>_neutral.png.
+# Small avatars show only the face, cut out as a circle; PORTRAIT_FACE says where the face is (a square,
+# in fractions of the picture). No picture yet: the coloured circle with a letter.
+const PORTRAIT_DIR := "res://art/portraits/"
+const PORTRAIT_FACE := {"gena": Rect2(0.19, 0.04, 0.56, 0.56)}
+const PORTRAIT_FACE_DEFAULT := Rect2(0.2, 0.05, 0.6, 0.6)
+const FACE_SHADER := """
+shader_type canvas_item;
+uniform vec4 region = vec4(0.0, 0.0, 1.0, 1.0);
+void fragment() {
+	vec4 c = texture(TEXTURE, region.xy + UV * region.zw);
+	float d = distance(UV, vec2(0.5));
+	COLOR = vec4(c.rgb, c.a * (1.0 - smoothstep(0.47, 0.5, d)));
+}
+"""
+var portrait_cache := {}
+var face_shader: Shader
+
+
+func _portrait(p: String, emo: String = "") -> Texture2D:
+	var key := p + "_" + emo
+	if not portrait_cache.has(key):
+		var found: Texture2D = null
+		for name in ([p + "_" + emo] if emo != "" else []) + [p + "_neutral"]:
+			var path: String = PORTRAIT_DIR + name + ".png"
+			if ResourceLoader.exists(path):
+				found = load(path)
+				break
+		portrait_cache[key] = found
+	return portrait_cache[key]
+
+
+func _face(p: String, size: int, emo: String = "") -> Control:
+	var tex := _portrait(p, emo)
+	if tex == null:
+		return null
+	if face_shader == null:
+		face_shader = Shader.new()
+		face_shader.code = FACE_SHADER
+	var r: Rect2 = PORTRAIT_FACE.get(p, PORTRAIT_FACE_DEFAULT)
+	var mat := ShaderMaterial.new()
+	mat.shader = face_shader
+	mat.set_shader_parameter("region", Vector4(r.position.x, r.position.y, r.size.x, r.size.y))
+	var pic := TextureRect.new()
+	pic.texture = tex
+	pic.material = mat
+	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_SCALE
+	pic.custom_minimum_size = Vector2(size, size)
+	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return pic
+
+
+func _avatar(p: String, size: int, emo: String = "") -> Control:
 	var box := PanelContainer.new()
 	box.custom_minimum_size = Vector2(size, size)
 	box.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -2321,6 +2387,11 @@ func _avatar(p: String, size: int) -> Control:
 	box.add_theme_stylebox_override("panel", style)
 	var name := Loc.t("you") if p == "me" else Loc.person(p)
 	box.tooltip_text = name
+	var face := _face(p, size, emo)
+	if face != null:
+		style.bg_color = style.bg_color.lerp(COL_SURFACE, 0.75)
+		box.add_child(face)
+		return box
 	var l := _label(name.substr(0, 1).to_upper(), int(size * 0.46), COL_SURFACE, false, true)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
