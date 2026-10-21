@@ -2326,7 +2326,10 @@ func _entry_text(entry: Dictionary) -> String:
 # Small avatars show only the face, cut out as a circle; PORTRAIT_FACE says where the face is (a square,
 # in fractions of the picture). No picture yet: the coloured circle with a letter.
 const PORTRAIT_DIR := "res://art/portraits/"
-const PORTRAIT_FACE := {"gena": Rect2(0.19, 0.04, 0.56, 0.56)}
+const PORTRAIT_FACE := {
+	"gena": Rect2(0.19, 0.04, 0.56, 0.56), "alex": Rect2(0.3, 0.1, 0.6, 0.6), "vika": Rect2(0.32, 0.08, 0.56, 0.56),
+	"dima": Rect2(0.27, 0.06, 0.6, 0.6), "taras": Rect2(0.25, 0.07, 0.6, 0.6), "boss": Rect2(0.3, 0.08, 0.6, 0.6),
+}
 # A character needs only a few pictures: an emotion without its own falls back to the nearest one there is.
 const PORTRAIT_NEAREST := {
 	"tired": ["sad"], "worried": ["sad"], "embarrassed": ["sad"], "angry": ["annoyed"],
