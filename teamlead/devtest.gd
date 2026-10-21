@@ -28,6 +28,8 @@ static func reach(r, point: String) -> bool:
 					r.story_next()
 				else:
 					r.story_choose(r.story_choices()[0]["i"])
+			"standup":
+				r.standup_close()
 			"event":
 				r.resolve_event(r.events[0]["choices"][0])
 			"plan":

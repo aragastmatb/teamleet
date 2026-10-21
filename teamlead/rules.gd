@@ -104,6 +104,7 @@ var week_style := {}
 var events: Array[Dictionary] = []
 # A story conversation under way (data/dialogues): {"id", "pos", "wait": "line"/"choice", "log": [{"who", "emo", "ru", "en"}]}.
 var story := {}
+var standup := {} # this morning's stand-up: {"lines": [...], "reacted": n}, see _open_standup
 # The morning's cards, held back until the morning scenes are answered.
 var arriving: Array = []
 var review: Array[Dictionary] = []
@@ -241,6 +242,8 @@ func _start_day() -> void:
 
 
 func _open_morning() -> void:
+	if _open_standup():
+		return
 	_queue_events()
 	if events.is_empty():
 		_deliver_arrivals()
@@ -1125,6 +1128,138 @@ func _story_end() -> void:
 		_open_morning()
 	else:
 		phase = then
+
+
+# ---------- the morning stand-up ----------
+
+# Every morning after any story scene, before the chat: everyone at work says one line, built from how they
+# really are. Nobody says "I'm stuck" or "I'm worn out" in so many words; you hear it the way you would on a
+# real call. One reaction is free, each next one costs attention.
+const STANDUP_REACTIONS := {"stuck": "sit", "tired": "rest", "swamped": "lighten", "idle": "backlog", "done": "praise"}
+
+
+func _open_standup() -> bool:
+	if day == 1 or flags.get("standup_day", -1) == day:
+		return false
+	flags["standup_day"] = day
+	var lines: Array = []
+	for p in team:
+		if available(p) and not people[p]["absent"]:
+			lines.append(_standup_line(p))
+	if lines.is_empty():
+		return false
+	standup = {"lines": lines, "reacted": 0}
+	_narrate("standup.log")
+	phase = "standup"
+	return true
+
+
+func _standup_line(p: String) -> Dictionary:
+	var q := queue_of(p)
+	var line := {"who": p, "topic": "quiet", "uid": -1, "args": [], "names": {}, "reacted": false}
+	for t in q:
+		if t.get("stuck", 0) > 0:
+			line["topic"] = "stuck"
+			line["uid"] = t["uid"]
+			line["key"] = _own_key("standup.stuck%d" % mini(2, t["stuck"]), p)
+			line["names"] = {"task": "@taskname." + t["id"]}
+			return line
+	if _feels_tired(p):
+		line["topic"] = "tired"
+		line["key"] = _own_key("standup.tired", p)
+		return line
+	if q.size() >= OVERLOAD_AT:
+		line["topic"] = "swamped"
+		line["key"] = _own_key("standup.swamped", p)
+		return line
+	for t in tasks:
+		if t["status"] == "done" and t["owner"] == p and t["done_day"] == day - 1 and (t["key"] or t["size"] >= 2.0):
+			line["topic"] = "done"
+			line["key"] = _own_key("standup.done", p)
+			line["names"] = {"task": "@taskname." + t["id"]}
+			return line
+	if q.is_empty():
+		# Sitting without work since yesterday is worth saying; this morning's empty plate isn't.
+		if people[p]["idle_days"] >= 1:
+			line["topic"] = "idle"
+			line["key"] = _own_key("standup.idle", p)
+		else:
+			line["key"] = _own_key("standup.ready", p)
+		return line
+	line["key"] = _own_key("standup.quiet", p)
+	line["names"] = {"task": "@taskname." + q[0]["id"]}
+	return line
+
+
+func _own_key(key: String, p: String) -> String:
+	return key + "." + p if L.has_key(key + "." + p) else key
+
+
+# What you can say to this line, or "" if there's nothing to do about it.
+func standup_reaction(i: int) -> String:
+	if phase != "standup" or i < 0 or i >= standup["lines"].size():
+		return ""
+	var line: Dictionary = standup["lines"][i]
+	var r: String = STANDUP_REACTIONS.get(line["topic"], "")
+	if line["reacted"] or not available(line["who"]):
+		return ""
+	if r == "backlog" and backlog().is_empty():
+		return ""
+	if r == "sit" and task(line["uid"]).is_empty():
+		return ""
+	return r
+
+
+func standup_cost() -> bool:
+	return standup.get("reacted", 0) > 0
+
+
+func standup_react(i: int) -> void:
+	var r := standup_reaction(i)
+	if r == "":
+		return
+	var line: Dictionary = standup["lines"][i]
+	var p: String = line["who"]
+	if standup_cost():
+		spend_attention()
+	standup["reacted"] += 1
+	line["reacted"] = true
+	history.append({"who": "you", "key": "standup.say." + r, "args": [], "names": line["names"], "to": p, "day": day})
+	match r:
+		"sit":
+			# The same as sitting down with them over it: it gets unstuck, and you were personally involved.
+			var t := task(line["uid"])
+			t["sit_today"] = true
+			t["involved"] = true
+			my_week_mgmt[week()] += 2
+			lead("P", 0.3)
+			lead("I", 0.3)
+		"rest":
+			give_day_off(p)
+			lead("I", 0.5)
+		"lighten":
+			lighten(p)
+			lead("A", 0.3)
+		"backlog":
+			var t: Dictionary = backlog()[0]
+			if not t.get("started", false):
+				t["started"] = true
+				lead("E", 0.7)
+			t["owner"] = p
+			t["status"] = "active"
+			t["assigned_day"] = day
+		"praise":
+			people[p]["mood"] = clampf(people[p]["mood"] + 0.3, -5.0, 5.0)
+			lead("I", 0.3)
+	line["reply"] = _own_key("standup.reply." + r, p)
+	_say(p, line["reply"], [], line["names"])
+
+
+func standup_close() -> void:
+	if phase != "standup":
+		return
+	standup = {}
+	_open_morning()
 
 
 # ---------- planning ----------

@@ -617,6 +617,8 @@ func _render() -> void:
 	match rules.phase:
 		"story":
 			_build_story()
+		"standup":
+			_build_standup()
 		"report":
 			_build_report()
 		"end", "chapter_end":
@@ -1941,6 +1943,97 @@ func _build_story() -> void:
 		next.size_flags_horizontal = Control.SIZE_SHRINK_END
 		actions.add_child(next)
 	_scroll_to_end(scroll)
+
+
+# The morning call: a tile per person, the one line they say, and what you can answer.
+func _build_standup() -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(0.035, 0.118, 0.259, 0.7)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(dim)
+	var view := get_viewport().get_visible_rect().size
+	var w := minf(960.0, view.x - (16.0 if mobile else 64.0))
+	var h := view.y - 16.0 if mobile else minf(640.0, view.y - 64.0)
+	var panel := PanelContainer.new()
+	panel.anchor_left = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -w / 2.0
+	panel.offset_right = w / 2.0
+	panel.offset_top = -h / 2.0
+	panel.offset_bottom = h / 2.0
+	var style := _box(COL_SURFACE, COL_BORDER, 1, 0)
+	style.set_corner_radius_all(16)
+	panel.add_theme_stylebox_override("panel", style)
+	ui.add_child(panel)
+	var right := _vbox(0)
+	panel.add_child(right)
+	var head := _vbox(4)
+	head.add_child(_label(Loc.t("standup.title"), 22, COL_TEXT, false, true))
+	head.add_child(_label(Loc.t("standup.hint_cost" if rules.standup_cost() else "standup.hint_free") + "   " + _attention_text(), 13, COL_MUTED, true))
+	var head_box := _padded(head, 18 if mobile else 28, 16)
+	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	right.add_child(head_box)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right.add_child(scroll)
+	var grid := GridContainer.new()
+	grid.columns = 1 if mobile else 2
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 12)
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_padded(grid, 18 if mobile else 28, 4))
+	var lines: Array = rules.standup["lines"]
+	for i in lines.size():
+		grid.add_child(_standup_tile(lines[i], i))
+	var foot := _padded(HBoxContainer.new(), 18 if mobile else 28, 16)
+	foot.size_flags_vertical = Control.SIZE_SHRINK_END
+	right.add_child(foot)
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	foot.get_child(0).add_child(gap)
+	foot.get_child(0).add_child(_button(Loc.t("standup.close"), _standup_close, 200, "primary"))
+
+
+func _standup_tile(line: Dictionary, i: int) -> Control:
+	var p: String = line["who"]
+	var tile := PanelContainer.new()
+	tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var quiet: bool = line["topic"] == "quiet"
+	var style := _box(COL_BG if quiet else COL_SURFACE, COL_BORDER if quiet else COL_FOCUS, 1, 14)
+	style.set_corner_radius_all(12)
+	tile.add_theme_stylebox_override("panel", style)
+	var v := _vbox(8)
+	tile.add_child(v)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 10)
+	top.add_child(_avatar(p, 40))
+	var name := _label(Loc.person(p), 15, COL_TEXT, false, true)
+	name.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(name)
+	v.add_child(top)
+	v.add_child(_label(Loc.render(line["key"], line["args"], line["names"]), 15, COL_MUTED if quiet else COL_TEXT, true))
+	if Loc.has_key(line["key"] + ".aside"):
+		v.add_child(_label(Loc.t(line["key"] + ".aside"), 13, COL_FAINT, true))
+	var r := rules.standup_reaction(i)
+	if r != "":
+		v.add_child(_answer_button(Loc.render("standup.say." + r, [], line["names"]) + (_cost_mark() if rules.standup_cost() else ""), _standup_react.bind(i)))
+	elif line["reacted"]:
+		v.add_child(_label(Loc.render("standup.say." + rules.STANDUP_REACTIONS[line["topic"]], [], line["names"]), 13, COL_PRIMARY, true))
+		v.add_child(_label(Loc.render(line["reply"], [], line["names"]), 14, COL_TEXT, true))
+	return tile
+
+
+func _standup_react(i: int) -> void:
+	rules.standup_react(i)
+	_render()
+
+
+func _standup_close() -> void:
+	rules.standup_close()
+	_render()
 
 
 func _story_portrait(p: String, emo: String) -> Control:
