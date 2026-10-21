@@ -650,6 +650,10 @@ func _layoff_deadline() -> void:
 		if done < fewest:
 			fewest = done
 			pick = p
+	if pick == "":
+		# Nobody left to cut: the order has nothing to act on.
+		flags.erase("layoff_until")
+		return
 	boss -= 0.5
 	_say("boss", "layoff.irina_chose", [], {"who": "@name.%s.acc" % pick})
 	let_go(pick, true)
