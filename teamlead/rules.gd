@@ -800,13 +800,15 @@ func resolve_event(choice: String) -> void:
 
 # ---------- story conversations ----------
 
-# The first scene in data/dialogues whose conditions hold, once per run.
-func _queue_story() -> void:
+# The first scene in data/dialogues for this time of day whose conditions hold, once per run.
+# An evening scene remembers where the day was going (the summary or the Friday report) and goes there after.
+func _queue_story(at: String = "morning") -> void:
 	story = {}
 	for id in Dialogue.ORDER:
-		if not flags.has("story_" + id) and story_true(Dialogue.SCENES[id]["when"]):
+		var sc: Dictionary = Dialogue.SCENES[id]
+		if sc["at"] == at and not flags.has("story_" + id) and story_true(sc["when"]):
 			flags["story_" + id] = true
-			story = {"id": id, "pos": 0, "wait": "", "log": []}
+			story = {"id": id, "pos": 0, "wait": "", "log": [], "then": phase if at == "evening" else ""}
 			phase = "story"
 			_story_run()
 			return
@@ -915,6 +917,8 @@ func _story_fx(w: Array) -> void:
 			flags[w[1]] = true
 		"unflag":
 			flags.erase(w[1])
+		"days":
+			flags[w[1]] = day + int(w[2])
 		"mood", "trust", "energy":
 			if people.has(w[1]) and available(w[1]):
 				people[w[1]][w[0]] += float(w[2])
@@ -961,10 +965,14 @@ func _story_end() -> void:
 		if e["who"] != "you" and e["who"] != "":
 			who = e["who"]
 			break
+	var then: String = story.get("then", "")
 	story = {}
 	if who != "":
 		history.append({"who": "", "key": "story.log", "args": [], "names": {"who": "@name.%s.ins" % who}, "day": day})
-	_open_morning()
+	if then == "":
+		_open_morning()
+	else:
+		phase = then
 
 
 # ---------- planning ----------
@@ -1562,6 +1570,8 @@ func end_day() -> void:
 		phase = "report"
 	else:
 		phase = "evening"
+	# An evening conversation comes before the day's summary.
+	_queue_story("evening")
 
 
 # Staying late wears you down; rest days bring you back. Run yourself into the ground and you're
@@ -1715,6 +1725,7 @@ func _speed(p: String, t: Dictionary) -> float:
 		s *= 1.05
 	# Told to hurry or to take care when you stepped in.
 	s *= t.get("pace", 1.0)
+	s *= tools_factor(p)
 	var share: float = shares.get(t["uid"], 0.0)
 	# New people are slow at first, unless someone who knows the work sits with them.
 	if day - st["joined"] < NEWBIE_DAYS and not (share > 0.0 and people.has(t["helper"]) and people[t["helper"]]["skills"][t["cat"]] >= 2):
@@ -1728,6 +1739,25 @@ func _speed(p: String, t: Dictionary) -> float:
 		else:
 			s += share * 0.3 * (SPEED_BASE + SPEED_PER_SKILL * hs)
 	return s
+
+
+# The team's new tools (the AI assistant from Alex, then every finished improvement) speed up whoever uses
+# them. Gena sticks to vim unless he's made to switch, and for the first days after that he's slower, not faster.
+const TOOLS_BASE := 0.1
+const TOOLS_PER_IMPROVEMENT := 0.03
+const TOOLS_MAX := 0.25
+const GENA_SWITCH_DAYS := 3
+
+
+func tools_factor(p: String) -> float:
+	if not flags.has("team_tools"):
+		return 1.0
+	if p == "gena":
+		if not flags.has("gena_tools"):
+			return 1.0
+		if day < flags.get("gena_slow_until", 0):
+			return 0.7
+	return 1.0 + minf(TOOLS_MAX, TOOLS_BASE + TOOLS_PER_IMPROVEMENT * improved.size())
 
 
 # How much of the helper's day goes to this task: all of it if they have nothing of their own,
@@ -2996,6 +3026,9 @@ func _wants_to_volunteer(p: String) -> bool:
 	if st["energy"] < info["rest_at"] * _stamina(p):
 		return false
 	if info.get("needs_approval", false) and st["mood"] < 1.5:
+		return false
+	# Told to finish one thing before grabbing the next.
+	if day <= flags.get("focus_until_" + p, 0):
 		return false
 	return rng.randf() < info["initiative"] + (0.2 if leans("E") else 0.0)
 

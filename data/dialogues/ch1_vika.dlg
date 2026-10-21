@@ -1,0 +1,62 @@
+# Глава 1. Вика, зацепка 1: клиент спрашивает не того, кто ведёт его банк.
+# Игра запоминает, вступился игрок или промолчал (vika_defended / vika_unheard / vika_overridden).
+
+== vika_call
+when: chapter 1, day 4-12, here vika, here alex
+
+- Созвон с «Кредитом Доверия»: банк подключает новый стенд к порталу. С их стороны — Олег, руководитель платформы.
+  en: A call with Trust Credit Bank: they're connecting a new environment to the portal. On their side is Oleg, head of their platform.
+oleg [neutral]: Коллеги, вопрос по подключению. Алексей, вы же инженер — расскажите, как нам заводить доступы на портале?
+  en: Colleagues, a question about onboarding. Alex, you're the engineer — tell us how we set up access on the portal?
+vika [neutral]: Подключение банков веду я. Давайте расскажу —
+  en: I run bank onboarding. Let me walk you through —
+oleg [neutral]: Да-да, секундочку. Алексей?
+  en: Yes, yes, just a second. Alex?
+- Алексей смотрит на Вику. Потом на вас.
+  en: Alex looks at Vika. Then at you.
+alex [embarrassed]: Ну… там, в общем, через заявку. Или через Тараса. Сейчас гляну.
+  en: Well… it's, uh, through a request. Or through Taras. Let me check.
+* Олег, по подключению — к Вике. Она ведёт ваш банк. -> defend
+  en: Oleg, onboarding questions go to Vika. She runs your account.
+* (Промолчать — пусть Алексей разбирается.) -> silent
+  en: (Say nothing — let Alex figure it out.)
+* Давайте отвечу я. -> myself
+  en: Let me answer that.
+
+-- defend
+oleg [embarrassed]: А… да, конечно. Вика, слушаю.
+  en: Oh… yes, of course. Vika, go ahead.
+- Вика за три минуты объясняет то, на что у Алексея ушло бы полчаса. Без единой паузы.
+  en: In three minutes Vika explains what would have taken Alex half an hour. Without a single pause.
+vika [neutral]: Вопросы? …Вопросов нет.
+  en: Questions? …No questions.
+- После созвона от неё одно сообщение: «Можно было не вступаться. Я бы справилась».
+  en: After the call, a single message from her: "You didn't have to step in. I'd have managed."
+> flag vika_defended
+> trust vika +1
+> style I 0.5
+-> end
+
+-- silent
+alex [embarrassed]: …Давайте я уточню и напишу письмом.
+  en: …Let me double-check and send you an email.
+oleg [neutral]: Хорошо, ждём.
+  en: Fine, we'll wait.
+- Вика молча выключает камеру до конца созвона.
+  en: Vika silently turns off her camera for the rest of the call.
+> flag vika_unheard
+> mood vika -1
+> trust vika -1
+-> end
+
+-- myself
+oleg [happy]: Отлично, спасибо!
+  en: Great, thanks!
+- Ответ правильный. На вопрос, который был не к вам и не к Алексею.
+  en: The answer is right. To a question that was meant for neither you nor Alex.
+vika [sarcastic]: Спасибо, что ответили за меня.
+  en: Thanks for answering for me.
+> flag vika_overridden
+> mood vika -0.5
+> style P 0.3
+-> end

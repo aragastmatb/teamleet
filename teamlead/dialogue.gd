@@ -12,7 +12,7 @@ extends RefCounted
 # A condition term is [word, args...]: chapter / day / here / flag / not.
 
 const DIR := "res://data/dialogues"
-const FX := ["flag", "unflag", "mood", "trust", "energy", "style", "boss", "give", "reveal"]
+const FX := ["flag", "unflag", "days", "mood", "trust", "energy", "style", "boss", "give", "reveal"]
 const TERMS := ["chapter", "day", "here", "flag", "not"]
 
 static var SCENES := {}
@@ -54,7 +54,7 @@ static func _parse(path: String) -> void:
 			var id := s.substr(2).strip_edges()
 			if SCENES.has(id):
 				ERRORS.append("%s: scene %s defined twice" % [where, id])
-			scene = {"id": id, "when": [], "ops": [], "labels": {}, "where": where}
+			scene = {"id": id, "when": [], "at": "morning", "ops": [], "labels": {}, "where": where}
 			last = {}
 			continue
 		if scene.is_empty():
@@ -66,6 +66,11 @@ static func _parse(path: String) -> void:
 				ERRORS.append("%s: en: with nothing to translate" % where)
 			else:
 				last["en"] = s.substr(3).strip_edges()
+			continue
+		if s.begins_with("at:"):
+			scene["at"] = s.substr(3).strip_edges()
+			if not scene["at"] in ["morning", "evening"]:
+				ERRORS.append("%s: at: is morning or evening" % where)
 			continue
 		if s.begins_with("when:"):
 			scene["when"] = _terms(s.substr(5), where)

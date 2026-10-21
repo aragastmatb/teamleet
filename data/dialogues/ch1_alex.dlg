@@ -75,3 +75,56 @@ alex [neutral]: Как скажешь. Идея никуда не денется
 > mood alex -0.5
 > flag alex_idea_shelved
 -> end
+
+
+# Глава 1. Алексей, вторая половина зацепки 1: вопрос о прошлой работе, от которого он уходит.
+== alex_late
+at: evening
+when: chapter 1, day 8-16, here alex, flag story_alex_reports
+
+- Вечер. Офис почти пустой, только у Алексея горит монитор.
+  en: Evening. The office is almost empty; only Alex's monitor is still on.
+alex [tired]: А, ты ещё здесь. Я раннеры добиваю.
+  en: Oh, you're still here. I'm finishing off the runners.
+* Поздно уже. Иди домой — это не просьба. -> home
+  en: It's late. Go home — that's not a request.
+* Помочь? -> help
+  en: Need a hand?
+* Слушай, а где ты раньше работал? -> past
+  en: Say, where did you work before this?
+* (Не мешать — уйти тихо.) -> leave
+  en: (Don't disturb him — leave quietly.)
+
+-- home
+alex [annoyed]: Ещё полчаса.
+  en: Half an hour more.
+alex [tired]: …Ладно. Ухожу.
+  en: …Fine. I'm going.
+> energy alex +2
+> mood alex -0.3
+> style I 0.3
+-> end
+
+-- help
+alex [annoyed]: Не надо. Я сам.
+  en: No need. I've got it.
+- Это «сам» звучит не как гордость. Скорее как правило.
+  en: That "I've got it" doesn't sound like pride. More like a rule.
+> flag alex_refused_help
+-> end
+
+-- past
+alex [neutral]: В банке. Большом.
+  en: At a bank. A big one.
+alex [neutral]: Неважно.
+  en: Doesn't matter.
+- Он закрывает ноутбук чуть резче, чем нужно. Через минуту его уже нет.
+  en: He shuts the laptop a little harder than he needs to. A minute later he's gone.
+> flag alex_deflected
+-> end
+
+-- leave
+- Утром в чате его сообщение, отправленное в 02:14: «раннеры живы».
+  en: In the morning there's a message from him in the chat, sent at 02:14: "runners are alive."
+> energy alex -1
+-> end

@@ -1,0 +1,60 @@
+# Глава 1. Гена, зацепка 1: новый инструмент и «мне и в vim нормально».
+# С этой сцены у команды есть ИИ-ассистент: все работают быстрее, кроме Гены, пока он не перейдёт.
+
+== team_tools
+when: chapter 1, day 4-10, here gena, here alex
+
+- Алексей ставит всей команде ИИ-ассистента в редактор. К обеду без него уже никто не может.
+  en: Alex installs an AI assistant in everyone's editor. By lunch nobody can work without it.
+alex [excited]: Всё, у всех стоит. Автодополнение, ревью, тесты сам пишет. Работаем быстрее.
+  en: Done, everyone has it. Autocomplete, reviews, it writes the tests. We're faster now.
+{if here dima} dima [happy]: Оно мне за минуту написало то, что я вчера весь день писал!
+  en: It wrote in a minute what took me all of yesterday!
+gena [neutral]: Я посмотрю. Потом.
+  en: I'll take a look. Later.
+alex [sarcastic]: Гена, «потом» было в прошлом году.
+  en: Gena, "later" was last year.
+gena [annoyed]: Мне и в vim нормально. Двадцать лет нормально было.
+  en: I'm fine in vim. Been fine for twenty years.
+> flag team_tools
+* Гена, давай со всеми. Это не обсуждается. -> force
+  en: Gena, switch with everyone. That's not up for discussion.
+* Как тебе удобно, так и работай. -> own_way
+  en: Work however suits you.
+* А почему не хочешь? Честно. -> why
+  en: Why don't you want to? Honestly.
+
+-- why
+gena [tired]: Честно? Я видел много таких «переходов». После них обычно кто-то становится не нужен.
+  en: Honestly? I've seen a lot of these "transitions". Afterwards someone usually stops being needed.
+gena [neutral]: Ладно. Неважно. Тебе решать.
+  en: Never mind. It doesn't matter. Your call.
+> flag gena_why
+* Переходи. Со всеми. -> force
+  en: Switch. With everyone.
+* Не хочешь — не надо. -> own_way
+  en: If you don't want to, don't.
+
+-- force
+gena [annoyed]: Как скажешь. Только первые дни толку от меня будет меньше, а не больше.
+  en: Your call. Just know that for the first few days I'll be slower, not faster.
+- Гена ставит ассистента с таким лицом, будто ему ставят пломбу.
+  en: Gena installs the assistant with the face of a man getting a filling.
+> flag gena_tools
+> days gena_slow_until 3
+> mood gena -1.5
+> style P 0.3
+> style A 0.3
+-> end
+
+-- own_way
+gena [neutral]: Спасибо.
+  en: Thanks.
+alex [annoyed]: Ну и сиди в своём vim.
+  en: Fine, stay in your vim.
+- Разница в скорости станет видна не сразу. Но станет.
+  en: The difference in speed won't show right away. But it will.
+> mood gena +0.5
+> mood alex -0.3
+> style I 0.3
+-> end

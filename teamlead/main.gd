@@ -7,6 +7,7 @@ const Rules = preload("res://teamlead/rules.gd")
 const Loc = preload("res://teamlead/locale.gd")
 const C = preload("res://teamlead/content.gd")
 const Dialogue = preload("res://teamlead/dialogue.gd")
+const DevTest = preload("res://teamlead/devtest.gd")
 
 const BASE_FONT := 15
 const SIDEBAR_W := 250
@@ -158,6 +159,33 @@ func _ready() -> void:
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 	_render()
+	var args := OS.get_cmdline_user_args()
+	var at := args.find("--test")
+	if at >= 0 and at + 1 < args.size():
+		_start_test(args[at + 1])
+
+
+# tools/test.sh <point>: a fresh run, played up to where the test starts (teamlead/devtest.gd).
+func _start_test(point: String) -> void:
+	setup_open = false
+	# The stand-in doesn't always get through a chapter's goals; a fresh run usually does.
+	var reached := false
+	for attempt in DevTest.ATTEMPTS:
+		rules.start_run(-1, C.BOSS_KINDS[0] if pick_boss == "random" else pick_boss, pick_profile)
+		rules.tips = pick_tips
+		reached = DevTest.reach(rules, point)
+		if reached:
+			break
+	# Questions before this point were answered for you; the "answer in the chat" lesson is behind you.
+	rules.flags["chat_taught"] = true
+	if reached:
+		print("test point %s: chapter %d, day %d, %s" % [point, rules.chapter, rules.chapter_day(), rules.phase])
+	else:
+		push_warning("test point %s never came up; known points: %s" % [point, DevTest.points()])
+	shown = rules.history.size()
+	heard = rules.history.size()
+	chat_read = rules.history.size()
+	_clear_selection()
 
 
 # On Retina screens the window opens at physical pixels and looks tiny; scale it up to fit the screen.

@@ -34,6 +34,8 @@ const STYLE := {
 	"weekend_fire/own": [["A", 0.3], ["I", 0.3]], "weekend_fire/postmortem": [["A", 0.7]], "weekend_fire/blame": [["P", 0.3], ["I", -0.5]],
 	"chaos_meeting/all_go": [["I", 0.3]], "chaos_meeting/me_only": [["P", 0.3]], "chaos_meeting/later": [["A", 0.3]],
 	"decline/later": [["A", 0.3]], "decline/not_ours": [["E", 0.3]], "decline/irina": [["A", 0.3]], "decline/boss_no": [["E", 0.5]],
+	"dima_question/explain": [["I", 0.3]], "dima_question/write_down": [["A", 0.5]], "dima_question/ask_gena": [["I", 0.3], ["A", 0.2]],
+	"dima_question/focus": [["P", 0.3], ["A", 0.2]],
 	"intervene/faster": [["P", 0.7]], "intervene/careful": [["A", 0.7]], "intervene/cut": [["E", 0.5]],
 	"intervene/my_way": [["P", 0.5], ["E", 0.3]], "intervene/take_over": [["P", 2.0]], "intervene/trust": [["I", 0.5]],
 }
@@ -48,7 +50,7 @@ const COMP_STYLE := {
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
 	"probation", "chapter_intro", "layoff_order", "weekend_fire", "chaos_meeting", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
-	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow", "boris_drunk", "friday_deploy",
+	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "dima_question", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow", "boris_drunk", "friday_deploy",
 ]
 
 
@@ -367,6 +369,82 @@ func _check_dima_bored(r) -> Dictionary:
 	if here(r, "alex") and not r.queue_of("alex").is_empty():
 		choices.push_front("pair_alex")
 	return {"who": "dima", "lines": [{"who": "dima", "key": "event.dima_bored.ask"}], "choices": choices}
+
+
+# Dima asks how something works. He takes on everything at once, so answers slip: something you explained
+# comes back a few days later as if new. How you answer decides whether it sticks this time.
+const DIMA_TOPICS := ["deploy", "logs", "runner", "release", "certs"]
+const DIMA_TOPIC_CAT := {"deploy": "pipelines", "logs": "infra", "runner": "infra", "release": "support", "certs": "infra"}
+const DIMA_QUESTION_GAP := 3 # days at least between two questions
+const DIMA_NOTES_TO_SHARE := 3 # written-down answers before he puts his notes up for everyone
+
+
+func _check_dima_question(r) -> Dictionary:
+	if r.chapter > 2 or r.chapter_day() < 2 or not here(r, "dima"):
+		return {}
+	if r.day - r.flags.get("dima_q_day", -100) < DIMA_QUESTION_GAP or r.rng.randf() > 0.6:
+		return {}
+	var told: Dictionary = r.flags.get("dima_told", {})
+	var learned: Dictionary = r.flags.get("dima_learned", {})
+	var topic := ""
+	var again := false
+	# What he was told but didn't write down comes back first.
+	if not told.is_empty() and r.rng.randf() < 0.7:
+		topic = told.keys()[r.rng.randi() % told.size()]
+		again = true
+	else:
+		for x in DIMA_TOPICS:
+			if not told.has(x) and not learned.has(x):
+				topic = x
+				break
+	if topic == "":
+		return {}
+	r.flags["dima_q_day"] = r.day
+	var choices := ["explain", "write_down"]
+	if here(r, "gena"):
+		choices.append("ask_gena")
+	choices.append("focus")
+	return {"who": "dima", "topic": topic, "again": again, "choices": choices,
+		"lines": [{"who": "dima", "key": "event.dima_question.%s.%s" % ["again" if again else "ask", topic]}]}
+
+
+func _resolve_dima_question(r, ev: Dictionary, c: String) -> String:
+	var topic: String = ev["topic"]
+	var told: Dictionary = r.flags.get("dima_told", {})
+	var learned: Dictionary = r.flags.get("dima_learned", {})
+	var dima: Dictionary = r.people["dima"]
+	var reply := "event.dima_question.%s.reply" % c
+	match c:
+		"explain":
+			# Explained, not written down: it will come back.
+			r.attention = maxi(0, r.attention - 1)
+			dima["mood"] += 0.5
+			told[topic] = true
+			if ev["again"]:
+				reply = "event.dima_question.explain.reply_again"
+		"write_down":
+			dima["mood"] -= 1.0 if ev["again"] else 0.6
+			told.erase(topic)
+			learned[topic] = true
+			r.flags["dima_notes"] = r.flags.get("dima_notes", 0) + 1
+			if r.flags["dima_notes"] == DIMA_NOTES_TO_SHARE:
+				r.flags["dima_notes_shared"] = true
+				dima["trust"] += 1
+				reply = "event.dima_question.write_down.shared"
+		"ask_gena":
+			told.erase(topic)
+			learned[topic] = true
+			r._learn("dima", DIMA_TOPIC_CAT[topic], 1.0)
+			# Gena doesn't mind when he has a free minute; in the middle of his own work he does.
+			var busy: bool = not r.queue_of("gena").is_empty()
+			r.people["gena"]["mood"] += -0.4 if busy else 0.3
+			r.say("gena", "event.dima_question.gena_busy" if busy else "event.dima_question.gena_free")
+		"focus":
+			dima["mood"] -= 0.4
+			r.flags["focus_until_dima"] = r.day + 5
+	r.flags["dima_told"] = told
+	r.flags["dima_learned"] = learned
+	return reply
 
 
 # Vika has room and spots a visible task sitting in someone else's queue.
@@ -987,7 +1065,9 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 		routed = _resolve_interview(r, ev, c)
 	elif ev["id"] == "fire":
 		routed = _resolve_fire(r, ev, c)
-	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene", "decline", "interview", "fire"]:
+	elif ev["id"] == "dima_question":
+		routed = _resolve_dima_question(r, ev, c)
+	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene", "decline", "interview", "fire", "dima_question"]:
 		if routed != "":
 			r.say(who, routed, [], names)
 		for q in r.team:
