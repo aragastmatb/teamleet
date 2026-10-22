@@ -1,0 +1,48 @@
+# Глава 3: после сокращения продажи закрыли два банка (rules.gd, _layoff_rush), и работы стало больше, чем людей.
+# В первый раз к Ирине за людьми идёт сам игрок, сценой; дальше просить можно кнопкой в её карточке.
+# Сколько ставок даст Ирина, зависит от того, как попросить.
+
+== ask_people
+place: irina_office
+when: chapter 3-4, flag rush, overload, not flag asked_people
+
+- Вы идёте к Ирине Викторовне сами, без приглашения, с распечаткой доски в руках.
+  en: You go to Irina yourself, uninvited, with a printout of the board in your hand.
+boss [sarcastic]: Дайте угадаю. Не справляетесь.
+  en: Let me guess. You can't keep up.
+{if not flag layoff_done} boss [neutral]: На прошлой неделе вы отстояли команду, а теперь вам её мало. Смело.
+  en: Last week you fought to keep the team, and now it's not enough for you. Bold.
+* Совет только что решил, что у нас лишний человек. А теперь у нас два новых банка. -> facts
+  en: The board has only just decided we had one person too many. And now we have two new banks.
+* Не справляемся. Нужны двое, и чем раньше, тем лучше. -> direct
+  en: We can't keep up. I need two people, the sooner the better.
+* Я понимаю, что сейчас не самое удачное время, но… -> sorry
+  en: I know it's not the best time, but…
+
+-- facts
+boss [annoyed]: Это решала не я, это совет.
+  en: That wasn't my decision, it was the board's.
+- Она долго смотрит в окно за вашей спиной.
+  en: She stares at the window behind you for a long time.
+boss [neutral]: Но считать вы умеете, это хорошо, на совете такое любят. Две ставки, Марина пришлёт людей. И в этот раз берите тех, кого потом не придётся сокращать.
+  en: But you can count, that's good, the board likes that. Two openings, Marina will send people. And this time hire the ones you won't have to cut later.
+> openings 2
+> boss +0.5
+-> end
+
+-- direct
+boss [neutral]: Двое. Вы понимаете, как это выглядит со стороны? Месяц назад минус один, сейчас плюс два.
+  en: Two. Do you see how that looks from outside? A month ago minus one, now plus two.
+boss [sarcastic]: Ладно. Скажу совету, что это рост. Это же рост?
+  en: Fine. I'll tell the board it's growth. It is growth, isn't it?
+> openings 2
+-> end
+
+-- sorry
+boss [annoyed]: Если не время, зачем пришли?
+  en: If it's not the time, why are you here?
+boss [neutral]: Одна ставка. Покажете, что одной мало, дам вторую.
+  en: One opening. Show me one isn't enough and I'll give you a second.
+> openings 1
+> boss -0.5
+-> end

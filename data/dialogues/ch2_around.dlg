@@ -51,7 +51,7 @@ taras [neutral]: У меня? У меня и не начиналось.
 # Свою медлительность он прячет; гордится тем, что всем помогал.
 == palych_meet
 place: meeting_room
-when: chapter 2, flag palych_sent
+when: flag palych_sent
 
 - Марина приводит кандидата на короткое знакомство. Мужчина лет шестидесяти, в свитере с оленями, с термосом.
   en: Marina brings a candidate in for a quick hello. A man of about sixty in a reindeer jumper, holding a thermos.

@@ -14,9 +14,11 @@ extends RefCounted
 # All goals met: on to the next chapter. Some: on, but Irina remembers. None: `fail` is the ending.
 const CHAPTERS := [
 	{"id": "probation", "days": 20, "ready": true},
-	{"id": "round_a", "days": 20, "ready": true, "fail": "company_closed", "openings": 2, "goals": [
+	# Growing without new people: automate. The better it goes, the more people sit idle, and that's what
+	# chapter three's order to cut one is about. No openings here; hiring comes after the cut (see _layoff_rush).
+	{"id": "round_a", "days": 20, "ready": true, "fail": "company_closed", "goals": [
 		{"id": "teams_onboarded", "kind": "flags", "flags": ["onboarded_kyc", "onboarded_payments", "onboarded_regulatory"], "need": 3},
-		{"id": "banks_shipped", "kind": "banks_shipped", "need": 3},
+		{"id": "automation", "kind": "improvements", "need": 3},
 	]},
 	{"id": "round_b", "days": 20, "ready": true, "fail": "scapegoat", "layoff_day": 8, "goals": [
 		{"id": "audit_passed", "kind": "flags", "flags": ["audit_access", "audit_secrets", "audit_trail"], "need": 3},
@@ -168,6 +170,9 @@ const BANKS := {
 	"alpine": {"ru": "«Мы Одна Семья»", "en": "One Family Bank"},
 	"baltic": {"ru": "«Беги Заплати»", "en": "Run & Pay Bank"},
 	"pacific": {"ru": "«Банановый Банк»", "en": "Banana Bank"},
+	# The two sales close right after the cut in chapter three (rules.gd, _layoff_rush).
+	"harbor": {"ru": "«Тихая Гавань»", "en": "Quiet Harbour Bank"},
+	"till": {"ru": "«Своя Касса»", "en": "Own Till Bank"},
 }
 const START_BANKS := ["meridian"]
 # Banks sales can bring in, by chapter; one not sold yet stays on offer later.
@@ -386,6 +391,8 @@ const MAX_CARDS_A_DAY := 5
 # the first week. Per week of the chapter: share of DAILY_LOAD, most cards a day, extra days on deadlines.
 const RAMP := {
 	1: [{"load": 0.55, "cards": 3, "slack": 2}, {"load": 0.7, "cards": 4, "slack": 1}, {"load": 0.85, "cards": 4, "slack": 0}, {"load": 0.95, "cards": 5, "slack": 0}],
+	# Automation month: less work comes in as the month goes on, so the team starts to have time on its hands.
+	2: [{"load": 0.85, "cards": 4, "slack": 1}, {"load": 0.8, "cards": 4, "slack": 0}, {"load": 0.7, "cards": 4, "slack": 0}, {"load": 0.6, "cards": 3, "slack": 0}],
 	0: [{"load": 0.8, "cards": 4, "slack": 1}],
 }
 const MAX_SAME_KIND := 2

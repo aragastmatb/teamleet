@@ -254,6 +254,7 @@ func _open_morning() -> void:
 
 func _deliver_arrivals() -> void:
 	_maybe_sell()
+	_layoff_rush()
 	_hiring_morning()
 	for id in arriving:
 		add_task(id)
@@ -282,11 +283,12 @@ func _arrivals() -> Array:
 		load += C.TASKS[id]["size"]
 	# More banks than chapter one's three bring more work.
 	var ramp := ramp_now()
-	var target: float = C.DAILY_LOAD * ramp["load"] + C.BANK_LOAD * maxi(0, banks.size() - 3)
+	var target: float = C.DAILY_LOAD * ramp["load"] * (RUSH_LOAD if flags.has("rush") else 1.0) + C.BANK_LOAD * maxi(0, banks.size() - 3)
 	if flags.get("relief", false):
 		flags["relief"] = false
 		target -= 1.5
-	while load < target and out.size() < ramp["cards"]:
+	var cards: int = ramp["cards"] + (RUSH_CARDS if flags.has("rush") else 0)
+	while load < target and out.size() < cards:
 		if deck.size() < 4:
 			_refill_deck()
 		var picked := -1
@@ -490,7 +492,7 @@ func _hiring_morning() -> void:
 		if c["until"] < day:
 			candidates.erase(c)
 			_narrate("hire.gone", [], {"who": "@name.%s.nom" % c["id"]})
-	if openings > 0 and candidates.size() < MAX_CANDIDATES and chapter == 2 and not flags.has("palych_sent"):
+	if openings > 0 and candidates.size() < MAX_CANDIDATES and not flags.has("palych_sent"):
 		_new_palych()
 	elif openings > 0 and candidates.size() < MAX_CANDIDATES and (candidates.is_empty() or day % 2 == 0):
 		_new_candidate()
@@ -816,6 +818,61 @@ func _join_bank(b: String) -> void:
 			deck.insert(rng.randi_range(0, deck.size()), id)
 
 
+# A few days after the order to cut one, sales close two banks at once, and from then on there's a lot more
+# work than the team can take: the irony the hiring in chapter three hangs on. The first time you go to
+# Irina about it is a story scene (data/dialogues/ch3_hiring.dlg); after that, ask_people().
+const RUSH_AFTER := 4 # days after the layoff order
+const RUSH_BANKS := ["harbor", "till"]
+const RUSH_LOAD := 1.15
+
+
+func _layoff_rush() -> void:
+	var at: int = C.CHAPTERS[chapter - 1].get("layoff_day", 0)
+	if at == 0 or flags.has("rush") or chapter_day() < at + RUSH_AFTER:
+		return
+	flags["rush"] = true
+	_say("boss", "rush.sold", [], {"b1": "@bankphrase." + RUSH_BANKS[0], "b2": "@bankphrase." + RUSH_BANKS[1]})
+	for b in RUSH_BANKS:
+		_join_bank(b)
+
+
+# Asking Irina for people again, after the first time: she looks at how much is piling up and at your weight.
+const PEOPLE_ASK_GAP := 5 # days between two asks
+const PEOPLE_OVERLOAD := 3.0 # days of unfinished work per person that counts as drowning
+const OVERLOAD_STORY := 2.0 # and enough of a pile-up for the first trip to Irina (the "overload" condition)
+const RUSH_CARDS := 1 # more cards a day can come in once the rush is on
+
+
+func workload() -> float:
+	var left := 0.0
+	for t in tasks:
+		if t["status"] in ["inbox", "queued", "active"] and t["due"] < NO_DEADLINE:
+			left += t["size"] * (1.0 - t["progress"])
+	var heads := team.filter(func(p): return available(p)).size()
+	return left / maxf(1.0, heads)
+
+
+func can_ask_people() -> bool:
+	return phase == "plan" and pending.is_empty() and convo.is_empty() and flags.has("asked_people") and openings == 0 \
+		and day - flags.get("people_asked_day", -100) >= PEOPLE_ASK_GAP
+
+
+func ask_people() -> void:
+	if not can_ask_people():
+		return
+	spend_attention()
+	flags["people_asked_day"] = day
+	history.append({"who": "you", "key": "people.ask", "args": [], "names": {}, "day": day})
+	if workload() < PEOPLE_OVERLOAD:
+		boss -= 0.5
+		_say("boss", "people.no")
+	elif has_weight():
+		openings += 1
+		_say("boss", "people.yes")
+	else:
+		_say("boss", "people.later")
+
+
 # On a Monday sales may close a deal with the next bank of the chapter; good deliveries make it likelier.
 func _maybe_sell() -> void:
 	if day % 5 != 1 or day == C.chapter_first_day(chapter):
@@ -1012,6 +1069,8 @@ func story_true(terms: Array) -> bool:
 				ok = not _open_incidents().is_empty()
 			"busy":
 				ok = people.has(t[1]) and _compare(queue_of(t[1]).size(), t[2], float(t[3]))
+			"overload":
+				ok = workload() >= OVERLOAD_STORY
 			_:
 				ok = flags.has(t[0])
 		if ok == neg:
@@ -1124,6 +1183,9 @@ func _story_fx(w: Array) -> void:
 			taras_like(float(w[1]))
 		"interview":
 			interview(w[1], true)
+		"openings":
+			openings += int(w[1])
+			flags["asked_people"] = true
 		"reveal":
 			if people.has(w[1]):
 				_reveal(w[1], w[2])
@@ -3205,6 +3267,10 @@ func goal_progress() -> Array:
 						have += 1
 			"max_incidents":
 				have = flags.get("incidents_%d" % chapter, 0)
+			"improvements":
+				for imp in improved:
+					if improved[imp] >= C.chapter_first_day(chapter):
+						have += 1
 		out.append({"id": g["id"], "have": have, "need": g["need"], "max": g["kind"].begins_with("max_")})
 	return out
 

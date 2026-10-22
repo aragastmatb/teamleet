@@ -22,6 +22,9 @@ static func reach(r, point: String) -> bool:
 	for i in MAX_STEPS:
 		if _arrived(r, point, target_chapter):
 			return true
+		if not r.convo.is_empty():
+			r.convo_choose("end")
+			continue
 		match r.phase:
 			"story":
 				if r.story["wait"] == "line":

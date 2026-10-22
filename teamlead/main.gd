@@ -109,7 +109,7 @@ var chat_to_end := false # a scroll to the bottom is on its way; until it lands,
 # open to look at while you think, with only the actions held until you answer.
 var taught_now := false
 const HELD_WHILE_ASKED := ["_helper", "_end_day", "_visit_boss", "_unassign", "_talk_to", "_sit", "_reject_candidate",
-	"_prioritize", "_pick", "_interview", "_intervene", "_hire", "_fire", "_direct", "_decline", "_days", "_ask_stay",
+	"_prioritize", "_pick", "_interview", "_ask_people", "_intervene", "_hire", "_fire", "_direct", "_decline", "_days", "_ask_stay",
 	"_accept_initiative"]
 var press_pos := Vector2.ZERO
 # The setup screen before a run, and what's picked on it (remembered between runs).
@@ -1478,7 +1478,18 @@ func _boss_card() -> Control:
 	visit.disabled = rules.phase != "plan" or rules.visited_today or not rules.pending.is_empty()
 	visit.custom_minimum_size.y = 30
 	v.add_child(visit)
+	# After the first time (a story scene in chapter three), you can go and ask for people yourself.
+	if rules.flags.has("asked_people") and rules.openings == 0:
+		var ask := _button(Loc.t("people.button") + _cost_mark(), _ask_people, 0, "subtle")
+		ask.disabled = ask.disabled or not rules.can_ask_people()
+		ask.custom_minimum_size.y = 30
+		v.add_child(ask)
 	return card
+
+
+func _ask_people() -> void:
+	rules.ask_people()
+	_render()
 
 
 # ---------- the board ----------
