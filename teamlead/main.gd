@@ -59,6 +59,8 @@ const CAT_COLORS := {
 	"portal": [Color("403294"), Color("eae6ff")],
 	"support": [Color("a3195b"), Color("ffe3f1")],
 }
+# Category icons, drawn white in art/icons/cat_<cat>.svg and tinted with the label's text colour.
+const ICON_DIR := "res://art/icons/"
 const AVATAR_COLORS := {
 	"alex": Color("0065ff"), "vika": Color("ff5630"), "gena": Color("36b37e"), "dima": Color("6554c0"),
 	"boss": Color("7a2048"), "marina": Color("00a3bf"), "taras": Color("ff8b00"), "me": Color("0747a6"), "palych": Color("8777d9"), "oleg": Color("5e6c84"), "buyer": Color("403294"),
@@ -950,7 +952,7 @@ func _person_card(p: String) -> Control:
 		var is_known: bool = known.has("skill." + cat)
 		var level: String = Loc.t("level.%d" % st["skills"][cat]) if is_known else Loc.t("unknown")
 		var colors: Array = CAT_COLORS[cat]
-		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), level], colors[0] if is_known else COL_FAINT, colors[1] if is_known else COL_BG))
+		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), level], colors[0] if is_known else COL_FAINT, colors[1] if is_known else COL_BG, _cat_icon(cat)))
 	for t in rules.tasks:
 		if t["status"] == "active" and t["helper"] == p:
 			v.add_child(_label(Loc.t("helper_badge", ["«%s»" % Loc.t("taskname." + t["id"])]), 12, COL_MUTED, true))
@@ -993,7 +995,7 @@ func _me_card() -> Control:
 	v.add_child(skills)
 	for cat in C.CATEGORIES:
 		var colors: Array = CAT_COLORS[cat]
-		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % rules.my_skill(cat))], colors[0], colors[1]))
+		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % rules.my_skill(cat))], colors[0], colors[1], _cat_icon(cat)))
 	return card
 
 
@@ -1019,7 +1021,7 @@ func _candidate_card(c: Dictionary) -> Control:
 		var seen: bool = c["known"].has(cat)
 		var colors: Array = CAT_COLORS[cat]
 		var text := "%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % rules.cv_level(id, cat))]
-		skills.add_child(_pill(text + (" ✓" if seen else ""), colors[0], colors[1]))
+		skills.add_child(_pill(text + (" ✓" if seen else ""), colors[0], colors[1], _cat_icon(cat)))
 	v.add_child(_label(Loc.t("hire.cv_short") + (" · ✓ " + Loc.t("hire.seen_short") if not c["known"].is_empty() else ""), 11, COL_FAINT))
 	var row := _flow(6, 6)
 	v.add_child(row)
@@ -1233,7 +1235,7 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 	var tags := _flow(4, 4)
 	v.add_child(tags)
 	var colors: Array = CAT_COLORS[t["cat"]]
-	tags.add_child(_pill(Loc.t("cat." + t["cat"]), colors[0], colors[1]))
+	tags.add_child(_pill(Loc.t("cat." + t["cat"]), colors[0], colors[1], _cat_icon(t["cat"])))
 	if t.get("again", false) and C.TASKS.get(t["id"], {}).get("kind", "") != "weekly":
 		tags.add_child(_pill(Loc.t("chip_again"), COL_WARN, Color("fff0b3")))
 	if C.TASKS.get(t["id"], {}).get("kind", "") == "chain":
@@ -1318,7 +1320,7 @@ func _task_detail(t: Dictionary) -> Control:
 	head.add_theme_constant_override("separation", 8)
 	v.add_child(head)
 	var colors: Array = CAT_COLORS[t["cat"]]
-	head.add_child(_pill(Loc.t("cat." + t["cat"]), colors[0], colors[1]))
+	head.add_child(_pill(Loc.t("cat." + t["cat"]), colors[0], colors[1], _cat_icon(t["cat"])))
 	var title := _label(("★ " if t["key"] else "") + Loc.t("taskname." + t["id"]), 17, COL_TEXT, true, true)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(title)
@@ -2452,7 +2454,12 @@ func _avatar(p: String, size: int, emo: String = "") -> Control:
 	return box
 
 
-func _pill(text_value: String, fg: Color, bg: Color) -> Control:
+func _cat_icon(cat: String) -> Texture2D:
+	var path := ICON_DIR + "cat_" + cat + ".svg"
+	return load(path) if ResourceLoader.exists(path) else null
+
+
+func _pill(text_value: String, fg: Color, bg: Color, icon: Texture2D = null) -> Control:
 	var chip := PanelContainer.new()
 	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var style := _flat(bg)
@@ -2462,7 +2469,23 @@ func _pill(text_value: String, fg: Color, bg: Color) -> Control:
 	style.content_margin_top = 1
 	style.content_margin_bottom = 1
 	chip.add_theme_stylebox_override("panel", style)
-	chip.add_child(_label(text_value, 11, fg, false, true))
+	if icon == null:
+		chip.add_child(_label(text_value, 11, fg, false, true))
+		return chip
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	chip.add_child(row)
+	var pic := TextureRect.new()
+	pic.texture = icon
+	pic.modulate = fg
+	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	pic.custom_minimum_size = Vector2(12, 12)
+	pic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(pic)
+	row.add_child(_label(text_value, 11, fg, false, true))
 	return chip
 
 
