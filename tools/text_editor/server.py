@@ -57,6 +57,7 @@ def parse_dlg(path):
             scene = {"id": s[2:].strip(), "file": path.name, "meta": [], "rows": []}
             scenes.append(scene)
             last = None
+            branch, n = "", 0
             continue
         if scene is None:
             continue
@@ -72,6 +73,7 @@ def parse_dlg(path):
         row = None
         if rest.startswith("-- "):
             row = {"type": "label", "label": rest[3:].strip(), "cond": cond}
+            branch, n = row["label"], 0
         elif rest.startswith("->"):
             row = {"type": "jump", "to": rest[2:].strip(), "cond": cond}
         elif rest.startswith(">"):
@@ -91,6 +93,8 @@ def parse_dlg(path):
             row = {"type": "comment", "text": "(не разобрано) " + s}
         if row["type"] == "text":
             row["id"] = "dlg:%s:%d" % (path.name, i)
+            row["nk"] = sc.note_key(scene["id"], branch, n)
+            n += 1
             row["line"] = i
             row["en"] = ""
             row["en_line"] = -1
@@ -317,6 +321,28 @@ def save(item_id, lang, old, new):
         raise ValueError("неизвестный источник")
 
 
+def migrate_notes():
+    """Marks used to hang on a line number ("dlg:file:line") and slid when lines above moved; now they
+    hang on the line's place in its scene (scenes.note_key). Old ones are moved over once."""
+    if not NOTES.exists():
+        return
+    notes = json.loads(NOTES.read_text(encoding="utf-8"))
+    old = [k for k in notes if k.startswith("dlg:")]
+    if not old:
+        return
+    where = {}
+    for path in sorted(DLG_DIR.glob("*.dlg")):
+        for scene in parse_dlg(path):
+            for r in scene["rows"]:
+                if r["type"] == "text":
+                    where[r["id"]] = r["nk"]
+    for k in old:
+        v = notes.pop(k)
+        if k in where:
+            notes[where[k]] = v
+    NOTES.write_text(json.dumps(notes, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
+
+
 def save_note(item_id, note, done):
     notes = json.loads(NOTES.read_text(encoding="utf-8")) if NOTES.exists() else {}
     entry = {k: v for k, v in (("note", note.strip()), ("done", bool(done))) if v}
@@ -394,6 +420,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    migrate_notes()
     url = "http://127.0.0.1:%d" % PORT
     try:
         server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)

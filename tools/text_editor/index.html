@@ -112,6 +112,12 @@ button.danger { color: var(--danger); }
 .n-when .chip { font-size: 10.5px; }
 .n-line { padding: 3px 10px; color: var(--text); line-height: 1.35; }
 .n-line.if { border-left: 3px solid #dcd5ff; }
+.n-marks { display: flex; gap: 4px; align-items: center; }
+.n-done { font-size: 10.5px; font-weight: 600; color: var(--faint); }
+.n-done.all { color: var(--good); }
+.n-note { font-size: 12px; color: #b38600; }
+.item.done { border-color: #abf5d1; }
+.panel .tools { margin-top: 2px; }
 .n-tag { font-size: 10px; border-radius: 4px; padding: 0 4px; font-weight: 600; }
 .n-tag.opened { background: var(--good-bg); color: var(--good); }
 .n-tag.closed { background: #f4f5f7; color: var(--muted); border: 1px solid var(--border); }
@@ -208,7 +214,9 @@ const EMO_RU = { "": "без эмоции", neutral: "спокойствие", h
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const hasDash = it => /—/.test(it.ru || "") || /—/.test(it.en || "");
-const isDone = it => !!(DATA.notes[it.id] && DATA.notes[it.id].done);
+// Marks and notes hang on a scene line's place in its scene (nk), on the key or table cell for the rest.
+const nkey = it => it.nk || it.id;
+const isDone = it => !!(DATA.notes[nkey(it)] && DATA.notes[nkey(it)].done);
 
 async function load() {
   const r = await fetch("/api/all");
@@ -295,19 +303,20 @@ function loadPortraits(root) {
 }
 
 function textBlock(it, opts = {}) {
-  const note = DATA.notes[it.id] || {};
+  const k = nkey(it);
+  const note = DATA.notes[k] || {};
   const dash = hasDash(it) ? `<span class="chip dash">длинное тире</span>` : "";
   return `
     <textarea class="ru" data-id="${esc(it.id)}" data-lang="ru" rows="1" placeholder="(пусто)">${esc(it.ru || "")}</textarea>
     <textarea class="en" data-id="${esc(it.id)}" data-lang="en" rows="1" placeholder="(нет перевода)">${esc(it.en || "")}</textarea>
     <div class="tools">
       ${dash}
-      <label><input type="checkbox" data-done="${esc(it.id)}" ${note.done ? "checked" : ""}> готово</label>
-      <button type="button" data-note-open="${esc(it.id)}">${note.note ? "заметка для Claude ✎" : "+ заметка для Claude"}</button>
-      <span class="msg" data-msg="${esc(it.id)}"></span>
+      <label><input type="checkbox" data-done="${esc(k)}" ${note.done ? "checked" : ""}> готово</label>
+      <button type="button" data-note-open="${esc(k)}">${note.note ? "заметка для Claude ✎" : "+ заметка для Claude"}</button>
+      <span class="msg" data-msg="${esc(it.id)}" data-msgk="${esc(k)}"></span>
     </div>
-    <div class="note" data-note-box="${esc(it.id)}" ${note.note ? "" : "hidden"}>
-      <textarea data-note="${esc(it.id)}" rows="1" placeholder="Что поменять, что не так, идея…">${esc(note.note || "")}</textarea>
+    <div class="note" data-note-box="${esc(k)}" ${note.note ? "" : "hidden"}>
+      <textarea data-note="${esc(k)}" rows="1" placeholder="Что поменять, что не так, идея…">${esc(note.note || "")}</textarea>
     </div>`;
 }
 
@@ -418,6 +427,11 @@ async function saveText(t) {
   }
 }
 
+function sayNote(k, text, err) {
+  const m = document.querySelector(`[data-msgk="${CSS.escape(k)}"]`);
+  if (m) { m.textContent = text; m.className = "msg" + (err ? " err" : ""); }
+}
+
 async function saveNote(id) {
   const box = document.querySelector(`[data-note="${CSS.escape(id)}"]`);
   const done = document.querySelector(`[data-done="${CSS.escape(id)}"]`);
@@ -428,9 +442,10 @@ async function saveNote(id) {
     if (note.trim()) entry.note = note.trim();
     if (done && done.checked) entry.done = true;
     if (Object.keys(entry).length) DATA.notes[id] = entry; else delete DATA.notes[id];
-    say(id, "отмечено");
+    sayNote(id, "отмечено");
     renderNav();
-  } catch (e) { say(id, e.message, true); }
+    if ($("#nodes") && S.scene) drawMap();
+  } catch (e) { sayNote(id, e.message, true); }
 }
 
 document.addEventListener("input", e => { if (e.target.tagName === "TEXTAREA") grow(e.target); });
@@ -446,7 +461,8 @@ document.addEventListener("change", async e => {
   const t = e.target;
   if (t.matches("[data-done]")) {
     saveNote(t.dataset.done);
-    t.closest(".row").classList.toggle("done", t.checked);
+    const row = t.closest(".row, .item");
+    if (row) row.classList.toggle("done", t.checked);
   } else if (t.matches("select[data-emo]")) {
     const it = byId[t.dataset.emo];
     try {

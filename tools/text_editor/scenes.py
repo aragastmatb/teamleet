@@ -28,6 +28,47 @@ def catalog():
     return json.loads(CATALOG.read_text(encoding="utf-8"))
 
 
+# ---------- notes: "done" marks and notes for Claude ----------
+# They hang on a line's place in its scene, not on the line number in the file, so they don't slide when
+# lines are added above; when a scene is saved from the scheme, they follow their lines (save_scene).
+NOTES = ROOT / "data" / "text_notes.json"
+TEXT_TYPES = ("line", "narr", "choice")
+
+
+def note_key(scene_id, branch, n):
+    return "dlgk:%s:%s:%d" % (scene_id, branch, n)
+
+
+def _keys(scene):
+    """Each text line's note key, in order."""
+    out = []
+    for node in scene["nodes"]:
+        n = 0
+        for it in node["items"]:
+            if it["type"] in TEXT_TYPES:
+                out.append(note_key(scene["id"], node["label"], n))
+                n += 1
+    return out
+
+
+def _texts(scene):
+    return [it for node in scene["nodes"] for it in node["items"] if it["type"] in TEXT_TYPES]
+
+
+def _move_notes(old_id, pairs):
+    """pairs: [(old key or None, new key)] for every line of the scene as it's saved now. Marks of lines
+    that are gone go too, so nothing lands on a stranger."""
+    if not NOTES.exists():
+        return
+    notes = json.loads(NOTES.read_text(encoding="utf-8"))
+    prefix = "dlgk:%s:" % old_id
+    mine = {k: notes.pop(k) for k in list(notes) if k.startswith(prefix)}
+    for old, new in pairs:
+        if old in mine:
+            notes[new] = mine[old]
+    NOTES.write_text(json.dumps(notes, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
+
+
 # ---------- reading ----------
 
 def _blocks(lines):
@@ -121,6 +162,8 @@ def read_scene(sid):
                 scene = parse_block(lines[a:b + 1])
                 scene["file"] = path.name
                 scene["src"] = "\n".join(lines[a:b + 1])
+                for it, k in zip(_texts(scene), _keys(scene)):
+                    it["nk"] = k
                 return scene
     raise ValueError("нет сцены " + sid)
 
@@ -212,6 +255,8 @@ def save_scene(scene, src):
             lines.pop()
         lines += [""] + block + [""]
     path.write_text("\n".join(lines), encoding="utf-8")
+    # The editor sends each line with the key it had when loaded (none for new lines): marks follow them.
+    _move_notes(old_id, [(it.get("nk"), k) for it, k in zip(_texts(scene), _keys(scene))])
     return read_scene(scene["id"])
 
 
@@ -223,6 +268,7 @@ def delete_scene(sid, src):
                 if "\n".join(lines[a:b + 1]) != src:
                     raise ValueError("сцену в файле уже поменяли, обновите страницу")
                 del lines[a:b + 1]
+                _move_notes(sid, [])
                 # One blank line where the scene was, one newline at the end of the file.
                 while a < len(lines) and a > 0 and not lines[a].strip() and not lines[a - 1].strip():
                     del lines[a]

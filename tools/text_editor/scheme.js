@@ -184,7 +184,11 @@ function nodeHTML(node, n) {
   const { out, ends } = exitsOf(node);
   const probs = S.problems.filter(p => p.node === node.label);
   const level = probs.some(p => p.level === "error") ? "error" : probs.length ? "warn" : "";
-  let h = `<div class="n-title"><span>${esc(nodeTitle(node))}</span>${level ? `<span class="n-bad ${level}">${probs.length}</span>` : ""}</div>`;
+  const texts = node.items.filter(it => it.nk);
+  const done = texts.filter(it => DATA.notes[it.nk] && DATA.notes[it.nk].done).length;
+  const noted = texts.some(it => DATA.notes[it.nk] && DATA.notes[it.nk].note);
+  const marks = (texts.length ? `<span class="n-done ${done === texts.length ? "all" : ""}" title="готово">✓${done}/${texts.length}</span>` : "") + (noted ? `<span class="n-note" title="есть заметка для Claude">✎</span>` : "");
+  let h = `<div class="n-title"><span>${esc(nodeTitle(node))}</span><span class="n-marks">${marks}${level ? `<span class="n-bad ${level}">${probs.length}</span>` : ""}</span></div>`;
   if (n === 0) {
     const when = S.scene.header.find(x => x.key === "when");
     if (when) h += `<div class="n-when">${when.value.split(",").map(t => `<span class="chip cond">${esc(termHuman(t, S.cat.catalog.terms))}</span>`).join(" ")}</div>`;
@@ -444,7 +448,7 @@ const ITEM_NAMES = { line: "Реплика", narr: "Описание", choice: "
 
 function itemCard(node, it, i) {
   const card = document.createElement("div");
-  card.className = "item " + it.type;
+  card.className = "item " + it.type + (it.nk && DATA.notes[it.nk] && DATA.notes[it.nk].done ? " done" : "");
   const head = document.createElement("div");
   head.className = "item-head";
   head.innerHTML = `<b>${it.type === "choice" && it.ask ? "Вопрос игрока" : it.type === "choice" && isTalk() ? "Действие игрока" : ITEM_NAMES[it.type]}</b>`;
@@ -476,6 +480,7 @@ function itemCard(node, it, i) {
   if (it.type === "line" || it.type === "narr" || it.type === "choice") {
     card.append(textArea(it.ru, "ru", v => { it.ru = v; changed(); }));
     card.append(textArea(it.en, "en", v => { it.en = v; changed(); }));
+    card.append(noteTools(it));
   }
   if (it.type === "choice" && isTalk()) {
     const row = document.createElement("div");
@@ -502,6 +507,26 @@ function itemCard(node, it, i) {
     card.append(cond);
   }
   return card;
+}
+
+// "Done" and a note for Claude: saved at once (not with the scene), they follow the line when the scene changes.
+function noteTools(it) {
+  const box = document.createElement("div");
+  if (!it.nk) {
+    box.className = "hint";
+    box.textContent = "Отметить «готово» и оставить заметку можно после сохранения сцены.";
+    return box;
+  }
+  const note = DATA.notes[it.nk] || {};
+  box.innerHTML = `<div class="tools">
+      <label><input type="checkbox" data-done="${esc(it.nk)}" ${note.done ? "checked" : ""}> готово</label>
+      <button type="button" data-note-open="${esc(it.nk)}">${note.note ? "заметка для Claude ✎" : "+ заметка для Claude"}</button>
+      <span class="msg" data-msgk="${esc(it.nk)}"></span>
+    </div>
+    <div class="note" data-note-box="${esc(it.nk)}" ${note.note ? "" : "hidden"}>
+      <textarea data-note="${esc(it.nk)}" rows="1" placeholder="Что поменять, что не так, идея…">${esc(note.note || "")}</textarea>
+    </div>`;
+  return box;
 }
 
 function headerEditor() {
@@ -666,10 +691,10 @@ async function save() {
     S.dirty = false;
     $("#save").disabled = true;
     $("#state").textContent = "сохранено в " + r.scene.file;
+    await reloadTexts();
     showProblems();
     drawMap();
     drawPanel();
-    reloadTexts();
     catalogLoad(true);
   } catch (e) {
     $("#state").textContent = e.message;
