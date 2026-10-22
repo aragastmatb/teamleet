@@ -817,28 +817,39 @@ func _build_title() -> void:
 	ui.add_child(sticker)
 
 
-# Where the view is pan_time seconds in: rest, move, rest, move, rest, then the long way back.
-func _pan_focus(t: float) -> float:
-	var legs: Array = []
-	for i in PAN_STOPS.size():
-		var next: float = PAN_STOPS[(i + 1) % PAN_STOPS.size()]
-		legs.append([PAN_STOPS[i], next, PAN_MOVE * (2.0 if i == PAN_STOPS.size() - 1 else 1.0)])
+# Where the view is pan_time seconds in: rest, move, rest, move, rest, then the long way back. The path is
+# continuous: a rest drifts from where the view arrived to where it leaves, and at either end, where it
+# turns round, it eases out a little and back. lo..hi is how far the view can go without hitting an edge.
+func _pan_focus(t: float, lo: float, hi: float) -> float:
+	var stops: Array = []
+	for x in PAN_STOPS:
+		stops.append(clampf(x, lo + PAN_DRIFT, hi - PAN_DRIFT))
+	var n := stops.size()
 	var loop := 0.0
-	for leg in legs:
-		loop += PAN_REST + leg[2]
+	for i in n:
+		loop += PAN_REST + PAN_MOVE * (2.0 if i == n - 1 else 1.0)
 	t = fmod(t, loop)
-	for leg in legs:
-		var dir := signf(leg[1] - leg[0])
+	var half := PAN_DRIFT * 0.5
+	for i in n:
+		var here: float = stops[i]
+		var dir_in := signf(here - stops[(i - 1 + n) % n])
+		var dir_out := signf(stops[(i + 1) % n] - here)
+		var u := t / PAN_REST
 		if t < PAN_REST:
-			# Resting, but still drifting a little the way it's about to go.
-			return leg[0] + dir * PAN_DRIFT * (t / PAN_REST - 0.5)
+			if dir_in == dir_out:
+				return here + dir_out * half * (2.0 * u - 1.0)
+			return here - dir_out * half + dir_in * PAN_DRIFT * sin(PI * u) * 0.5
 		t -= PAN_REST
-		if t < leg[2]:
-			var from: float = leg[0] + dir * PAN_DRIFT * 0.5
-			var to: float = leg[1] - dir * PAN_DRIFT * 0.5
-			return lerpf(from, to, smoothstep(0.0, 1.0, t / leg[2]))
-		t -= leg[2]
-	return PAN_STOPS[0]
+		var move := PAN_MOVE * (2.0 if i == n - 1 else 1.0)
+		if t < move:
+			var next: float = stops[(i + 1) % n]
+			var dir_next := signf(stops[(i + 2) % n] - next)
+			var from := here + dir_out * half if dir_in == dir_out else here - dir_out * half
+			# Passing through, it arrives just short of the pair; turning round there, just past it.
+			var to := next - dir_out * half if dir_out == dir_next else next + dir_out * half
+			return lerpf(from, to, smoothstep(0.0, 1.0, t / move))
+		t -= move
+	return stops[0]
 
 
 func _pan_title(delta: float) -> void:
@@ -847,7 +858,8 @@ func _pan_title(delta: float) -> void:
 	pan_time += delta
 	var full := float(pan_cut.atlas.get_width())
 	var w := pan_cut.region.size.x
-	pan_cut.region.position.x = clampf(full * _pan_focus(pan_time) - w / 2.0, 0.0, full - w)
+	var half := w / 2.0 / full
+	pan_cut.region.position.x = clampf(full * _pan_focus(pan_time, half, 1.0 - half) - w / 2.0, 0.0, full - w)
 
 
 # The menu itself, on the title screen or over the game: the list, or one of its pages.
