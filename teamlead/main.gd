@@ -447,7 +447,10 @@ func _pick_option(kind: String, value: String) -> void:
 
 
 func _process(delta: float) -> void:
-	if rules.phase == "title" or shown >= rules.history.size():
+	if rules.phase == "title":
+		_pan_title(delta)
+		return
+	if shown >= rules.history.size():
 		return
 	while shown < rules.history.size() and not _on_screen(shown):
 		shown += 1
@@ -752,10 +755,16 @@ func _teach_chat() -> bool:
 
 
 # The key art fills the screen and darkens towards the bottom, where the menu sits straight on it.
-# An upright phone sees a third of the picture: the left third, Taras in the doorway looking at you and
-# Gena with his mug (the empty chair would be under the menu anyway).
+# An upright phone sees a third of the picture, so the view looks round the room like the player would:
+# Taras in the doorway and Gena, then Alex and Dima, then Vika and Irina, and slowly back. It never
+# stops dead (a little drift while it rests on each pair), so it doesn't feel like a slideshow.
 const KEY_ART := "res://art/key_art.png"
-const KEY_ART_PHONE_FOCUS := 0.17
+const PAN_STOPS := [0.17, 0.47, 0.81] # where each pair is, as a fraction of the picture's width
+const PAN_REST := 5.0 # seconds on each pair
+const PAN_MOVE := 3.5 # seconds between neighbours; the way back takes twice that
+const PAN_DRIFT := 0.025
+var pan_cut: AtlasTexture
+var pan_time := 0.0
 const COL_NIGHT := Color("0b1a33")
 
 
@@ -767,11 +776,13 @@ func _build_title() -> void:
 	var view := get_viewport().get_visible_rect().size
 	var tex: Texture2D = art
 	var w := art.get_height() * view.x / view.y
+	pan_cut = null
 	if w < art.get_width() * 0.8:
-		var cut := AtlasTexture.new()
-		cut.atlas = art
-		cut.region = Rect2(clampf(art.get_width() * KEY_ART_PHONE_FOCUS - w / 2.0, 0.0, art.get_width() - w), 0, w, art.get_height())
-		tex = cut
+		pan_cut = AtlasTexture.new()
+		pan_cut.atlas = art
+		pan_cut.region = Rect2(0, 0, w, art.get_height())
+		_pan_title(0.0)
+		tex = pan_cut
 	var pic := TextureRect.new()
 	pic.texture = tex
 	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -804,6 +815,39 @@ func _build_title() -> void:
 	sticker.offset_right = sticker.offset_left
 	sticker.offset_top = 14 if mobile else 16
 	ui.add_child(sticker)
+
+
+# Where the view is pan_time seconds in: rest, move, rest, move, rest, then the long way back.
+func _pan_focus(t: float) -> float:
+	var legs: Array = []
+	for i in PAN_STOPS.size():
+		var next: float = PAN_STOPS[(i + 1) % PAN_STOPS.size()]
+		legs.append([PAN_STOPS[i], next, PAN_MOVE * (2.0 if i == PAN_STOPS.size() - 1 else 1.0)])
+	var loop := 0.0
+	for leg in legs:
+		loop += PAN_REST + leg[2]
+	t = fmod(t, loop)
+	for leg in legs:
+		var dir := signf(leg[1] - leg[0])
+		if t < PAN_REST:
+			# Resting, but still drifting a little the way it's about to go.
+			return leg[0] + dir * PAN_DRIFT * (t / PAN_REST - 0.5)
+		t -= PAN_REST
+		if t < leg[2]:
+			var from: float = leg[0] + dir * PAN_DRIFT * 0.5
+			var to: float = leg[1] - dir * PAN_DRIFT * 0.5
+			return lerpf(from, to, smoothstep(0.0, 1.0, t / leg[2]))
+		t -= leg[2]
+	return PAN_STOPS[0]
+
+
+func _pan_title(delta: float) -> void:
+	if pan_cut == null:
+		return
+	pan_time += delta
+	var full := float(pan_cut.atlas.get_width())
+	var w := pan_cut.region.size.x
+	pan_cut.region.position.x = clampf(full * _pan_focus(pan_time) - w / 2.0, 0.0, full - w)
 
 
 # The menu itself, on the title screen or over the game: the list, or one of its pages.
