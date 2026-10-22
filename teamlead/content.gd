@@ -89,7 +89,8 @@ const ARCHETYPES := {
 	"solid": {"weight": 30}, "junior": {"weight": 20}, "faker": {"weight": 15},
 	"stump": {"weight": 15}, "life_first": {"weight": 10}, "genius": {"weight": 10},
 }
-const INTERVIEW_TOPICS := ["tech", "last_job", "overtime", "team"]
+# What you can ask a candidate, in the order the window lists it (rules.gd, "conversations").
+const INTERVIEW_TOPICS := ["tech", "task", "last_job", "drive", "not_want", "overtime", "team"]
 
 # Adizes' four roles of a manager: P produces results, A keeps order, E brings change, I holds people
 # together. Everything you do as a lead leans one way; nobody is strong in all four.

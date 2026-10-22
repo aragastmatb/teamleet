@@ -503,18 +503,121 @@ func candidate(id: String) -> Dictionary:
 	return {}
 
 
+# ---------- conversations ----------
+# A sitting with someone in the conversation window: you pick what to ask, they answer from what's really
+# going on with them, and the window shows it all as one conversation. convo is {"who", "kind", "left",
+# "log": [{"who", "key", "names"}]}; while it's open, the window is over everything else.
+var convo := {}
+
+# An interview is one kind: one attention a sitting (Palych's first, straight after Marina brings him in,
+# is free), three questions out of seven a sitting, and you can call them back once for three more.
+const INTERVIEW_QUESTIONS := 3
+const INTERVIEW_SITTINGS := 2
+
+
+func _convo_line(who: String, key: String, names: Dictionary = {}) -> void:
+	convo["log"].append({"who": who, "key": key, "names": names})
+
+
+func convo_choices() -> Array:
+	if convo.is_empty():
+		return []
+	var out: Array = []
+	if convo["kind"] == "interview" and convo["left"] > 0:
+		out = interview_topics(convo["who"])
+	out.append("end")
+	return out
+
+
+func convo_choose(choice: String) -> void:
+	if not choice in convo_choices():
+		return
+	if choice == "end":
+		_convo_close()
+	elif convo["kind"] == "interview":
+		_interview_ask(choice)
+
+
+func _convo_close() -> void:
+	var who: String = convo["who"]
+	_convo_line("you", "convo.end." + convo["kind"])
+	history.append({"who": "", "key": "convo.log." + convo["kind"], "args": [], "names": {"who": "@name.%s.ins" % who}, "day": day})
+	convo = {}
+
+
+func interview_topics(id: String) -> Array:
+	var c := candidate(id)
+	if c.is_empty():
+		return []
+	return C.INTERVIEW_TOPICS.filter(func(x): return not c["asked"].has(x))
+
+
 func can_interview(id: String) -> bool:
 	var c := candidate(id)
-	return phase == "plan" and pending.is_empty() and not c.is_empty() and c["asked"].size() < 2
+	return phase == "plan" and pending.is_empty() and convo.is_empty() and not c.is_empty() \
+		and c.get("sittings", 0) < INTERVIEW_SITTINGS and not interview_topics(id).is_empty()
 
 
-func interview(id: String) -> void:
-	if not can_interview(id):
+func interview(id: String, free: bool = false) -> void:
+	var c := candidate(id)
+	if c.is_empty() or (not free and not can_interview(id)):
 		return
-	spend_attention()
+	if not free:
+		spend_attention()
 	lead("I", 0.2)
-	history.append({"who": "you", "key": "hire.interview_open", "args": [], "names": {}, "to": id, "day": day})
-	_open_conversation(scenes.interview_event(self, id))
+	c["sittings"] = c.get("sittings", 0) + 1
+	convo = {"who": id, "kind": "interview", "left": INTERVIEW_QUESTIONS, "log": []}
+	_convo_line(id, "hire.interview.hello" if c["asked"].is_empty() else "hire.interview.again")
+
+
+# What a question gives away. Talk is cheap: a faker talks up their CV, and only the task on the spot
+# shows anyone's real level.
+func _interview_ask(topic: String) -> void:
+	var id: String = convo["who"]
+	var c := candidate(id)
+	var h: Dictionary = hires[id]
+	var arch: String = h["arch"]
+	c["asked"].append(topic)
+	convo["left"] -= 1
+	_convo_line("you", "event.interview.choice." + topic)
+	var who := {"who": "@name.%s.nom" % id}
+	match topic:
+		"tech":
+			# They talk about the strongest thing on their CV that hasn't been checked yet.
+			var best := ""
+			for cat in C.CATEGORIES:
+				if not c["known"].has(cat) and (best == "" or h["cv"][cat] > h["cv"][best]):
+					best = cat
+			if best == "":
+				best = C.CATEGORIES[0]
+			var lvl: int = h["cv"][best] if arch == "faker" else h["skills"][best]
+			_convo_line(id, "hire.answer.tech.%d" % clampi(lvl, 0, 4), {"cat": "@cat." + best})
+			if arch != "faker":
+				c["known"][best] = true
+		"task":
+			# The category their CV is proudest of that nobody has checked yet.
+			var pick := ""
+			for cat in C.CATEGORIES:
+				if not c["known"].has(cat) and (pick == "" or h["cv"][cat] > h["cv"][pick]):
+					pick = cat
+			if pick == "":
+				pick = C.CATEGORIES[0]
+			var lvl: int = h["skills"][pick]
+			_convo_line(id, "hire.answer.task." + id, {"cat": "@cat." + pick})
+			_convo_line("", "hire.task.%d" % clampi(lvl, 0, 4), who.merged({"cat": "@cat." + pick}))
+			c["known"][pick] = true
+		"drive":
+			_convo_line(id, _first_key(["hire.answer.drive." + id, "hire.answer.drive." + h["drive"]]))
+			c["drive_known"] = true
+		"not_want":
+			var hates: Array = h["hates"]
+			if hates.is_empty() or arch == "faker":
+				_convo_line(id, "hire.answer.not_want." + id)
+			else:
+				_convo_line(id, "hire.answer.not_want.any", {"cat": "@cat." + hates[0]})
+				c["hates_known"] = true
+		_:
+			_convo_line(id, "hire.answer.%s.%s" % [topic, arch])
 
 
 func can_hire(id: String) -> bool:
@@ -524,10 +627,16 @@ func can_hire(id: String) -> bool:
 func hire(id: String) -> void:
 	if not can_hire(id):
 		return
-	candidates.erase(candidate(id))
+	var c := candidate(id)
+	candidates.erase(c)
 	openings -= 1
 	team.append(id)
 	_new_person(id, false)
+	# What the interview showed, you know about them from day one.
+	for cat in c["known"]:
+		people[id]["known"]["skill." + cat] = true
+	if c.get("drive_known", false):
+		people[id]["known"]["drive"] = true
 	lead("P", 0.3)
 	_say("marina", "hire.joined", [], {"who": "@name.%s.nom" % id})
 	_say(id, "hello." + id)
@@ -1013,6 +1122,8 @@ func _story_fx(w: Array) -> void:
 			boss += float(w[1])
 		"taras":
 			taras_like(float(w[1]))
+		"interview":
+			interview(w[1], true)
 		"reveal":
 			if people.has(w[1]):
 				_reveal(w[1], w[2])

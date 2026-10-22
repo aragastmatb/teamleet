@@ -594,36 +594,6 @@ func _resolve_fire(r, ev: Dictionary, c: String) -> String:
 	return ""
 
 
-# An interview: two questions out of four; each answer gives something away.
-func interview_event(r, id: String) -> Dictionary:
-	var c: Dictionary = r.candidate(id)
-	var left: Array = C.INTERVIEW_TOPICS.filter(func(x): return not c["asked"].has(x))
-	var lines := [{"who": id, "key": "hire.interview.hello"}] if c["asked"].is_empty() else []
-	return {"id": "interview", "who": id, "target": id, "lines": lines, "choices": left}
-
-
-func _resolve_interview(r, ev: Dictionary, c: String) -> String:
-	var id: String = ev["target"]
-	var cand: Dictionary = r.candidate(id)
-	var arch: String = r.archetype(id)
-	cand["asked"].append(c)
-	if c == "tech":
-		# Asking about the work shows the truth about what their CV is proudest of.
-		var best: String = C.CATEGORIES[0]
-		for cat in C.CATEGORIES:
-			if r.hires[id]["cv"][cat] > r.hires[id]["cv"][best]:
-				best = cat
-		cand["known"][best] = true
-		var lvl: int = r.hires[id]["skills"][best]
-		r.say(id, "hire.answer.tech.%d" % clampi(lvl, 0, 4), [], {"cat": "@cat." + best})
-		r.say("", "hire.tech_seen", [], {"who": "@name.%s.nom" % id, "cat": "@cat." + best, "level": "@level.%d" % lvl})
-	else:
-		r.say(id, "hire.answer.%s.%s" % [c, arch])
-	if cand["asked"].size() < 2:
-		r.events.push_front(interview_event(r, id).merged({"names": {}, "uid": -1}))
-	return ""
-
-
 func talk_event(r, p: String) -> Dictionary:
 	var st: Dictionary = r.people[p]
 	var topic := "fine"
@@ -1061,13 +1031,11 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 		routed = _resolve_intervene(r, ev, c)
 	elif ev["id"] == "decline":
 		routed = _resolve_decline(r, ev, c)
-	elif ev["id"] == "interview":
-		routed = _resolve_interview(r, ev, c)
 	elif ev["id"] == "fire":
 		routed = _resolve_fire(r, ev, c)
 	elif ev["id"] == "dima_question":
 		routed = _resolve_dima_question(r, ev, c)
-	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene", "decline", "interview", "fire", "dima_question"]:
+	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene", "decline", "fire", "dima_question"]:
 		if routed != "":
 			r.say(who, routed, [], names)
 		for q in r.team:

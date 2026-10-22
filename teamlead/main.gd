@@ -705,15 +705,18 @@ func _render() -> void:
 		_build_office()
 		if _teach_chat():
 			_block_board()
-	match rules.phase:
-		"story":
-			_build_story()
-		"standup":
-			_build_standup()
-		"report":
-			_build_report()
-		"end", "chapter_end":
-			_build_end()
+	if not rules.convo.is_empty():
+		_build_convo()
+	else:
+		match rules.phase:
+			"story":
+				_build_story()
+			"standup":
+				_build_standup()
+			"report":
+				_build_report()
+			"end", "chapter_end":
+				_build_end()
 	if help_open:
 		_build_help()
 	if menu_open:
@@ -1386,8 +1389,13 @@ func _candidate_card(c: Dictionary) -> Control:
 	v.add_child(_label(Loc.t("hire.cv_short") + (" · ✓ " + Loc.t("hire.seen_short") if not c["known"].is_empty() else ""), 11, COL_FAINT))
 	var row := _flow(6, 6)
 	v.add_child(row)
-	if c["asked"].size() < 2:
-		var ask := _button(Loc.t("hire.interview_btn") + _cost_mark(), _interview.bind(id), 0, "subtle")
+	if c.get("drive_known", false):
+		v.add_child(_label(Loc.t("known.drive", [Loc.t("drive." + rules.info(id)["drive"])]), 12, COL_MUTED, true))
+	if c.get("hates_known", false):
+		v.add_child(_label(Loc.t("hire.hates", [Loc.t("cat." + rules.info(id)["hates"][0])]), 12, COL_MUTED, true))
+	if c.get("sittings", 0) < rules.INTERVIEW_SITTINGS and not rules.interview_topics(id).is_empty():
+		var again: bool = c.get("sittings", 0) > 0
+		var ask := _button(Loc.t("hire.again_btn" if again else "hire.interview_btn") + _cost_mark(), _interview.bind(id), 0, "subtle")
 		ask.disabled = ask.disabled or not rules.can_interview(id)
 		row.add_child(ask)
 	else:
@@ -2309,6 +2317,66 @@ func _build_story() -> void:
 		next.size_flags_horizontal = Control.SIZE_SHRINK_END
 		actions.add_child(next)
 	_scroll_to_end(scroll)
+
+
+# A conversation you lead (an interview for now): the story window, but the choices are yours to pick
+# in any order, and how many questions are left is shown under them.
+func _build_convo() -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(0.035, 0.118, 0.259, 0.7)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(dim)
+	var view := get_viewport().get_visible_rect().size
+	var w := minf(880.0, view.x - (16.0 if mobile else 64.0))
+	var h := view.y - 16.0 if mobile else minf(600.0, view.y - 64.0)
+	var panel := PanelContainer.new()
+	panel.anchor_left = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -w / 2.0
+	panel.offset_right = w / 2.0
+	panel.offset_top = -h / 2.0
+	panel.offset_bottom = h / 2.0
+	var style := _box(COL_SURFACE, COL_BORDER, 1, 0)
+	style.set_corner_radius_all(16)
+	panel.add_theme_stylebox_override("panel", style)
+	ui.add_child(panel)
+	var who: String = rules.convo["who"]
+	var body: BoxContainer = VBoxContainer.new() if mobile else HBoxContainer.new()
+	body.add_theme_constant_override("separation", 0)
+	panel.add_child(body)
+	body.add_child(_story_portrait(who, "", "meeting_room" if rules.convo["kind"] == "interview" else "office_day"))
+	var right := _vbox(0)
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(right)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right.add_child(scroll)
+	var list := _vbox(12)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_padded(list, 18 if mobile else 28, 18 if mobile else 24))
+	var log: Array = rules.convo["log"]
+	for i in log.size():
+		var e: Dictionary = log[i]
+		list.add_child(_story_entry({"who": e["who"], "emo": "", "ru": Loc.render(e["key"], [], e["names"]), "en": ""}, i == log.size() - 1))
+	var actions := _vbox(8)
+	var foot := _padded(actions, 18 if mobile else 28, 16)
+	foot.size_flags_vertical = Control.SIZE_SHRINK_END
+	right.add_child(foot)
+	if rules.convo["kind"] == "interview" and rules.convo["left"] > 0:
+		actions.add_child(_label(Loc.t("convo.left", [rules.convo["left"]]), 12, COL_MUTED))
+	for c in rules.convo_choices():
+		var key: String = "convo.choice.end." + rules.convo["kind"] if c == "end" else "event.interview.choice." + c
+		actions.add_child(_answer_button(Loc.t(key), _convo_choose.bind(c)))
+	_scroll_to_end(scroll)
+
+
+func _convo_choose(c: String) -> void:
+	rules.convo_choose(c)
+	_render()
 
 
 # The morning call: a tile per person, the one line they say, and what you can answer.

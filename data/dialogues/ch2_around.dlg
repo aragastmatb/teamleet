@@ -63,16 +63,16 @@ marina [neutral]: Резюме у Виктора Павловича большо
   en: Viktor Pavlovich has a long and very… varied CV.
 palych [happy]: Возьмёте, не пожалеете, я на любую движуху! Вы не смотрите, что я в возрасте, я быстро вникаю.
   en: Take me on, you won't regret it, I'm up for anything! Don't mind my age, I pick things up quickly.
-* А что вы делали на последнем месте? -> last
-  en: What did you do at your last job?
+* Присаживайтесь, давайте поговорим. -> talk
+  en: Have a seat, let's talk.
 * Спасибо, мы подумаем. -> later
   en: Thank you, we'll think about it.
 
--- last
-palych [neutral]: Да всего понемногу: сервера, сеть, принтеры, кофемашину однажды чинил. Все ко мне шли, и я никому не отказывал.
-  en: A bit of everything: servers, network, printers, fixed the coffee machine once. Everyone came to me, and I never turned anyone away.
-- Вот этим он явно гордится.
-  en: That, clearly, is what he's proud of.
+# Straight into the interview window, this first sitting free: Marina has brought him in anyway.
+-- talk
+palych [happy]: С удовольствием! Я и термос взял, разговор, чувствую, будет хороший.
+  en: With pleasure! I brought my thermos, I can tell it'll be a good talk.
+> interview palych
 -> end
 
 -- later

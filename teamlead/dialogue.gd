@@ -14,7 +14,7 @@ extends RefCounted
 # A condition term is [word, args...]: chapter / day / here / flag / not.
 
 const DIR := "res://data/dialogues"
-const FX := ["flag", "unflag", "days", "mood", "trust", "energy", "style", "boss", "taras", "give", "grab", "drop", "task", "shrink", "reveal"]
+const FX := ["flag", "unflag", "days", "mood", "trust", "energy", "style", "boss", "taras", "give", "grab", "drop", "task", "shrink", "reveal", "interview"]
 const PLACES := ["office_day", "office_evening", "office_night", "meeting_room", "irina_office", "lift", "home_night"]
 const TERMS := ["chapter", "day", "here", "flag", "not", "taras", "irina", "busy", "laid_off", "incident", "style"]
 
