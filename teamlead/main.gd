@@ -717,9 +717,21 @@ func _build_title() -> void:
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 12)
 	v.add_child(head)
-	head.add_child(_logo(40))
-	head.add_child(_label(Loc.t("title"), 34, COL_TEXT, false, true))
-	v.add_child(_label(Loc.t("tagline"), 19, COL_MUTED, true))
+	var tagline := _label(Loc.t("tagline"), 19, COL_MUTED, true)
+	if ResourceLoader.exists(LOGO):
+		# The sticker already says Team1337, so the tagline sits beside it.
+		head.add_theme_constant_override("separation", 14 if mobile else 20)
+		head.add_child(_logo(84 if mobile else 130))
+		if mobile:
+			tagline.add_theme_font_size_override("font_size", 16)
+		tagline.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tagline.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		head.add_child(tagline)
+	else:
+		head.add_child(_logo(40))
+		head.add_child(_label(Loc.t("title"), 34, COL_TEXT, false, true))
+	if tagline.get_parent() == null:
+		v.add_child(tagline)
 	v.add_child(_spacer(4))
 	var buttons := _flow(12, 12)
 	v.add_child(buttons)
@@ -867,7 +879,21 @@ func _day_label() -> String:
 	return text if rules.chapter == 1 else Loc.t("chapter_short", [rules.chapter]) + text
 
 
+# The logo is a sticky note with Team1337 on it in marker (art/logo.png); without it, an orange square.
+const LOGO := "res://art/logo.png"
+
+
 func _logo(size: int) -> Control:
+	if ResourceLoader.exists(LOGO):
+		var pic := TextureRect.new()
+		pic.texture = load(LOGO)
+		pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		pic.custom_minimum_size = Vector2(size, size) * 1.2
+		pic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		return pic
 	var box := PanelContainer.new()
 	box.custom_minimum_size = Vector2(size, size)
 	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
