@@ -83,7 +83,15 @@ const SETTINGS_PATH := "user://settings.cfg"
 # One player per sound, each with its stream set once: the web build plays sounds as samples and
 # doesn't pick up a stream swapped on a player that's already been used.
 var players := {}
-var sound_on := true
+var sound_on := true # false when the volume is at zero
+var volume := 0.8
+# Text size: every font size goes through _fs(); the layout itself stays the same.
+const TEXT_SCALES := {"normal": 1.0, "large": 1.15, "larger": 1.3}
+var text_scale := "normal"
+# The menu: on the title screen, and over the game when opened from the top bar (or Esc).
+# menu_page is "" for the list itself, or "settings", "about", "confirm_new".
+var menu_open := false
+var menu_page := ""
 var heard := 0
 var last_phase := "title"
 var cue := ""
@@ -133,7 +141,7 @@ func _ready() -> void:
 	font_bold = load("res://fonts/Inter-Bold.ttf")
 	var ui_theme := Theme.new()
 	ui_theme.default_font = regular
-	ui_theme.default_font_size = BASE_FONT
+	ui_theme.default_font_size = _fs(BASE_FONT)
 	ui_theme.set_color("font_color", "Label", COL_TEXT)
 	ui_theme.set_stylebox("panel", "TooltipPanel", _box(COL_TEXT, COL_TEXT, 0, 6))
 	ui_theme.set_color("font_color", "TooltipLabel", COL_SURFACE)
@@ -146,7 +154,9 @@ func _ready() -> void:
 		players[name] = p
 	var settings := ConfigFile.new()
 	if settings.load(SETTINGS_PATH) == OK:
-		sound_on = settings.get_value("audio", "sound_on", true)
+		volume = settings.get_value("audio", "volume", 0.8 if settings.get_value("audio", "sound_on", true) else 0.0)
+		text_scale = settings.get_value("ui", "text_scale", text_scale)
+		Loc.lang = settings.get_value("ui", "lang", Loc.lang)
 		pick_boss = settings.get_value("setup", "boss", pick_boss)
 		pick_profile = settings.get_value("setup", "profile", pick_profile)
 		pick_tips = settings.get_value("setup", "tips", pick_tips)
@@ -154,6 +164,10 @@ func _ready() -> void:
 		pick_boss = "random"
 	if not C.PROFILES.has(pick_profile):
 		pick_profile = C.DEFAULT_PROFILE
+	if not TEXT_SCALES.has(text_scale):
+		text_scale = "normal"
+	theme.default_font_size = _fs(BASE_FONT)
+	_apply_volume()
 	_apply_layout_mode()
 	get_viewport().size_changed.connect(_on_resize)
 	var bg := ColorRect.new()
@@ -380,8 +394,8 @@ func _build_help() -> void:
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text.text = Loc.t("rules")
 	text.add_theme_font_override("bold_font", font_bold)
-	text.add_theme_font_size_override("normal_font_size", 16)
-	text.add_theme_font_size_override("bold_font_size", 18)
+	text.add_theme_font_size_override("normal_font_size", _fs(16))
+	text.add_theme_font_size_override("bold_font_size", _fs(18))
 	text.add_theme_color_override("default_color", COL_TEXT)
 	v.add_child(text)
 	var b := _button(Loc.t("help_close"), _toggle_help, 200, "primary")
@@ -522,13 +536,29 @@ func _clear_selection() -> void:
 	_render()
 
 
-func _toggle_sound() -> void:
-	sound_on = not sound_on
+func _save_setting(section: String, key: String, value) -> void:
 	var settings := ConfigFile.new()
 	settings.load(SETTINGS_PATH)
-	settings.set_value("audio", "sound_on", sound_on)
+	settings.set_value(section, key, value)
 	settings.save(SETTINGS_PATH)
+
+
+func _apply_volume() -> void:
+	sound_on = volume > 0.001
+	AudioServer.set_bus_mute(0, not sound_on)
+	if sound_on:
+		AudioServer.set_bus_volume_db(0, linear_to_db(volume))
+
+
+func _set_text_scale(key: String) -> void:
+	text_scale = key
+	_save_setting("ui", "text_scale", key)
+	theme.default_font_size = _fs(BASE_FONT)
 	_render()
+
+
+func _fs(size: int) -> int:
+	return int(round(size * float(TEXT_SCALES[text_scale])))
 
 
 # What just happened, by what's new in the chat and where the game moved; the loudest thing wins.
@@ -574,9 +604,65 @@ func _play(name: String) -> void:
 		players[name].play()
 
 
-func _toggle_lang() -> void:
-	Loc.lang = "en" if Loc.lang == "ru" else "ru"
+func _set_lang(l: String) -> void:
+	Loc.lang = l
+	_save_setting("ui", "lang", l)
 	_render()
+
+
+func _open_menu() -> void:
+	menu_open = true
+	menu_page = ""
+	_render()
+
+
+func _close_menu() -> void:
+	menu_open = false
+	menu_page = ""
+	_render()
+
+
+func _menu_go(page: String) -> void:
+	menu_page = page
+	_render()
+
+
+func _menu_new_game() -> void:
+	if Rules.has_save():
+		_menu_go("confirm_new")
+	else:
+		_open_setup(true)
+
+
+func _menu_new_confirmed() -> void:
+	menu_page = ""
+	_open_setup(true)
+
+
+func _menu_to_title() -> void:
+	menu_open = false
+	menu_page = ""
+	_to_title(false)
+
+
+func _can_quit() -> bool:
+	return not OS.has_feature("web") and not OS.has_feature("mobile")
+
+
+func _quit() -> void:
+	get_tree().quit()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not event.is_action_pressed("ui_cancel"):
+		return
+	if menu_page != "":
+		_menu_go("")
+	elif rules.phase != "title" and not setup_open:
+		if menu_open:
+			_close_menu()
+		else:
+			_open_menu()
 
 
 # ---------- screens ----------
@@ -627,6 +713,8 @@ func _render() -> void:
 			_build_end()
 	if help_open:
 		_build_help()
+	if menu_open:
+		_build_menu_overlay()
 	_let_touches_through(ui)
 	_restore_scrolls()
 
@@ -663,10 +751,11 @@ func _teach_chat() -> bool:
 	return false
 
 
-# The key art: the whole screen on desktop, darkening towards the bottom where the sticker, the tagline
-# and the buttons sit straight on the picture (the empty chair in the middle is the player's, Taras in
-# the doorway keeps his face). On a phone the picture is a strip on top, uncut, fading into the same dark.
+# The key art fills the screen and darkens towards the bottom, where the menu sits straight on it.
+# An upright phone sees a third of the picture: the left third, Taras in the doorway looking at you and
+# Gena with his mug (the empty chair would be under the menu anyway).
 const KEY_ART := "res://art/key_art.png"
+const KEY_ART_PHONE_FOCUS := 0.17
 const COL_NIGHT := Color("0b1a33")
 
 
@@ -675,62 +764,182 @@ func _build_title() -> void:
 	if art == null:
 		_build_title_plain()
 		return
-	var v := _vbox(16)
+	var view := get_viewport().get_visible_rect().size
+	var tex: Texture2D = art
+	var w := art.get_height() * view.x / view.y
+	if w < art.get_width() * 0.8:
+		var cut := AtlasTexture.new()
+		cut.atlas = art
+		cut.region = Rect2(clampf(art.get_width() * KEY_ART_PHONE_FOCUS - w / 2.0, 0.0, art.get_width() - w), 0, w, art.get_height())
+		tex = cut
+	var pic := TextureRect.new()
+	pic.texture = tex
+	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	pic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(pic)
 	if mobile:
-		var back := ColorRect.new()
-		back.color = COL_NIGHT
-		back.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		ui.add_child(back)
-		var scroll := ScrollContainer.new()
-		scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		ui.add_child(scroll)
-		var col := _vbox(0)
-		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		col.custom_minimum_size.y = get_viewport().get_visible_rect().size.y
-		col.alignment = BoxContainer.ALIGNMENT_CENTER
-		scroll.add_child(col)
-		var pic := TextureRect.new()
-		pic.texture = art
-		pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		pic.expand_mode = TextureRect.EXPAND_FIT_HEIGHT_PROPORTIONAL
-		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
-		pic.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var fade := _title_fade([0.0, 0.12, 0.6, 1.0], [1.0, 0.0, 0.0, 1.0])
-		pic.add_child(fade)
-		col.add_child(pic)
-		var pad := _padded(v, 20, 8)
-		pad.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-		col.add_child(pad)
+		ui.add_child(_title_fade([0.3, 0.55, 1.0], [0.0, 0.82, 0.97]))
 	else:
-		var pic := TextureRect.new()
-		pic.texture = art
-		pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		pic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		ui.add_child(pic)
-		ui.add_child(_title_fade([0.4, 0.68, 1.0], [0.0, 0.78, 0.95]))
-		var w := minf(620.0, _view_width() * 0.5)
-		v.custom_minimum_size.x = w
-		v.anchor_top = 1.0
-		v.anchor_bottom = 1.0
-		v.offset_left = 48
-		v.offset_right = 48 + w
-		v.grow_vertical = Control.GROW_DIRECTION_BEGIN
-		v.offset_top = -48
-		v.offset_bottom = -48
-		ui.add_child(v)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 14 if mobile else 22)
-	v.add_child(head)
-	head.add_child(_logo(84 if mobile else 130))
-	var tagline := _label(Loc.t("tagline"), 16 if mobile else 19, Color(1, 1, 1, 0.88), true)
-	tagline.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tagline.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	head.add_child(tagline)
-	v.add_child(_spacer(4))
-	_title_buttons(v, "on_top")
+		ui.add_child(_title_fade([0.35, 0.65, 1.0], [0.0, 0.8, 0.96]))
+	var margin := 24.0 if mobile else 56.0
+	var v := _vbox(14)
+	v.custom_minimum_size.x = minf(440.0, view.x - margin * 2.0)
+	v.anchor_top = 1.0
+	v.anchor_bottom = 1.0
+	v.offset_left = margin
+	v.offset_right = margin + v.custom_minimum_size.x
+	v.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	v.offset_top = -margin
+	v.offset_bottom = -margin
+	ui.add_child(v)
+	_menu_page(v, false)
+	# The logo is stuck on the corner of the screen, where the picture has only ceiling and window.
+	var sticker := _logo(96 if mobile else 84)
+	sticker.anchor_left = 1.0
+	sticker.anchor_right = 1.0
+	sticker.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	sticker.offset_left = -14 if mobile else -20
+	sticker.offset_right = sticker.offset_left
+	sticker.offset_top = 14 if mobile else 16
+	ui.add_child(sticker)
+
+
+# The menu itself, on the title screen or over the game: the list, or one of its pages.
+func _menu_page(v: VBoxContainer, in_game: bool) -> void:
+	match menu_page:
+		"settings":
+			_menu_settings(v)
+		"about":
+			v.add_child(_menu_title(Loc.t("menu.about")))
+			v.add_child(_label(Loc.t("about.text"), 15 if mobile else 16, Color(1, 1, 1, 0.85), true))
+			v.add_child(_spacer(2))
+			v.add_child(_menu_item(Loc.t("menu.back"), _menu_go.bind("")))
+		"confirm_new":
+			v.add_child(_menu_title(Loc.t("menu.new")))
+			v.add_child(_label(Loc.t("confirm.new"), 15 if mobile else 16, Color(1, 1, 1, 0.85), true))
+			v.add_child(_spacer(2))
+			var yes := _button(Loc.t("confirm.yes"), _menu_new_confirmed, 220, "primary")
+			yes.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			v.add_child(yes)
+			v.add_child(_menu_item(Loc.t("confirm.no"), _menu_go.bind("")))
+		_:
+			if in_game:
+				v.add_child(_menu_item(Loc.t("menu.resume"), _close_menu))
+			elif Rules.has_save():
+				v.add_child(_menu_item(Loc.t("menu.continue"), _continue_run))
+			if not in_game:
+				v.add_child(_menu_item(Loc.t("menu.new"), _menu_new_game))
+			v.add_child(_menu_item(Loc.t("menu.settings"), _menu_go.bind("settings")))
+			v.add_child(_menu_item(Loc.t("menu.about"), _menu_go.bind("about")))
+			if in_game:
+				v.add_child(_menu_item(Loc.t("menu.to_title"), _menu_to_title))
+			if _can_quit():
+				v.add_child(_menu_item(Loc.t("menu.quit"), _quit))
+
+
+func _menu_settings(v: VBoxContainer) -> void:
+	v.add_child(_menu_title(Loc.t("menu.settings")))
+	v.add_child(_menu_caption(Loc.t("settings.lang")))
+	var langs := _flow(8, 8)
+	v.add_child(langs)
+	for l in ["ru", "en"]:
+		langs.add_child(_button(Loc.t("lang_name." + l), _set_lang.bind(l), 120, "primary" if Loc.lang == l else "on_top"))
+	v.add_child(_menu_caption(Loc.t("settings.volume")))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	v.add_child(row)
+	var slider := HSlider.new()
+	slider.min_value = 0
+	slider.max_value = 100
+	slider.step = 5
+	slider.value = round(volume * 100)
+	slider.custom_minimum_size = Vector2(240, 28)
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	slider.focus_mode = Control.FOCUS_NONE
+	var track := _box(Color(1, 1, 1, 0.22), Color(1, 1, 1, 0.22), 0, 0)
+	track.content_margin_top = 3
+	track.content_margin_bottom = 3
+	track.set_corner_radius_all(3)
+	var filled := _box(COL_PRIMARY_HOVER, COL_PRIMARY_HOVER, 0, 0)
+	filled.content_margin_top = 3
+	filled.content_margin_bottom = 3
+	filled.set_corner_radius_all(3)
+	slider.add_theme_stylebox_override("slider", track)
+	slider.add_theme_stylebox_override("grabber_area", filled)
+	slider.add_theme_stylebox_override("grabber_area_highlight", filled)
+	row.add_child(slider)
+	var pct := _label("%d%%" % int(slider.value), 15, COL_ON_TOP, false, true)
+	pct.custom_minimum_size.x = 48
+	row.add_child(pct)
+	slider.value_changed.connect(func(x: float) -> void:
+		volume = x / 100.0
+		_apply_volume()
+		pct.text = "%d%%" % int(x))
+	slider.drag_ended.connect(func(_changed: bool) -> void:
+		_save_setting("audio", "volume", volume)
+		_play("click"))
+	v.add_child(_menu_caption(Loc.t("settings.text")))
+	var sizes := _flow(8, 8)
+	v.add_child(sizes)
+	for k in TEXT_SCALES:
+		sizes.add_child(_button(Loc.t("settings.text." + k), _set_text_scale.bind(k), 0, "primary" if text_scale == k else "on_top"))
+	v.add_child(_spacer(2))
+	v.add_child(_menu_item(Loc.t("menu.back"), _menu_go.bind("")))
+
+
+func _menu_title(text_value: String) -> Label:
+	return _label(text_value, 24 if mobile else 28, COL_ON_TOP, false, true)
+
+
+func _menu_caption(text_value: String) -> Label:
+	return _label(text_value.to_upper(), 12, COL_ON_TOP_MUTED, false, true)
+
+
+# A line of the menu: big white text, no box; it turns orange under the pointer.
+func _menu_item(text_value: String, action: Callable) -> Button:
+	var b := Button.new()
+	b.text = text_value
+	b.flat = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	b.add_theme_font_override("font", font_bold)
+	b.add_theme_font_size_override("font_size", _fs(22 if mobile else 24))
+	for state in ["normal", "hover", "pressed", "focus"]:
+		var empty := StyleBoxEmpty.new()
+		empty.content_margin_top = 4
+		empty.content_margin_bottom = 4
+		b.add_theme_stylebox_override(state, empty)
+	b.add_theme_color_override("font_color", COL_ON_TOP)
+	b.add_theme_color_override("font_hover_color", COL_STAR)
+	b.add_theme_color_override("font_pressed_color", COL_STAR)
+	b.pressed.connect(func(): cue = "click")
+	b.pressed.connect(action)
+	return b
+
+
+# Over the game: the same menu on a dark card, the game dimmed behind it.
+func _build_menu_overlay() -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(COL_NIGHT, 0.7)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(dim)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(center)
+	var card := PanelContainer.new()
+	var style := _box(COL_NIGHT, COL_NIGHT, 0, 28 if mobile else 36)
+	style.set_corner_radius_all(16)
+	card.add_theme_stylebox_override("panel", style)
+	center.add_child(card)
+	var v := _vbox(14)
+	v.custom_minimum_size.x = minf(420.0, get_viewport().get_visible_rect().size.x - 88.0)
+	card.add_child(v)
+	_menu_page(v, true)
 
 
 # A dark wash over the picture: stops are where it starts and how dark it gets (fractions of the height).
@@ -754,17 +963,6 @@ func _title_fade(at: Array, alpha: Array) -> TextureRect:
 	return wash
 
 
-func _title_buttons(v: Control, quiet: String) -> void:
-	var buttons := _flow(12, 12)
-	v.add_child(buttons)
-	if Rules.has_save():
-		buttons.add_child(_button(Loc.t("continue"), _continue_run, 160 if mobile else 220, "primary"))
-		buttons.add_child(_button(Loc.t("new_game"), _open_setup.bind(true), 0, quiet))
-	else:
-		buttons.add_child(_button(Loc.t("start"), _open_setup.bind(true), 160 if mobile else 220, "primary"))
-	buttons.add_child(_button(Loc.t("lang_button"), _toggle_lang, 110 if mobile else 140, quiet))
-
-
 # Without the key art: the old card in the middle of the page.
 func _build_title_plain() -> void:
 	var center := CenterContainer.new()
@@ -783,7 +981,11 @@ func _build_title_plain() -> void:
 	head.add_child(_label(Loc.t("title"), 34, COL_TEXT, false, true))
 	v.add_child(_label(Loc.t("tagline"), 19, COL_MUTED, true))
 	v.add_child(_spacer(4))
-	_title_buttons(v, "")
+	var buttons := _flow(12, 12)
+	v.add_child(buttons)
+	if Rules.has_save():
+		buttons.add_child(_button(Loc.t("continue"), _continue_run, 260, "primary"))
+	buttons.add_child(_button(Loc.t("new_game"), _open_setup.bind(true), 0))
 
 
 # Before a run: which Irina you get and who you were. Portraits, not letters: the letters come out at the end.
@@ -911,8 +1113,7 @@ func _top_bar() -> Control:
 	var word := rules.boss_word()
 	top.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 15, BOSS_COLORS[word]))
 	top.add_child(_button("?", _toggle_help, 36, "on_top"))
-	top.add_child(_button(Loc.t("sound_on" if sound_on else "sound_off"), _toggle_sound, 0, "on_top"))
-	top.add_child(_button(Loc.t("lang_button"), _toggle_lang, 0, "on_top"))
+	top.add_child(_button(Loc.t("menu.button"), _open_menu, 0, "on_top"))
 	return bar
 
 
@@ -1003,14 +1204,10 @@ func _team_sidebar() -> Control:
 	v.add_child(_section(Loc.t("chainer_header")))
 	v.add_child(_chainer_card())
 	if mobile:
-		# On the phone the top bar has no room for these.
 		v.add_child(_spacer(4))
-		v.add_child(_section(Loc.t("settings_header")))
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
-		v.add_child(row)
-		row.add_child(_button(Loc.t("sound_on" if sound_on else "sound_off"), _toggle_sound, 0))
-		row.add_child(_button(Loc.t("lang_button"), _toggle_lang, 0))
+		var menu := _button(Loc.t("menu.button"), _open_menu, 0)
+		menu.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		v.add_child(menu)
 	return panel
 
 
@@ -1076,7 +1273,7 @@ func _person_card(p: String) -> Control:
 		var fire := _button(Loc.t("fire.button"), _fire.bind(p), 0, "subtle")
 		fire.disabled = fire.disabled or not rules.can_fire(p)
 		fire.custom_minimum_size.y = 26
-		fire.add_theme_font_size_override("font_size", 12)
+		fire.add_theme_font_size_override("font_size", _fs(12))
 		fire.add_theme_color_override("font_color", COL_DANGER)
 		v.add_child(talk)
 		v.add_child(fire)
@@ -1586,6 +1783,9 @@ func _phone_top() -> Control:
 	var help := _button("?", _toggle_help, 32, "on_top")
 	help.custom_minimum_size.y = 28
 	row.add_child(help)
+	var menu := _button(Loc.t("menu.button"), _open_menu, 0, "on_top")
+	menu.custom_minimum_size.y = 28
+	row.add_child(menu)
 	var info := _flow(12, 0)
 	v.add_child(info)
 	info.add_child(_label(_attention_text(), 13, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
@@ -1633,7 +1833,7 @@ func _phone_board() -> Control:
 	for name in ["inbox", "queued", "active", "done"]:
 		var b := _button("%s %d" % [Loc.t("col_short." + name), lanes[name].size()], _pick_lane.bind(name), 0, "chosen" if lane == name else "subtle")
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.add_theme_font_size_override("font_size", 13)
+		b.add_theme_font_size_override("font_size", _fs(13))
 		_lit(b, name)
 		switcher.add_child(b)
 	var hint := Loc.t("you.busy") if not rules.queue_of("me").is_empty() else Loc.t("pick_task")
@@ -1746,7 +1946,7 @@ func _chat() -> Control:
 			folded += 1
 	if folded > 0:
 		var open := _button(Loc.t("chat.morning_folded", [folded]), _open_morning, 0, "subtle")
-		open.add_theme_font_size_override("font_size", 13)
+		open.add_theme_font_size_override("font_size", _fs(13))
 		list.add_child(open)
 	for i in shown:
 		if _on_screen(i):
@@ -2605,7 +2805,7 @@ func _section(text_value: String) -> Label:
 func _label(text_value: String = "", size: int = BASE_FONT, color: Color = COL_TEXT, wrap: bool = false, bold: bool = false) -> Label:
 	var l := Label.new()
 	l.text = text_value
-	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_font_size_override("font_size", _fs(size))
 	l.add_theme_color_override("font_color", color)
 	if bold:
 		l.add_theme_font_override("font", font_bold)
@@ -2671,7 +2871,7 @@ func _button(text_value: String, action: Callable, min_width: int, look: String 
 	b.text = text_value
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(min_width, 44 if mobile else 34)
-	b.add_theme_font_size_override("font_size", 14)
+	b.add_theme_font_size_override("font_size", _fs(14))
 	var fill := COL_COLUMN
 	var hover := COL_BORDER
 	var text_color := Color("42526e")
