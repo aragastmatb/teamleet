@@ -663,31 +663,32 @@ func _teach_chat() -> bool:
 	return false
 
 
-# The key art: the whole screen on desktop with the card in the corner where only the floor is
-# (the empty chair in the middle is the player's, Taras in the doorway on the left keeps his face);
-# on a phone the picture is a strip on top, uncut, and the card sits under it.
+# The key art: the whole screen on desktop, darkening towards the bottom where the sticker, the tagline
+# and the buttons sit straight on the picture (the empty chair in the middle is the player's, Taras in
+# the doorway keeps his face). On a phone the picture is a strip on top, uncut, fading into the same dark.
 const KEY_ART := "res://art/key_art.png"
+const COL_NIGHT := Color("0b1a33")
 
 
 func _build_title() -> void:
 	var art: Texture2D = load(KEY_ART) if ResourceLoader.exists(KEY_ART) else null
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 24 if mobile else 32))
-	var v := _vbox(16)
-	card.add_child(v)
 	if art == null:
-		var center := CenterContainer.new()
-		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		ui.add_child(center)
-		center.add_child(card)
-		v.custom_minimum_size.x = mini(860, int(_view_width()) - 80)
-	elif mobile:
+		_build_title_plain()
+		return
+	var v := _vbox(16)
+	if mobile:
+		var back := ColorRect.new()
+		back.color = COL_NIGHT
+		back.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		ui.add_child(back)
 		var scroll := ScrollContainer.new()
 		scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		ui.add_child(scroll)
 		var col := _vbox(0)
 		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.custom_minimum_size.y = get_viewport().get_visible_rect().size.y
+		col.alignment = BoxContainer.ALIGNMENT_CENTER
 		scroll.add_child(col)
 		var pic := TextureRect.new()
 		pic.texture = art
@@ -695,8 +696,12 @@ func _build_title() -> void:
 		pic.expand_mode = TextureRect.EXPAND_FIT_HEIGHT_PROPORTIONAL
 		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 		pic.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var fade := _title_fade([0.0, 0.12, 0.6, 1.0], [1.0, 0.0, 0.0, 1.0])
+		pic.add_child(fade)
 		col.add_child(pic)
-		col.add_child(_padded(card, 12, 12))
+		var pad := _padded(v, 20, 8)
+		pad.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		col.add_child(pad)
 	else:
 		var pic := TextureRect.new()
 		pic.texture = art
@@ -705,42 +710,80 @@ func _build_title() -> void:
 		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		pic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		ui.add_child(pic)
-		var w := minf(600.0, _view_width() * 0.5)
-		card.anchor_top = 1.0
-		card.anchor_bottom = 1.0
-		card.offset_left = 32
-		card.offset_right = 32 + w
-		card.grow_vertical = Control.GROW_DIRECTION_BEGIN
-		card.offset_top = -32
-		card.offset_bottom = -32
-		ui.add_child(card)
+		ui.add_child(_title_fade([0.4, 0.68, 1.0], [0.0, 0.78, 0.95]))
+		var w := minf(620.0, _view_width() * 0.5)
+		v.custom_minimum_size.x = w
+		v.anchor_top = 1.0
+		v.anchor_bottom = 1.0
+		v.offset_left = 48
+		v.offset_right = 48 + w
+		v.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		v.offset_top = -48
+		v.offset_bottom = -48
+		ui.add_child(v)
 	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 12)
+	head.add_theme_constant_override("separation", 14 if mobile else 22)
 	v.add_child(head)
-	var tagline := _label(Loc.t("tagline"), 19, COL_MUTED, true)
-	if ResourceLoader.exists(LOGO):
-		# The sticker already says Team1337, so the tagline sits beside it.
-		head.add_theme_constant_override("separation", 14 if mobile else 20)
-		head.add_child(_logo(84 if mobile else 130))
-		if mobile:
-			tagline.add_theme_font_size_override("font_size", 16)
-		tagline.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		tagline.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		head.add_child(tagline)
-	else:
-		head.add_child(_logo(40))
-		head.add_child(_label(Loc.t("title"), 34, COL_TEXT, false, true))
-	if tagline.get_parent() == null:
-		v.add_child(tagline)
+	head.add_child(_logo(84 if mobile else 130))
+	var tagline := _label(Loc.t("tagline"), 16 if mobile else 19, Color(1, 1, 1, 0.88), true)
+	tagline.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tagline.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(tagline)
 	v.add_child(_spacer(4))
+	_title_buttons(v, "on_top")
+
+
+# A dark wash over the picture: stops are where it starts and how dark it gets (fractions of the height).
+func _title_fade(at: Array, alpha: Array) -> TextureRect:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array(at)
+	var colors := PackedColorArray()
+	for a in alpha:
+		colors.append(Color(COL_NIGHT, a))
+	g.colors = colors
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill_from = Vector2(0, 0)
+	tex.fill_to = Vector2(0, 1)
+	var wash := TextureRect.new()
+	wash.texture = tex
+	wash.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	wash.stretch_mode = TextureRect.STRETCH_SCALE
+	wash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	wash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return wash
+
+
+func _title_buttons(v: Control, quiet: String) -> void:
 	var buttons := _flow(12, 12)
 	v.add_child(buttons)
 	if Rules.has_save():
 		buttons.add_child(_button(Loc.t("continue"), _continue_run, 160 if mobile else 220, "primary"))
-		buttons.add_child(_button(Loc.t("new_game"), _open_setup.bind(true), 0))
+		buttons.add_child(_button(Loc.t("new_game"), _open_setup.bind(true), 0, quiet))
 	else:
 		buttons.add_child(_button(Loc.t("start"), _open_setup.bind(true), 160 if mobile else 220, "primary"))
-	buttons.add_child(_button(Loc.t("lang_button"), _toggle_lang, 110 if mobile else 140))
+	buttons.add_child(_button(Loc.t("lang_button"), _toggle_lang, 110 if mobile else 140, quiet))
+
+
+# Without the key art: the old card in the middle of the page.
+func _build_title_plain() -> void:
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(center)
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 32))
+	center.add_child(card)
+	var v := _vbox(16)
+	v.custom_minimum_size.x = mini(860, int(_view_width()) - 80)
+	card.add_child(v)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	v.add_child(head)
+	head.add_child(_logo(40))
+	head.add_child(_label(Loc.t("title"), 34, COL_TEXT, false, true))
+	v.add_child(_label(Loc.t("tagline"), 19, COL_MUTED, true))
+	v.add_child(_spacer(4))
+	_title_buttons(v, "")
 
 
 # Before a run: which Irina you get and who you were. Portraits, not letters: the letters come out at the end.
