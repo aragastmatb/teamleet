@@ -136,7 +136,7 @@ Team1337 — комедийная игра про тимлида DevOps-плат
 2. **Эмоции только от эталона.** Используйте режимы, которые берут картинку за основу: image-to-image, «референс персонажа», инпейнт лица. Меняйте только лицо. Генерация каждой эмоции с нуля даст каждый раз нового человека.
 3. **Один шаблон промпта на всех.** Меняйте только описание персонажа и эмоцию, всё остальное (стиль, ракурс, свет, фон) оставляйте дословно. Пример для стиля A:
 
-   > flat comic illustration, clean line art, flat colors with one shade of shadow, bust portrait, three-quarter view, transparent background, soft neutral lighting, adult proportions. Character: man around 55, greying beard, stretched grey sweater, glasses, old mug. Expression: annoyed, lips pressed, brows drawn together. Accent color green #36B37E on the mug.
+   > Плоская комиксная иллюстрация, чистый контур, плоские цвета с одним тоном тени, бюст, поворот на три четверти, прозрачный фон, мягкий нейтральный свет, взрослые пропорции. Персонаж: мужчина около 55 лет, седеющая борода, растянутый серый свитер, очки, старая кружка. Выражение: раздражение, губы сжаты, брови сведены. Акцентный цвет: зелёный #36B37E на кружке.
 
 4. **Фиксируйте всё, что сработало:** модель, сид, силу референса. Запишите это в таблицу рядом с файлом.
 5. **Проверка каждой картинки** (чек-лист в разделе 10). Не прошла — перегенерировать, а не «и так сойдёт».
@@ -149,25 +149,25 @@ Team1337 — комедийная игра про тимлида DevOps-плат
 
 **Как:** приложите портрет Гены как **референс стиля** (не персонажа), чтобы мазок и палитра совпали. Сначала спокойное лицо; когда оно устроит, остальные эмоции (радость, раздражение, грусть) делайте редактированием от него, меняя только лицо.
 
-**Общая часть, дословно в каждый промпт:**
+**Общая часть, дословно в начало каждого промпта** (промпты на русском, ChatGPT их понимает так же хорошо):
 
-> painterly digital gouache portrait, visible confident brush strokes, muted palette with warm skin tones, rough dry-brush edges fading out, bust portrait, head and shoulders, three-quarter head turn, transparent background PNG with real alpha, no hands in frame, no glamour retouching, natural skin texture with wrinkles and asymmetry, adult office worker, not a model. Avoid: hand on chin, pixel-stretched streaks, checkerboard background, text, logos.
+> Рисованный цифровой портрет в технике гуаши: видимые уверенные мазки, приглушённая палитра, тёплые тона кожи, рваные сухие края кисти по контуру. Бюст: голова и плечи, поворот головы на три четверти. Фон по-настоящему прозрачный (PNG с альфа-каналом, не нарисованная шахматка). Рук в кадре нет. Без глянца и бьюти-ретуши: живая кожа, морщины, асимметрия. Это обычный офисный сотрудник, не модель. Не надо: руки у подбородка, растянутые пиксельные полосы на одежде и волосах, шахматный фон, надписи, логотипы.
 
 **Алексей (alex):**
 
-> Man about 30, thin, visibly sleep-deprived, dark circles under the eyes, uneven stubble, short messy dark hair. Faded blue hoodie (#0065FF) with a conference badge on a lanyard, over-ear headphones around his neck, slightly hunched shoulders. Looking down and to the side, as if at a laptop screen just out of frame. Expression: calm but faintly condescending, tense jaw, a man who knows he's the smartest in the room and is tired of it.
+> Мужчина около 30 лет, худой, заметно невыспавшийся: тёмные круги под глазами, неровная щетина, короткие растрёпанные тёмные волосы. Выцветшее синее худи (#0065FF), на шнурке бейдж с какой-то конференции, на шее большие наушники, плечи чуть ссутулены. Смотрит вниз и в сторону, будто в экран ноутбука за кадром. Выражение спокойное, но слегка снисходительное, челюсть напряжена: человек, который знает, что он самый умный в комнате, и устал от этого.
 
 **Вика (vika):**
 
-> Woman about 30, composed and sharp, straight posture, chin slightly raised. Dark hair pulled back into a tight low ponytail, minimal makeup, small red-orange earrings (#FF5630). Fitted charcoal blazer over a plain black t-shirt, company lanyard. Eyes looking past the viewer to the side. Expression: polite closed-mouth half-smile that gives nothing away; armour, not warmth.
+> Женщина около 30 лет, собранная и острая, прямая осанка, подбородок чуть поднят. Тёмные волосы гладко убраны в тугой низкий хвост, макияж минимальный, маленькие красно-оранжевые серьги (#FF5630). Приталенный графитовый пиджак поверх простой чёрной футболки, рабочий бейдж на шнурке. Смотрит мимо зрителя, в сторону. Выражение: вежливая полуулыбка с закрытым ртом, которая ничего не выдаёт. Броня, а не тепло.
 
 **Дима (dima):**
 
-> Man about 34, older than a typical junior, faint forehead lines, kind open face, round glasses, a pencil tucked behind his ear, slightly curly brown hair. Purple knitted sweater (#6554C0) over a collared shirt, the look of a schoolteacher. Looking straight at the viewer, leaning slightly forward, eyebrows a little raised. Expression: eager and a bit anxious, waiting for your answer.
+> Мужчина около 34 лет, старше обычного джуна, лёгкие морщины на лбу, доброе открытое лицо, круглые очки, за ухом карандаш, слегка вьющиеся каштановые волосы. Фиолетовый вязаный свитер (#6554C0) поверх рубашки с воротником, вид школьного учителя. Смотрит прямо на зрителя, чуть подался вперёд, брови немного приподняты. Выражение: старательное и немного тревожное, ждёт, что вы ответите.
 
 **Тарас (taras):**
 
-> Man about 45, clean-shaven, well groomed, short hair with faded temples, healthy tan. Navy blazer over a polo shirt, an orange pocket square (#FF8B00). Looking directly at the viewer, head tilted slightly. Expression: confident, smug half-smile, salesman charm; the smile does not quite reach the eyes.
+> Мужчина около 45 лет, гладко выбрит, ухоженный, короткая стрижка с выбритыми висками, ровный загар. Тёмно-синий пиджак поверх поло, в нагрудном кармане оранжевый платок (#FF8B00). Смотрит прямо на зрителя, голова слегка наклонена. Выражение: уверенная самодовольная полуулыбка, обаяние продавца; улыбка не совсем доходит до глаз.
 
 **Проверка перед тем, как класть в игру:** поставьте четверых рядом с Геной и Ириной. Должно быть видно, что это одна игра, но шесть разных людей, которые смотрят в разные стороны.
 
