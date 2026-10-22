@@ -4,16 +4,16 @@
 == alex_reports
 when: chapter 1, day 3-8, here alex, not flag init_automate_report, not flag automated_report
 
-- Алексей заходит без стука, ноутбук под мышкой.
-  en: Alex walks in without knocking, laptop under one arm.
-alex [excited]: Слушай, эти еженедельные отчёты для Ирины Викторовны это же позор какой-то, мы платформа автоматизации, а отчёт руками собираем.
-  en: Listen, these weekly reports for Irina are kind of embarrassing, we're an automation platform and we put the report together by hand.
-alex [excited]: Давай я сделаю, чтобы он сам из Chainer собирался, там работы на пару вечеров.
-  en: Let me make it build itself from Chainer, it's a couple of evenings' work.
-{if here vika} vika [annoyed]: Вообще-то этот отчёт каждую пятницу делаю я.
-  en: Actually, I'm the one who does that report every Friday.
-{if here vika} alex: Ну вот, больше не придётся.
-  en: Well, now you won't have to.
+- Алексей идёт к двери и медленно пропихивает её открытой крышкой ноутбука.
+  en: Alex comes to the door and slowly nudges it open with the lid of his open laptop.
+alex [excited]: Слушай, эти еженедельные отчёты для Ирины Викторовны это же срань, мы тут автоматизациями занимаемся, а отчёт руками собираем.
+  en: Listen, these weekly reports for Irina are crap, automation is literally our job and we put the report together by hand.
+alex [excited]: Давай я сделаю, чтобы он сам из Chainer собирался, там работы чисто плюнуть-дунуть-растереть.
+  en: Let me make it build itself from Chainer, it's a total no-brainer.
+{if here vika} vika [annoyed]: Вообще-то я этот отчёт каждую пятницу делаю.
+  en: Actually, I do that report. Every Friday.
+{if here vika} alex [excited]: Ну так и хорошо же, больше не придётся.
+  en: Well, that's great then, you won't have to anymore.
 {if here vika} - Вика смотрит на него так, что в комнате становится на пару градусов холоднее.
   en: Vika gives him a look that drops the room a couple of degrees.
 * Делай, идея отличная. -> himself
@@ -26,11 +26,14 @@ alex [excited]: Давай я сделаю, чтобы он сам из Chainer 
   en: Not now, we're swamped as it is.
 
 -- himself
-alex [happy]: Вот, хоть кто-то понимает! К пятнице будет.
-  en: See, finally someone gets it! Done by Friday.
+alex [happy]: Вот и я о том! Скоро будет готово.
+  en: That's what I'm saying! It'll be ready soon.
 > give automate_report alex
 > mood alex +1
 > style E 0.5
+{if here vika} - Вика остаётся в недоумении.
+  en: Vika is left baffled.
+{if here vika} > mood vika -1
 -> end
 
 -- to_vika
