@@ -382,26 +382,31 @@ const DIMA_NOTES_TO_SHARE := 3 # written-down answers before he puts his notes u
 func _check_dima_question(r) -> Dictionary:
 	if r.chapter > 2 or r.chapter_day() < 2 or not here(r, "dima"):
 		return {}
-	if r.day - r.flags.get("dima_q_day", -100) < DIMA_QUESTION_GAP or r.rng.randf() > 0.6:
+	# Once Gena's drawing hangs over his desk, he asks it first and comes to you half as often.
+	var chance := 0.3 if r.flags.has("gena_scheme") else 0.6
+	if r.day - r.flags.get("dima_q_day", -100) < DIMA_QUESTION_GAP or r.rng.randf() > chance:
 		return {}
 	var told: Dictionary = r.flags.get("dima_told", {})
 	var learned: Dictionary = r.flags.get("dima_learned", {})
+	# Once he's confident in a thing, he stops asking about it, told or not.
+	var knows := func(x: String) -> bool: return r.people["dima"]["skills"][DIMA_TOPIC_CAT[x]] >= 3
+	var slipped: Array = told.keys().filter(func(x): return not knows.call(x))
 	var topic := ""
 	var again := false
 	# What he was told but didn't write down comes back first.
-	if not told.is_empty() and r.rng.randf() < 0.7:
-		topic = told.keys()[r.rng.randi() % told.size()]
+	if not slipped.is_empty() and r.rng.randf() < 0.7:
+		topic = slipped[r.rng.randi() % slipped.size()]
 		again = true
 	else:
 		for x in DIMA_TOPICS:
-			if not told.has(x) and not learned.has(x):
+			if not told.has(x) and not learned.has(x) and not knows.call(x):
 				topic = x
 				break
 	if topic == "":
 		return {}
 	r.flags["dima_q_day"] = r.day
 	var choices := ["explain", "write_down"]
-	if here(r, "gena"):
+	if here(r, "gena") and not r.flags.has("gena_scheme"):
 		choices.append("ask_gena")
 	choices.append("focus")
 	return {"who": "dima", "topic": topic, "again": again, "choices": choices,
@@ -413,15 +418,21 @@ func _resolve_dima_question(r, ev: Dictionary, c: String) -> String:
 	var told: Dictionary = r.flags.get("dima_told", {})
 	var learned: Dictionary = r.flags.get("dima_learned", {})
 	var dima: Dictionary = r.people["dima"]
-	var reply := "event.dima_question.%s.reply" % c
+	# The same answer a second and third time doesn't get the same reaction.
+	var n: int = r.flags.get("dima_q_" + c, 0) + 1
+	r.flags["dima_q_" + c] = n
+	var reply: String = r._first_key(["event.dima_question.%s.reply.%d" % [c, mini(n, 3)], "event.dima_question.%s.reply" % c])
 	match c:
 		"explain":
-			# Explained, not written down: it will come back.
+			# Explained, not written down: it will come back, but only once; the second time it sticks.
 			r.attention = maxi(0, r.attention - 1)
 			dima["mood"] += 0.5
-			told[topic] = true
 			if ev["again"]:
+				told.erase(topic)
+				learned[topic] = true
 				reply = "event.dima_question.explain.reply_again"
+			else:
+				told[topic] = true
 		"write_down":
 			dima["mood"] -= 1.0 if ev["again"] else 0.6
 			told.erase(topic)
@@ -435,10 +446,22 @@ func _resolve_dima_question(r, ev: Dictionary, c: String) -> String:
 			told.erase(topic)
 			learned[topic] = true
 			r._learn("dima", DIMA_TOPIC_CAT[topic], 1.0)
-			# Gena doesn't mind when he has a free minute; in the middle of his own work he does.
+			# Gena doesn't mind the first time he has a free minute; it wears thin, and more so in the middle
+			# of his own work. Once Dima's notes are up, Gena sends him to read what he wrote himself.
 			var busy: bool = not r.queue_of("gena").is_empty()
-			r.people["gena"]["mood"] += -0.4 if busy else 0.3
-			r.say("gena", "event.dima_question.gena_busy" if busy else "event.dima_question.gena_free")
+			var k := mini(n, 3)
+			if r.flags.has("dima_notes_shared") and n >= 2:
+				r.people["gena"]["mood"] -= 0.2
+				r.say("gena", "event.dima_question.gena_wiki")
+				reply = "event.dima_question.ask_gena.reply.wiki"
+			elif n >= 4:
+				# The fourth time Gena draws it all once, on paper, and that's the end of sending Dima to him.
+				r.flags["gena_scheme"] = true
+				r.say("gena", "event.dima_question.gena_scheme")
+				reply = "event.dima_question.ask_gena.reply.scheme"
+			else:
+				r.people["gena"]["mood"] += -0.4 * k if busy else [0.3, 0.0, -0.3][k - 1]
+				r.say("gena", "event.dima_question.gena_%s.%d" % ["busy" if busy else "free", k])
 		"focus":
 			dima["mood"] -= 0.4
 			r.flags["focus_until_dima"] = r.day + 5

@@ -1827,23 +1827,41 @@ func initiative_offer(p: String) -> String:
 		if t["status"] == "active" and t["helper"] == p:
 			return ""
 	var list: Array = C.INITIATIVES.get(p, [])
-	var i: int = init_next.get(p, 0)
-	while i < list.size() and _initiative_done(list[i]):
-		i += 1
+	var i := _initiative_index(p)
 	return list[i] if i < list.size() else ""
 
 
-func _initiative_done(id: String) -> bool:
-	if id == "showcase" or id == "self_study":
+# Where in their list they are: past what they've offered and had taken up, and past what's already done.
+func _initiative_index(p: String) -> int:
+	var list: Array = C.INITIATIVES.get(p, [])
+	var i: int = init_next.get(p, 0)
+	while i < list.size() and _initiative_done(list[i], p):
+		i += 1
+	return i
+
+
+func _initiative_done(id: String, p: String) -> bool:
+	if id == "showcase":
 		return false
+	if id == "self_study":
+		return study_target(p) == "" # nothing left they'd learn on their own
 	return flags.has("init_" + id) or tasks.any(func(t): return t["id"] == "init_" + id and t["owner"] != "")
+
+
+# What someone would study on their own: their weakest category, while it's still below confident.
+func study_target(p: String) -> String:
+	var weakest := ""
+	for cat in C.CATEGORIES:
+		if weakest == "" or people[p]["skills"][cat] < people[p]["skills"][weakest]:
+			weakest = cat
+	return weakest if people[p]["skills"][weakest] < 3 else ""
 
 
 func accept_initiative(p: String) -> void:
 	var id := initiative_offer(p)
 	if id == "" or not pending.is_empty():
 		return
-	init_next[p] = C.INITIATIVES.get(p, []).find(id) + 1
+	init_next[p] = _initiative_index(p) + 1
 	for pair in INIT_STYLE.get(id, []):
 		lead(pair[0], pair[1])
 	flags["init_" + id] = true
@@ -1858,6 +1876,10 @@ func accept_initiative(p: String) -> void:
 		var info: Dictionary = C.INIT_TASKS[id]
 		add_task_raw("init_" + id, info["cat"], info["size"], NO_DEADLINE, false, p)
 		t = tasks[tasks.size() - 1]
+		if id == "self_study":
+			# What they'll study is settled when they start: their weakest thing at the time.
+			t["study"] = study_target(p)
+			t["cat"] = t["study"]
 	t["owner"] = p
 	t["status"] = "active"
 	t["assigned_day"] = day
@@ -1883,12 +1905,10 @@ func _initiative_effect(t: Dictionary) -> void:
 		"showcase":
 			vika_up()
 		"self_study":
-			var weakest: String = C.CATEGORIES[0]
-			for cat in C.CATEGORIES:
-				if people[t["owner"]]["skills"][cat] < people[t["owner"]]["skills"][weakest]:
-					weakest = cat
-			learn(t["owner"], weakest, 4.0)
-			names["cat"] = "@cat." + weakest
+			var target: String = t.get("study", study_target(t["owner"]))
+			if target != "":
+				learn(t["owner"], target, 4.0)
+				names["cat"] = "@cat." + target
 		"write_docs":
 			comp_off["missing_docs"] = true
 			comp_off["old_system"] = true

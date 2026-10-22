@@ -2183,7 +2183,10 @@ func _offer_card(p: String, offer: String) -> Control:
 	v.add_child(head)
 	head.add_child(_avatar(p, 28))
 	head.add_child(_label(Loc.person(p), 14, COL_TEXT, false, true))
-	v.add_child(_label(Loc.t("init.offer." + offer), 15, COL_TEXT, true))
+	var offer_key := "init.offer." + offer
+	if offer == "self_study":
+		offer_key += "." + rules.study_target(p)
+	v.add_child(_label(Loc.t(offer_key), 15, COL_TEXT, true))
 	var b := _button(Loc.t("init.accept"), _accept_initiative.bind(p), 0, "primary")
 	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	v.add_child(b)
