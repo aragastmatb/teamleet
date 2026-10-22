@@ -45,6 +45,7 @@ dima [embarrassed]: Да я сам… ну ладно, давай.
 
 # Вика просит письменно подтвердить, что подключение сделала она. Если игрок вступился за неё на разборе, разговор идёт на её синке.
 == vika_letter
+place: meeting_room
 when: chapter 3, day 3-7, here vika
 
 {if flag vika_credited} - На её пятнадцатиминутном синке по банкам Вика вдруг закрывает ноутбук.
@@ -136,6 +137,7 @@ dima [happy]: Спасибо! Не подведу!
 
 # Гена на планёрке по переезду на OpenShift: «подержу старый параллельно».
 == gena_parallel
+place: meeting_room
 when: chapter 3, day 2-7, here gena
 
 - Планёрка по переезду Chainer на OpenShift. Алексей рисует схему: через месяц старый Jenkins выключаем.

@@ -1917,7 +1917,7 @@ func _build_story() -> void:
 	body.add_theme_constant_override("separation", 0)
 	panel.add_child(body)
 	if speaker != "":
-		body.add_child(_story_portrait(speaker, emo))
+		body.add_child(_story_portrait(speaker, emo, Dialogue.SCENES[rules.story["id"]]["place"]))
 	var right := _vbox(0)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -2036,7 +2036,46 @@ func _standup_close() -> void:
 	_render()
 
 
-func _story_portrait(p: String, emo: String) -> Control:
+# Where the scene happens, behind the portrait: art/backgrounds/<place>.png, cut to fit (the middle of the picture
+# survives both the tall column on desktop and the strip on a phone), under a light wash so the name still reads.
+const BACKGROUND_DIR := "res://art/backgrounds/"
+
+
+func _background(place: String) -> Control:
+	var path := BACKGROUND_DIR + place + ".png"
+	if place == "" or not ResourceLoader.exists(path):
+		return null
+	var stack := Control.new()
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pic := TextureRect.new()
+	pic.texture = load(path)
+	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	pic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	stack.add_child(pic)
+	var fade := Gradient.new()
+	if mobile:
+		fade.set_color(0, Color(COL_BG, 0.45))
+		fade.set_color(1, Color(COL_BG, 0.75))
+	else:
+		fade.set_color(0, Color(COL_BG, 0.0))
+		fade.set_color(1, Color(COL_BG, 0.92))
+		fade.add_point(0.55, Color(COL_BG, 0.15))
+	var wash_tex := GradientTexture2D.new()
+	wash_tex.gradient = fade
+	wash_tex.fill_from = Vector2(0, 0)
+	wash_tex.fill_to = Vector2(1, 0) if mobile else Vector2(0, 1)
+	var wash := TextureRect.new()
+	wash.texture = wash_tex
+	wash.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	wash.stretch_mode = TextureRect.STRETCH_SCALE
+	wash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	stack.add_child(wash)
+	return stack
+
+
+func _story_portrait(p: String, emo: String, place: String = "") -> Control:
 	var box := PanelContainer.new()
 	var style := _flat(COL_BG)
 	if mobile:
@@ -2045,12 +2084,15 @@ func _story_portrait(p: String, emo: String) -> Control:
 	else:
 		style.corner_radius_top_left = 16
 		style.corner_radius_bottom_left = 16
-	style.set_content_margin_all(16 if mobile else 24)
 	box.add_theme_stylebox_override("panel", style)
+	box.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	var back := _background(place)
+	if back != null:
+		box.add_child(back)
 	var inner: BoxContainer = HBoxContainer.new() if mobile else VBoxContainer.new()
 	inner.add_theme_constant_override("separation", 12)
 	inner.alignment = BoxContainer.ALIGNMENT_BEGIN if mobile else BoxContainer.ALIGNMENT_CENTER
-	box.add_child(inner)
+	box.add_child(_padded(inner, 16 if mobile else 24, 16 if mobile else 24))
 	var size := 64 if mobile else 168
 	var tex := _portrait(p, emo)
 	if tex != null and not mobile:

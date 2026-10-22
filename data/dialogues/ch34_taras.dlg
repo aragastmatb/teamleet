@@ -96,6 +96,7 @@ taras [happy]: О, моими словами уже говоришь.
 
 # Глава 4: Алексей просит разгрузить его. Среди ответов фраза Тараса из главы 2 (или из его заявок).
 == mirror_tired
+place: home_night
 at: evening
 when: chapter 4, day 10-16, here alex, not flag alex_alone
 
@@ -143,6 +144,7 @@ alex [annoyed]: …Понял.
 
 # Глава 4: вердикт Тараса. Своим он показывает себя настоящего; остальным только снисхождение.
 == taras_verdict
+place: lift
 at: evening
 when: chapter 4, day 14-18
 

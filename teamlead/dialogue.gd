@@ -1,6 +1,8 @@
 extends RefCounted
 # Story conversations, written as plays in data/dialogues/*.dlg (the format is in docs/dialogues.md).
-# Each file is read once into SCENES: id -> {"id", "when": [terms], "ops": [...], "labels": {label: op index}}.
+# Each file is read once into SCENES: id -> {"id", "when": [terms], "place", "ops": [...], "labels": {label: op index}}.
+# place is where it happens (art/backgrounds/<place>.png behind the portrait); without place: it's the openspace,
+# by day in the morning and by night in the evening.
 # rules.gd walks the ops; main.gd shows them on their own screen.
 #
 # Ops:
@@ -13,6 +15,7 @@ extends RefCounted
 
 const DIR := "res://data/dialogues"
 const FX := ["flag", "unflag", "days", "mood", "trust", "energy", "style", "boss", "taras", "give", "grab", "drop", "task", "shrink", "reveal"]
+const PLACES := ["office_day", "office_night", "meeting_room", "irina_office", "lift", "home_night"]
 const TERMS := ["chapter", "day", "here", "flag", "not", "taras", "irina", "busy", "laid_off", "incident", "style"]
 
 static var SCENES := {}
@@ -71,6 +74,11 @@ static func _parse(path: String) -> void:
 			scene["at"] = s.substr(3).strip_edges()
 			if not scene["at"] in ["morning", "evening"]:
 				ERRORS.append("%s: at: is morning or evening" % where)
+			continue
+		if s.begins_with("place:"):
+			scene["place"] = s.substr(6).strip_edges()
+			if not scene["place"] in PLACES:
+				ERRORS.append("%s: place: is one of %s" % [where, ", ".join(PLACES)])
 			continue
 		if s.begins_with("when:"):
 			scene["when"] = _terms(s.substr(5), where)
@@ -146,6 +154,8 @@ static func _terms(text: String, where: String) -> Array:
 
 # Every jump and choice has to land somewhere.
 static func _finish(scene: Dictionary) -> void:
+	if not scene.has("place"):
+		scene["place"] = "office_night" if scene["at"] == "evening" else "office_day"
 	for op in scene["ops"]:
 		var targets: Array = []
 		if op["op"] == "jump":

@@ -2,6 +2,7 @@
 # Игра запоминает, вступился игрок или промолчал (vika_defended / vika_unheard / vika_overridden).
 
 == vika_call
+place: meeting_room
 when: chapter 1, day 4-12, here vika, here alex
 
 - Созвон с «Кредитом Доверия»: банк подключает новый стенд к порталу. С их стороны Олег, руководитель платформы.
