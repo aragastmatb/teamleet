@@ -71,6 +71,103 @@ textarea.error { border-color: var(--danger); background: #ffebe6; }
   main { padding: 16px; }
   .row.choice { margin-left: 0; }
 }
+
+/* ---------- scheme editor ---------- */
+main.wide { max-width: none; padding: 0; }
+.tabs { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-right: 6px; }
+.tabs a { padding: 3px 10px; font-size: 13px; color: var(--text); text-decoration: none; background: var(--surface); }
+.tabs a.on { background: var(--primary); color: #fff; }
+.scheme { display: flex; flex-direction: column; height: calc(100vh - 54px); }
+.bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.bar .grow { flex: 1; }
+.bar button, .panel button, .newform button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; }
+button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+button.primary:disabled { background: #c1c7d0; border-color: #c1c7d0; cursor: default; }
+button.danger { color: var(--danger); }
+.state { font-size: 12.5px; color: var(--muted); }
+.state.err { color: var(--danger); }
+.probsum { font-size: 12.5px; padding: 2px 8px; border-radius: 10px; cursor: help; }
+.probsum.ok { background: var(--good-bg); color: var(--good); }
+.probsum.warn { background: var(--warn-bg); color: var(--warn); }
+.probsum.error { background: #ffebe6; color: var(--danger); }
+.split { flex: 1; display: grid; grid-template-columns: 1fr 400px; min-height: 0; }
+.canvas { position: relative; overflow: hidden; background: #eef0f4; background-image: radial-gradient(#d5d9e0 1px, transparent 1px); background-size: 22px 22px; cursor: grab; touch-action: none; }
+.canvas:active { cursor: grabbing; }
+#edges { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; transform-origin: 0 0; pointer-events: none; }
+#nodes { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.edge { fill: none; stroke: #8993a4; stroke-width: 1.6; }
+.edge.jump { stroke-dasharray: 2 0; stroke: #a5adba; }
+.edge.if { stroke-dasharray: 6 4; }
+.edge.hot { stroke: var(--primary); stroke-width: 2.4; }
+.edge.wire { stroke: var(--primary); stroke-dasharray: 4 4; }
+.node { position: absolute; left: 0; top: 0; width: 260px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 3px rgba(9,30,66,.12); font-size: 12.5px; cursor: pointer; user-select: none; }
+.node.start { border-color: #79e2f2; }
+.node.sel { border-color: var(--primary); box-shadow: 0 0 0 2px #4c9aff; }
+.n-title { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; font-weight: 700; font-size: 13px; border-bottom: 1px solid var(--border); background: #f7f8fa; border-radius: 10px 10px 0 0; }
+.node.start .n-title { background: #e6fcff; }
+.n-bad { font-size: 11px; padding: 0 6px; border-radius: 8px; }
+.n-bad.error { background: var(--danger); color: #fff; }
+.n-bad.warn { background: #ffe380; color: #172b4d; }
+.n-when { padding: 4px 10px 0; display: flex; flex-wrap: wrap; gap: 3px; }
+.n-when .chip { font-size: 10.5px; }
+.n-line { padding: 3px 10px; color: var(--text); line-height: 1.35; }
+.n-line.if { border-left: 3px solid #dcd5ff; }
+.n-more { padding: 0 10px 2px; color: var(--faint); font-size: 11.5px; }
+.n-fx { padding: 3px 10px; display: flex; flex-wrap: wrap; gap: 3px; }
+.n-fx .chip { font-size: 10.5px; }
+.n-exit { position: relative; padding: 4px 18px 4px 10px; border-top: 1px dashed var(--border); background: var(--you); display: flex; gap: 5px; align-items: center; }
+.n-exit.jump { background: #f7f8fa; color: var(--muted); }
+.n-exit.fall { background: transparent; color: var(--faint); font-style: italic; }
+.n-exit:last-child { border-radius: 0 0 10px 10px; }
+.n-exit .t { flex: 1; }
+.n-if { font-size: 10px; background: #f3f0ff; color: #403294; border-radius: 4px; padding: 0 4px; }
+.n-end { font-size: 10.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+.port { position: absolute; right: -7px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--surface); border: 2px solid var(--primary); cursor: crosshair; }
+.port:hover { background: var(--primary); }
+.help { position: absolute; left: 12px; bottom: 10px; right: 12px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.panel { border-left: 1px solid var(--border); background: var(--surface); overflow-y: auto; padding: 12px 14px 60px; }
+.panel-top { display: flex; gap: 10px; align-items: flex-end; justify-content: space-between; margin-bottom: 10px; }
+.panel-title { font-weight: 700; font-size: 16px; }
+.panel-sub { font-size: 12.5px; color: var(--muted); margin: 6px 0 4px; }
+.field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
+.field input, .field select, .terms select, .terms input { font: inherit; font-size: 13px; color: var(--text); padding: 3px 5px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); max-width: 100%; }
+.branch-name { font-weight: 700; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+.item { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; background: var(--surface); }
+.item.choice { background: var(--you); }
+.item.narr { border-style: dashed; }
+.item.fx, .item.jump { background: #f7f8fa; }
+.item.comment { background: #fffbe6; }
+.item-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; margin-bottom: 4px; }
+.item-tools button { border: 0; background: none; padding: 0 4px; color: var(--muted); cursor: pointer; font-size: 13px; }
+.item-tools button:disabled { opacity: .3; }
+.panel textarea { border-color: var(--border); background: #fff; }
+.terms { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; }
+.term { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.term .neg { font-size: 12px; display: flex; gap: 2px; align-items: center; }
+.term .x { border: 0 !important; background: none !important; color: var(--muted); padding: 0 4px !important; }
+.terms .add { align-self: flex-start; border: 0 !important; background: none !important; color: var(--primary); padding: 0 !important; }
+.hint { font-size: 11px; color: var(--faint); width: 100%; }
+.term .hint { width: auto; font-family: ui-monospace, Menlo, monospace; }
+details.cond summary { font-size: 12px; color: #403294; cursor: pointer; margin-top: 4px; }
+.adds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.probs { margin: 6px 0; font-size: 12.5px; }
+.probs .error, .probline.error { color: var(--danger); }
+.probs .warn, .probline.warn { color: var(--warn); }
+.probline { font-size: 13.5px; margin: 3px 0; }
+table.ref { border-collapse: collapse; width: 100%; margin: 6px 0 18px; font-size: 13.5px; background: var(--surface); }
+table.ref td, table.ref th { border: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
+table.ref th { background: #f7f8fa; font-size: 12.5px; }
+table.flags tr.warn td { background: var(--warn-bg); }
+table.flags tr.unused td { color: var(--muted); }
+table.flags .none { color: var(--faint); }
+.search { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; width: 320px; max-width: 100%; }
+.showauto { display: block; font-size: 13px; color: var(--muted); margin: 8px 0; }
+.row2 > * { min-width: 0; }
+.row2 select, .field select { width: 100%; }
+.newform { display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
+main h3 { margin: 22px 0 6px; font-size: 16px; }
+@media (max-width: 1000px) { .split { grid-template-columns: 1fr; grid-template-rows: 55vh auto; } .panel { border-left: 0; border-top: 1px solid var(--border); } }
 </style>
 </head>
 <body>
@@ -85,6 +182,7 @@ textarea.error { border-color: var(--danger); background: #ffebe6; }
   <nav id="nav"></nav>
   <main id="main"><div class="empty">Загрузка…</div></main>
 </div>
+<script src="/scheme.js"></script>
 <script>
 "use strict";
 let DATA = null;
@@ -108,6 +206,12 @@ const isDone = it => !!(DATA.notes[it.id] && DATA.notes[it.id].done);
 async function load() {
   const r = await fetch("/api/all");
   DATA = await r.json();
+  rebuildGroups();
+  renderNav();
+  route();
+}
+
+function rebuildGroups() {
   for (const k in groups) delete groups[k];
   for (const sc of DATA.scenes) {
     const items = sc.rows.filter(r => r.type === "text");
@@ -123,8 +227,6 @@ async function load() {
   const tg = {};
   for (const it of DATA.tables) { byId[it.id] = it; (tg[it.group] = tg[it.group] || []).push(it); }
   for (const g in tg) groups["tsv:" + g] = { title: g.split(" / ")[1], sub: g.split(" / ")[0], section: "tables", kind: "table", items: tg[g] };
-  renderNav();
-  route();
 }
 
 function itemsShown(g) {
@@ -140,7 +242,8 @@ function renderNav() {
   $("#stats").textContent = `текстов ${total} · готово ${done} · с тире ${dashes}`;
   const cur = location.hash.slice(1);
   const filtering = $("#q").value.trim() || $("#onlyDash").checked || $("#onlyTodo").checked;
-  let html = "";
+  const tool = (id, t) => `<a href="#tool:${id}" class="${cur === "tool:" + id ? "on" : ""}"><span>${t}</span></a>`;
+  let html = `<details open><summary>Сцены: схема и связи</summary>${tool("new", "+ Новая сцена")}${tool("check", "Проверка всех сцен")}${tool("flags", "Отметки: кто ставит, кто читает")}${tool("catalog", "Справочник условий и эффектов")}</details>`;
   for (const [sec, title] of SECTIONS) {
     const list = Object.entries(groups).filter(([, g]) => g.section === sec);
     let links = "", count = 0;
@@ -150,10 +253,12 @@ function renderNav() {
       count++;
       const d = g.items.filter(isDone).length, dash = g.items.filter(hasDash).length;
       const n = dash ? `<span class="n dash">— ${dash}</span>` : `<span class="n ${d === g.items.length ? "alldone" : ""}">${d}/${g.items.length}</span>`;
-      links += `<a href="#${esc(id)}" class="${id === cur ? "on" : ""}"><span>${esc(g.title)}</span>${n}</a>`;
+      const href = g.kind === "scene" ? "scheme:" + g.title : id;
+      const on = id === cur || (g.kind === "scene" && cur === "scheme:" + g.title);
+      links += `<a href="#${esc(href)}" class="${on ? "on" : ""}"><span>${esc(g.title)}</span>${n}</a>`;
     }
     if (!count) continue;
-    const open = filtering || list.some(([id]) => id === cur) || (!groups[cur] && sec === "scenes");
+    const open = filtering || list.some(([id, g]) => id === cur || "scheme:" + g.title === cur) || (!groups[cur] && !cur && sec === "scenes");
     html += `<details ${open ? "open" : ""}><summary>${title} <span class="key">${count}</span></summary>${links}</details>`;
   }
   $("#nav").innerHTML = html || `<div class="empty" style="padding:16px">Ничего не нашлось.</div>`;
@@ -201,7 +306,7 @@ function textBlock(it, opts = {}) {
 function renderScene(g) {
   const sc = g.scene;
   const shown = new Set(itemsShown(g).map(it => it.id));
-  let html = `<h2>${esc(sc.id)}</h2><div class="key">${esc(sc.file)}</div><div class="meta">${sc.meta.map(m => `<span class="chip">${esc(m)}</span>`).join("")}</div>`;
+  let html = `<div style="margin-bottom:10px">${viewTabs(sc.id, "text")}</div><h2>${esc(sc.id)}</h2><div class="key">${esc(sc.file)}</div><div class="meta">${sc.meta.map(m => `<span class="chip">${esc(m)}</span>`).join("")}</div>`;
   for (const r of sc.rows) {
     const cond = r.cond ? `<span class="chip cond">${esc(r.cond)}</span>` : "";
     if (r.type === "comment") html += `<div class="comment">${esc(r.text)}</div>`;
@@ -239,16 +344,31 @@ function renderList(g) {
   return html;
 }
 
+let shownHash = "";
 function route() {
   const id = decodeURIComponent(location.hash.slice(1));
+  if (S.dirty && id !== shownHash) {
+    if (!confirm("В схеме есть несохранённые изменения. Уйти без сохранения?")) { history.replaceState(null, "", "#" + shownHash); return; }
+    S.dirty = false;
+  }
+  shownHash = id;
   const g = groups[id];
   const main = $("#main");
+  main.classList.remove("wide");
+  if (id.startsWith("scheme:") || id.startsWith("tool:")) {
+    const open = id.startsWith("scheme:") ? openScheme(id.slice(7), main) : openTool(id.slice(5), main);
+    open.catch(e => { main.innerHTML = `<div class="empty">${esc(e.message)}</div>`; });
+    renderNav();
+    window.scrollTo(0, 0);
+    return;
+  }
   if (!g) {
     main.innerHTML = `<div class="intro"><h2>Тексты игры</h2>
       <p>Слева все тексты, разложенные по местам, где они звучат. Сцены показаны целиком, как пьеса: кто говорит, с какой эмоцией, условия, варианты игрока и куда они ведут.</p>
       <p>Правка сохраняется в файл игры, как только уходишь из поля. Видна при следующем запуске игры.</p>
       <p>«Заметка для Claude»: напиши, что не так или что поменять в логике, я прочитаю. «Готово»: отметка для себя, чтобы видеть, что уже переписано.</p>
-      <p>Перевод на английский можно не трогать: скажи, и я переведу переписанное.</p></div>`;
+      <p>Перевод на английский можно не трогать: скажи, и я переведу переписанное.</p>
+      <p><b>Схема сцены.</b> Сцена слева в списке открывается схемой: ветки разговора, стрелки от вариантов игрока. Справа правится всё: реплики, эмоции, условия, эффекты, куда ведёт вариант. Сохраняется кнопкой «Сохранить» (или ⌘S), перед записью сцена проверяется, со сломанной в файл не попадёт. Вкладка «Текст» показывает ту же сцену пьесой.</p></div>`;
   } else {
     main.innerHTML = g.kind === "scene" ? renderScene(g) : renderList(g);
     loadPortraits(main);

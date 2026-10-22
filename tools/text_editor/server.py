@@ -7,6 +7,7 @@ It opens http://127.0.0.1:8765 and writes straight back into the game's files:
   teamlead/locale.gd     chat events, talks, reactions, interface (the "ru" and "en" tables)
   data/*.tsv             task and improvement texts (the *_ru / *_en columns)
 Notes and "done" marks live in data/text_notes.json. Standard library only; listens on this machine only.
+The scheme editor (a scene as a map of branches) reads and writes whole scenes through scenes.py.
 """
 import json
 import os
@@ -15,7 +16,9 @@ import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
+
+import scenes as sc
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -340,8 +343,24 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/":
             return self._send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
+        if path == "/scheme.js":
+            return self._send(200, (HERE / "scheme.js").read_bytes(), "text/javascript; charset=utf-8")
         if path == "/api/all":
             return self._send(200, json.dumps(collect(), ensure_ascii=False))
+        if path == "/api/catalog":
+            # Everything the scheme editor offers in its lists, and the flag map.
+            ctx = sc.context()
+            files = sorted(f.name for f in sc.DLG_DIR.glob("*.dlg"))
+            return self._send(200, json.dumps({"catalog": ctx["catalog"], "speakers": ctx["people"], "tasks": ctx["tasks"],
+                                               "flags": sc.flag_map(), "files": files}, ensure_ascii=False))
+        if path == "/api/scene":
+            try:
+                scene = sc.read_scene(parse_qs(urlparse(self.path).query).get("id", [""])[0])
+            except ValueError as e:
+                return self._send(404, json.dumps({"error": str(e)}, ensure_ascii=False))
+            return self._send(200, json.dumps({"scene": scene, "problems": sc.check_scene(scene, flags=sc.flag_map())}, ensure_ascii=False))
+        if path == "/api/check":
+            return self._send(200, json.dumps(sc.check_all(), ensure_ascii=False))
         if path.startswith("/portrait/"):
             name = os.path.basename(unquote(path[len("/portrait/"):]))
             f = ROOT / "art" / "portraits" / name
@@ -359,16 +378,30 @@ class Handler(BaseHTTPRequestHandler):
                 save(body["id"], body["lang"], body["old"], body["new"])
             elif self.path == "/api/note":
                 save_note(body["id"], body.get("note", ""), body.get("done", False))
+            elif self.path == "/api/scene/check":
+                return self._send(200, json.dumps(sc.check_scene(body["scene"], flags=sc.flag_map()), ensure_ascii=False))
+            elif self.path == "/api/scene/save":
+                scene = sc.save_scene(body["scene"], body.get("src", ""))
+                return self._send(200, json.dumps({"scene": scene, "problems": sc.check_scene(scene, flags=sc.flag_map())}, ensure_ascii=False))
+            elif self.path == "/api/scene/delete":
+                sc.delete_scene(body["id"], body["src"])
             else:
                 return self._send(404, '{"error": "нет"}')
             return self._send(200, '{"ok": true}')
-        except (ValueError, KeyError, IndexError) as e:
+        except (ValueError, KeyError, IndexError, TypeError) as e:
             return self._send(409, json.dumps({"error": str(e)}, ensure_ascii=False))
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = "http://127.0.0.1:%d" % PORT
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError:
+        print("Редактор уже запущен в другом окне, открываю его: %s" % url)
+        print("Если там старая версия (нет схемы сцен), закрой то окно терминала и запусти этот файл снова.")
+        if "--no-browser" not in sys.argv:
+            webbrowser.open(url)
+        sys.exit(0)
     print("Редактор текстов: %s  (остановить: Ctrl+C)" % url)
     if "--no-browser" not in sys.argv:
         webbrowser.open(url)

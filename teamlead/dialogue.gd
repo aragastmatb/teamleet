@@ -12,11 +12,15 @@ extends RefCounted
 #   {"op": "jump", "to", "if"}
 #   {"op": "label", "name"}                                    reached by falling through: the scene ends
 # A condition term is [word, args...]: chapter / day / here / flag / not.
+#
+# Which conditions, effects and places exist is in data/dialogue_catalog.json, with what each one means:
+# the text editor (tools/text_editor) reads the same file. A new one in rules.gd goes there too.
 
 const DIR := "res://data/dialogues"
-const FX := ["flag", "unflag", "days", "mood", "trust", "energy", "style", "boss", "taras", "give", "grab", "drop", "task", "shrink", "reveal", "interview", "openings"]
-const PLACES := ["office_day", "office_evening", "office_night", "meeting_room", "irina_office", "lift", "home_night"]
-const TERMS := ["chapter", "day", "here", "flag", "not", "taras", "irina", "busy", "laid_off", "incident", "style", "overload"]
+const CATALOG := "res://data/dialogue_catalog.json"
+static var FX: Array = []
+static var PLACES: Array = []
+static var TERMS: Array = ["not"]
 
 static var SCENES := {}
 static var ORDER: Array[String] = []
@@ -24,6 +28,13 @@ static var ERRORS: Array[String] = []
 
 
 static func _static_init() -> void:
+	var catalog = JSON.parse_string(FileAccess.get_file_as_string(CATALOG))
+	if catalog is Dictionary:
+		FX = catalog["fx"].keys()
+		PLACES = catalog["places"].keys()
+		TERMS = ["not"] + catalog["terms"].keys()
+	else:
+		ERRORS.append("%s: can't read" % CATALOG)
 	var dir := DirAccess.open(DIR)
 	if dir == null:
 		return
