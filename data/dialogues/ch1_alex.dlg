@@ -79,6 +79,7 @@ alex [neutral]: Как скажешь, идея никуда не денется
 
 # Глава 1. Алексей, вторая половина зацепки 1: вопрос о прошлой работе, от которого он уходит.
 == alex_late
+place: office_night
 at: evening
 when: chapter 1, day 8-16, here alex, flag story_alex_reports
 
