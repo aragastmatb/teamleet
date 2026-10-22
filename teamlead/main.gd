@@ -876,9 +876,7 @@ func _menu_page(v: VBoxContainer, in_game: bool) -> void:
 			v.add_child(_menu_title(Loc.t("menu.new")))
 			v.add_child(_label(Loc.t("confirm.new"), 15 if mobile else 16, Color(1, 1, 1, 0.85), true))
 			v.add_child(_spacer(2))
-			var yes := _button(Loc.t("confirm.yes"), _menu_new_confirmed, 220, "primary")
-			yes.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-			v.add_child(yes)
+			v.add_child(_menu_item(Loc.t("confirm.yes"), _menu_new_confirmed, COL_ON_TOP_DANGER))
 			v.add_child(_menu_item(Loc.t("confirm.no"), _menu_go.bind("")))
 		_:
 			if in_game:
@@ -954,8 +952,9 @@ func _menu_caption(text_value: String) -> Label:
 	return _label(text_value.to_upper(), 12, COL_ON_TOP_MUTED, false, true)
 
 
-# A line of the menu: big white text, no box; it turns orange under the pointer.
-func _menu_item(text_value: String, action: Callable) -> Button:
+# A line of the menu: big text, no box; it turns orange under the pointer. One that throws something
+# away is in red instead of white.
+func _menu_item(text_value: String, action: Callable, color: Color = COL_ON_TOP) -> Button:
 	var b := Button.new()
 	b.text = text_value
 	b.flat = true
@@ -969,7 +968,7 @@ func _menu_item(text_value: String, action: Callable) -> Button:
 		empty.content_margin_top = 4
 		empty.content_margin_bottom = 4
 		b.add_theme_stylebox_override(state, empty)
-	b.add_theme_color_override("font_color", COL_ON_TOP)
+	b.add_theme_color_override("font_color", color)
 	b.add_theme_color_override("font_hover_color", COL_STAR)
 	b.add_theme_color_override("font_pressed_color", COL_STAR)
 	b.pressed.connect(func(): cue = "click")
