@@ -86,16 +86,14 @@ place: office_night
 at: evening
 when: chapter 1, day 8-16, here alex, flag story_alex_reports
 
-- Вечер. Офис почти пустой, только у Алексея горит монитор.
-  en: Evening. The office is almost empty; only Alex's monitor is still on.
-alex [tired]: А, ты ещё здесь? Я раннеры добиваю.
-  en: Oh, you're still here? I'm finishing off the runners.
-* Поздно уже, иди домой, это не просьба. -> home
-  en: It's late, go home, that's not a request.
-* Помочь? -> help
-  en: Need a hand?
-* Слушай, а где ты раньше работал? -> past
-  en: Say, where did you work before this?
+- Вечер. Офис почти пустой, но Алексей всё сидит, уткнувшись в монитор.
+  en: Evening. The office is almost empty, but Alex is still sitting there, nose buried in his monitor.
+alex [tired]: А, ты ещё здесь? Я раннеры добиваю, опять Ява процессы не завершает как положено…
+  en: Oh, you're still here? I'm finishing off the runners, Java's not shutting its processes down properly again…
+* А завтра их не добить? Опять ведь до утра досидишь, а ты нам завтра нужен. -> home
+  en: Can't they wait till tomorrow? You'll be here till morning again, and we need you tomorrow.
+* Помочь? Ща в четыре руки быстро раскидаем. -> help
+  en: Need a hand? Four hands, we'll knock it out in no time.
 * (Не мешать, уйти тихо.) -> leave
   en: (Don't disturb him, leave quietly.)
 
@@ -107,7 +105,10 @@ alex [tired]: Ладно-ладно, ухожу.
 > energy alex +2
 > mood alex -0.3
 > style I 0.3
--> end
+* Слушай, а ты где раньше работал? -> past
+  en: Say, where did you work before?
+* (Кивнуть и пойти к лифту.) -> end
+  en: (Nod and head for the lift.)
 
 -- help
 alex [annoyed]: Не надо, я сам.
@@ -115,7 +116,10 @@ alex [annoyed]: Не надо, я сам.
 - Это «сам» звучит не как гордость. Скорее как правило.
   en: That "I've got it" doesn't sound like pride. More like a rule.
 > flag alex_refused_help
--> end
+* Слушай, а ты где раньше работал? -> past
+  en: Say, where did you work before?
+* (Не мешать, уйти тихо.) -> leave
+  en: (Don't disturb him, leave quietly.)
 
 -- past
 alex [neutral]: В банке, в большом… да неважно.

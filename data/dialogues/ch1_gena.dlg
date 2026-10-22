@@ -5,46 +5,48 @@
 == team_tools
 when: chapter 1, day 4-10, here gena, here alex
 
-- Алексей ставит всей команде ИИ-ассистента в редактор. К обеду без него уже никто не может.
-  en: Alex installs an AI assistant in everyone's editor. By lunch nobody can work without it.
-alex [excited]: Всё, у всех стоит: автодополнение, ревью, даже тесты сам пишет, работаем быстрее.
-  en: Done, everyone's got it: autocomplete, reviews, it even writes the tests, we're faster now.
+- Алексей бегает от сотрудника к сотруднику и ставит всем ИИ-ассистента в редактор.
+  en: Alex runs from desk to desk, putting an AI assistant into everyone's editor.
+alex [excited]: Всё, у всех стоит: автодополнение, ревью, тесты сам пишет, вот теперь работа пойдёт.
+  en: Done, everyone's got it: autocomplete, reviews, writes the tests itself, now things will really get going.
 {if here dima} dima [happy]: Оно мне за минуту написало то, что я вчера весь день писал!
   en: It wrote in a minute what took me all of yesterday!
-gena [neutral]: Посмотрю. Потом.
-  en: I'll look. Later.
-alex [sarcastic]: Гена, «потом» было в прошлом году.
-  en: Gena, "later" was last year.
-gena [annoyed]: Мне и в vim нормально. Двадцать лет нормально было.
-  en: I'm fine in vim. Been fine for twenty years.
+gena [sarcastic]: А крестиком оно вышивать умеет?
+  en: And can it do cross-stitch?
+alex [sarcastic]: Только ноликом.
+  en: Only noughts.
+gena [annoyed]: Тогда к моему ноуту не подходи, мне двадцать лет в vim нормально было. Есть и будет.
+  en: Then stay away from my laptop, vim's been fine for me for twenty years. Is, and will be.
 > flag team_tools
-* Гена, давай со всеми, это не обсуждается. -> force
-  en: Gena, switch with everyone, that's not up for discussion.
+* Гена, да давай со всеми, чего ты? -> force
+  en: Gena, come on, switch with everyone, what's the problem?
 * Работай, как тебе удобно. -> own_way
   en: Work however suits you.
 * А почему не хочешь? Только честно. -> why
   en: Why don't you want to? Honestly.
 
 -- why
-gena [neutral]: В двенадцатом году я тоже всем ставил. Новую систему сборки.
-  en: Back in 2012 I set everyone up with something too. A new build system.
-gena [tired]: Отличная была система. Всё сама делала.
-  en: Great system, it was. Did everything by itself.
+gena [neutral]: Мы в 2001 году как-то тоже с Volkov Commander на Windows ME все вместе переходили.
+  en: Back in 2001 we all switched from Volkov Commander to Windows ME together, too.
+gena [tired]: Отличная была система, всё сама делала…
+  en: Great system, it was, did everything by itself…
+gena [sarcastic]: Когда работала.
+  en: When it worked.
 - Он замолкает, будто договорил. Хотя явно нет.
   en: He stops as if he's finished. He clearly hasn't.
-gena [neutral]: Ладно. Тебе решать.
-  en: Anyway. Your call.
+gena [neutral]: Ладно, тебе решать.
+  en: Anyway, your call.
 > flag gena_why
-* Переходи, со всеми вместе. -> force
-  en: Switch, along with everyone.
+* Переходи со всеми вместе. -> force
+  en: Switch along with everyone.
 * Не хочешь, не надо. -> own_way
   en: If you don't want to, don't.
 
 -- force
-gena [annoyed]: Как скажешь. Первые дни толку от меня будет меньше.
-  en: Your call. For the first few days I'll be slower.
-- Гена ставит ассистента с таким лицом, будто ему ставят пломбу.
-  en: Gena installs the assistant with the face of a man getting a filling.
+gena [annoyed]: Как скажешь.
+  en: Whatever you say.
+- Гена ставит IDE и ассистента с таким лицом, будто ему ставят пломбу.
+  en: Gena installs the IDE and the assistant with the face of a man getting a filling.
 > flag gena_tools
 > days gena_slow_until 3
 > mood gena -1.5

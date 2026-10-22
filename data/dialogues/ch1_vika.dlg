@@ -5,34 +5,36 @@
 place: meeting_room
 when: chapter 1, day 4-12, here vika, here alex
 
-- Созвон с «Кредитом Доверия»: банк подключает новый стенд к порталу. С их стороны Олег, руководитель платформы.
-  en: A call with Trust Credit Bank: they're connecting a new environment to the portal. On their side is Oleg, head of their platform.
-oleg [neutral]: Коллеги, у нас вопрос по подключению: Алексей, вы же инженер, расскажите, как нам доступы на портале заводить?
-  en: Colleagues, a question about onboarding: Alex, you're the engineer, tell us how we set up access on the portal?
+- Созвон с «Кредитом Доверия»: банк подключает наш новый стенд к своей инфраструктуре. С их стороны Олег, руководитель платформы, собирает требования к подключению.
+  en: A call with Trust Credit Bank: the bank is connecting our new stand to its infrastructure. On their side is Oleg, head of their platform, collecting the connection requirements.
+oleg [neutral]: Уважаемые коллеги, доброго времени суток, у нас вопрос по вашим API. Расскажите, какие эндпоинты нам доступны? Как у вас работает авторизация?
+  en: Dear colleagues, good day to you, we have a question about your APIs. Could you tell us which endpoints are available to us? How does your authorization work?
 vika [neutral]: Подключение банков веду я, давайте расскажу…
   en: I run bank onboarding, let me walk you through…
-oleg [neutral]: Да-да, секундочку… Алексей?
+oleg [tired]: Да-да, секундочку… Алексей?
   en: Yes, yes, just a second… Alex?
-- Алексей смотрит на Вику. Потом на вас.
-  en: Alex looks at Vika. Then at you.
-alex [embarrassed]: Ну… там, в общем, через заявку, или через Тараса, сейчас гляну…
-  en: Well… it's, uh, through a request, or through Taras, let me check…
-* Олег, по подключению это к Вике, она ведёт ваш банк. -> defend
-  en: Oleg, onboarding questions go to Vika, she runs your account.
+- Алексей смотрит на Вику, потом на вас. Снова на Вику, пытаясь понять следующий ход. В воздухе искрит тишина непонимания.
+  en: Alex looks at Vika, then at you. Then back at Vika, trying to work out the next move. The silence crackles with confusion.
+alex [embarrassed]: Ну… там, в общем, есть авторизационный одноразовый токен, мы выпускаем его вместе с сертификатом и потом…
+  en: Well… there's, basically, a one-time authorization token, we issue it together with the certificate, and then…
+- Чем больше Алексей произносит слова, тем тяжелее шевелятся его губы. Кажется, что ещё немного, и они сползут с его лица на пол.
+  en: The more words Alex says, the heavier his lips move. It looks like any moment now they'll slide off his face onto the floor.
+* Олег, по подключению это к Вике, она ведёт ваш банк. Она занимается всеми нашими клиентами. -> defend
+  en: Oleg, connection questions go to Vika, she runs your bank. She handles all our clients.
 * (Промолчать, пусть Алексей разбирается.) -> silent
   en: (Say nothing, let Alex figure it out.)
-* Давайте я отвечу. -> myself
-  en: Let me answer that.
+* Давайте лучше я расскажу… -> myself
+  en: Actually, let me tell you…
 
 -- defend
-oleg [embarrassed]: А… да, конечно, Вика, слушаю.
-  en: Oh… yes, of course, Vika, go ahead.
-- Вика за три минуты объясняет то, на что у Алексея ушло бы полчаса. Без единой паузы.
-  en: In three minutes Vika explains what would have taken Alex half an hour. Without a single pause.
-vika [neutral]: Вопросы? …Ну, раз нет, тогда всё.
-  en: Questions? …Well, if there aren't any, that's it.
-- После созвона от неё одно сообщение: «Можно было не вступаться, я бы справилась».
-  en: After the call, a single message from her: "You didn't have to step in, I'd have managed."
+oleg [embarrassed]: А… да, конечно, Вика, слушаю Вас.
+  en: Oh… yes, of course, Vika, I'm listening.
+- Вика отправляет ссылку на общую статью онбординга и за 10 минут полностью объясняет весь процесс пошагово без единой заминки.
+  en: Vika sends a link to the general onboarding article and in ten minutes walks them through the whole process, step by step, without a single hitch.
+vika [annoyed]: Вопросы? Вопросов нет.
+  en: Questions? No questions.
+- После созвона от неё одно сообщение: «Так больше не надо, спасибо».
+  en: After the call, a single message from her: "Don't do that again, thanks."
 > flag vika_defended
 > flag vika_covered
 > trust vika +1
@@ -40,22 +42,28 @@ vika [neutral]: Вопросы? …Ну, раз нет, тогда всё.
 -> end
 
 -- silent
-alex [embarrassed]: …Давайте я уточню и напишу вам письмом.
-  en: …Let me double-check and send you an email.
-oleg [neutral]: Хорошо, ждём.
-  en: Fine, we'll wait.
+alex [embarrassed]: …потом мы ожидаем вашу авторизацию и там вы, вроде, получите ещё один пароль…
+  en: …then we wait for your authorization, and then you, I think, get one more password…
+- Видно, что Алексей пытается ловить слова из воздуха, он отчаянно ищет в чужих глазах свежие мысли.
+  en: You can see Alex trying to pluck words out of thin air, desperately searching other people's eyes for fresh thoughts.
 - Вика молча выключает камеру до конца созвона.
   en: Vika silently turns off her camera for the rest of the call.
+alex [embarrassed]: В общем, у нас, кажется, статья где-то была, мы вам потом пришлём.
+  en: Anyway, I think we had an article somewhere, we'll send it to you later.
+oleg [annoyed]: Хорошо, ждём. Большое спасибо, коллеги, отличной недели!
+  en: Fine, we'll wait. Thank you very much, colleagues, have a great week!
+- Звонок завершился раньше, чем все предполагали. Ирина Викторовна ожидает отчёт.
+  en: The call ended sooner than anyone expected. Irina is waiting for a report.
 > flag vika_unheard
 > mood vika -1
 > trust vika -1
 -> end
 
 -- myself
-oleg [happy]: Отлично, спасибо!
-  en: Great, thanks!
-- Олег записывает и благодарит. Вас. Вика всё это время молчит.
-  en: Oleg takes notes and thanks you. Vika says nothing the whole time.
+oleg [happy]: Отлично, спасибо! Так куда нам тыкаться?
+  en: Great, thanks! So where do we go with this?
+- Вы быстро рассказываете в двух словах, какой процесс онбординга. Олег записывает и благодарит Вас. Вика всё это время молчит. Когда все отключились от встречи, Вика задержалась на секунду.
+  en: You quickly sum up how onboarding works. Oleg takes notes and thanks you. Vika says nothing the whole time. When everyone has dropped off the call, Vika stays on for a second.
 vika [sarcastic]: Спасибо, что ответили за меня.
   en: Thanks for answering for me.
 > flag vika_overridden
