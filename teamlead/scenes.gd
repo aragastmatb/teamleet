@@ -617,62 +617,6 @@ func _resolve_fire(r, ev: Dictionary, c: String) -> String:
 	return ""
 
 
-func talk_event(r, p: String) -> Dictionary:
-	var st: Dictionary = r.people[p]
-	var topic := "fine"
-	var names := {}
-	var reason := ""
-	if st["energy"] <= 3.5:
-		topic = "tired"
-	elif st["mood"] <= -1.5:
-		topic = "upset"
-		reason = _upset_reason(r, p)
-	elif r.day - st["last_done"] <= 2 and _last_good(r, p) >= 0:
-		topic = "proud"
-		names["task"] = "@taskname." + r.task(_last_good(r, p))["id"]
-	elif r.info(p)["drive"] in ["growth", "visibility"] and r.day >= 3 and not r.flags.has("asked_growth_" + p):
-		topic = "grow"
-		r.flags["asked_growth_" + p] = true
-	var key: String = r._first_key(["event.talk_%s.ask.%s" % [topic, p], "event.talk_%s.ask.%s" % [topic, reason], "event.talk_%s.ask" % topic])
-	var choices: Array = []
-	match topic:
-		"tired":
-			choices = ["dayoff", "push"]
-			if r.queue_of(p).size() >= 2:
-				choices.insert(1, "lighten")
-		"upset":
-			choices = ["listen"]
-			if reason == "credit":
-				choices.append("apologize")
-			elif reason != "general":
-				choices.append("fix_" + reason)
-			choices.append("dismiss")
-		"proud":
-			choices = ["praise", "critique", "mention"]
-		"grow":
-			choices = ["stretch", "promote", "not_yet"]
-		"fine":
-			choices = ["ask_about", "praise_general"]
-			if st["known"].has("drive"):
-				choices.append("gift_" + r.info(p)["drive"])
-	return {"id": "talk_" + topic, "who": p, "target": p, "reason": reason, "names": names, "uid": _last_good(r, p) if topic == "proud" else -1,
-		"lines": [{"who": p, "key": key}], "choices": choices}
-
-
-func _upset_reason(r, p: String) -> String:
-	for c in r.flags.get("credit_taken", []):
-		if c["owner"] == p:
-			return "credit"
-	if r.queue_of(p).size() >= 3:
-		return "load"
-	if r.people[p]["idle_days"] >= 2:
-		return "bored"
-	var q: Array = r.queue_of(p)
-	if not q.is_empty() and r.info(p)["hates"].has(q[0]["cat"]):
-		return "hate"
-	return "general"
-
-
 func _last_good(r, p: String) -> int:
 	var best := -1
 	var best_day := -1
@@ -681,97 +625,6 @@ func _last_good(r, p: String) -> int:
 			best = t["uid"]
 			best_day = t["done_day"]
 	return best
-
-
-func _resolve_talk(r, ev: Dictionary, c: String, names: Dictionary) -> String:
-	var p: String = ev["target"]
-	var st: Dictionary = r.people[p]
-	var reply := "event.%s.%s.reply" % [ev["id"], c]
-	match c:
-		"dayoff":
-			r.give_day_off(p)
-			st["mood"] += 1.0
-		"lighten":
-			r.lighten(p)
-			st["mood"] += 1.0
-			st["trust"] += 1
-		"push":
-			st["pushed"] = r.PUSH_DAYS
-			st["mood"] -= 2.0 if r.info(p)["drive"] == "peace" else 1.0
-			st["energy"] -= 0.5
-		"listen":
-			st["mood"] += 1.0
-			r.say(p, reply)
-			r.reveal_next(p)
-			return ""
-		"apologize":
-			st["mood"] += 1.5
-			st["trust"] += 1
-		"fix_load":
-			r.lighten(p)
-			st["mood"] += 1.0
-		"fix_bored":
-			r.offer_today[p] = true
-			if r.initiative_offer(p) != "":
-				r.accept_initiative(p)
-			st["mood"] += 1.0
-		"fix_hate":
-			st["mood"] += 1.0
-			r.flags["calm_" + p] = r.day + 3
-		"dismiss":
-			st["mood"] -= 0.5
-			if ev["reason"] == "credit":
-				st["trust"] -= 1
-		"praise":
-			st["mood"] += 1.0
-			st["trust"] += 1
-		"critique":
-			var t: Dictionary = r.task(ev["uid"])
-			if t.get("quality", "") == "good":
-				st["mood"] -= 1.5
-				st["trust"] -= 1
-				reply = "event.talk_proud.critique.unfair"
-			else:
-				st["mood"] -= 0.5
-				st["trust"] += 1
-				r.learn(p, t["cat"], 1.0)
-		"mention":
-			st["mood"] += 1.5
-			r.flags["mention_" + p] = ev["uid"]
-		"stretch":
-			st["mood"] += 2.0
-			r.flags["stretch_" + p] = true
-		"promote":
-			if st["promised"]:
-				st["trust"] -= 1
-				reply = "talk.promise.again"
-			else:
-				r.make_promise(p)
-				st["mood"] += 2.0
-		"not_yet":
-			st["mood"] -= 0.5
-			st["trust"] += 1
-		"ask_about":
-			st["mood"] += 0.5
-			r.reveal_next(p)
-			return ""
-		"praise_general":
-			if r.day - st["last_done"] <= 3:
-				st["mood"] += 1.0
-			else:
-				reply = "event.talk_fine.praise_general.empty"
-		"gift_craft", "gift_visibility", "gift_growth", "gift_peace":
-			st["mood"] += 1.5
-			st["trust"] += 1
-			match c:
-				"gift_visibility":
-					if p == "vika":
-						r.vika_up()
-				"gift_growth":
-					r.learn(p, "infra", 1.5)
-				"gift_peace":
-					r.flags["calm_" + p] = r.day + 4
-	return r._first_key(["event.%s.%s.reply.%s" % [ev["id"], c, p], reply])
 
 
 # ---------- stepping into a task ----------
@@ -1039,14 +892,12 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 	elif arg != "":
 		names["who"] = "@name.%s.acc" % arg
 	r.history.append({"who": "you", "key": "event.%s.choice.%s" % [ev["id"], c], "args": [], "names": names, "day": r.day})
-	for pair in STYLE.get(("talk" if ev["id"].begins_with("talk_") else ev["id"]) + "/" + c, []):
+	for pair in STYLE.get(ev["id"] + "/" + c, []):
 		r.lead(pair[0], pair[1])
 	var who: String = ev["who"]
 	var reply := "event.%s.%s.reply" % [ev["id"], c]
 	var routed := ""
-	if ev["id"].begins_with("talk_"):
-		routed = _resolve_talk(r, ev, c, names)
-	elif ev["id"] == "boss_visit":
+	if ev["id"] == "boss_visit":
 		routed = _resolve_visit(r, ev, c, arg, names)
 	elif ev["id"] == "boss_show":
 		routed = _resolve_show(r, ev, c)
@@ -1058,7 +909,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 		routed = _resolve_fire(r, ev, c)
 	elif ev["id"] == "dima_question":
 		routed = _resolve_dima_question(r, ev, c)
-	if ev["id"].begins_with("talk_") or ev["id"] in ["boss_visit", "boss_show", "intervene", "decline", "fire", "dima_question"]:
+	if ev["id"] in ["boss_visit", "boss_show", "intervene", "decline", "fire", "dima_question"]:
 		if routed != "":
 			r.say(who, routed, [], names)
 		for q in r.team:

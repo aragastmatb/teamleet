@@ -527,6 +527,8 @@ func convo_choices() -> Array:
 	var out: Array = []
 	if convo["kind"] == "interview" and convo["left"] > 0:
 		out = interview_topics(convo["who"])
+	elif convo["kind"] == "talk":
+		out = _talk_choices()
 	out.append("end")
 	return out
 
@@ -538,11 +540,17 @@ func convo_choose(choice: String) -> void:
 		_convo_close()
 	elif convo["kind"] == "interview":
 		_interview_ask(choice)
+	elif choice.begins_with("q:"):
+		var parts := choice.split(":")
+		_talk_ask(parts[1], parts[2])
+	elif choice.begins_with("a:"):
+		_talk_act(choice.substr(2))
 
 
 func _convo_close() -> void:
 	var who: String = convo["who"]
-	_convo_line("you", "convo.end." + convo["kind"])
+	if not convo.get("done", false) and not convo.get("shut", false):
+		_convo_line("you", "convo.end." + convo["kind"])
 	history.append({"who": "", "key": "convo.log." + convo["kind"], "args": [], "names": {"who": "@name.%s.ins" % who}, "day": day})
 	convo = {}
 
@@ -620,6 +628,373 @@ func _interview_ask(topic: String) -> void:
 				c["hates_known"] = true
 		_:
 			_convo_line(id, "hire.answer.%s.%s" % [topic, arch])
+
+
+# ---------- one-on-ones ----------
+# A talk is a sitting in the conversation window (docs/talks.md). They open with whatever they're
+# ready to show; you pick what to ask and how. Inside the talk they have a hidden openness: it starts
+# from how much they trust you, the way you ask moves it (C.TALK_TONES), and only an open person gives
+# the real answer. At zero they shut the talk. What you can do about a thing (a day off, a lighter
+# load, a promise) ends the talk. Their own story (the thread) goes a step further each time you get
+# them to open up, unless they've stopped trusting you since; each step leaves a flag (thread_<p>_<n>)
+# the story scenes can read.
+#
+# The lines are all keyed "talk.<who>.<...>", who being alex, vika, dima, gena, a hire (hire_<kind>,
+# then hire) or "any" for everyone. An answer is "<key>.do" (what they do, optional), "<key>" and up
+# to "<key>.3" said in a row. Your questions are "talk.ask.<topic>.<tone>", what you do "talk.act.<act>".
+const TALK_QUESTIONS := 3
+const TALK_DEEP := 3 # openness for the real answer
+const TALK_THREAD_GAP := 5 # days between steps of someone's story
+
+
+func _open_talk(p: String) -> void:
+	var st: Dictionary = people[p]
+	var open := clampi(2 + int(st["trust"]), 1, 4)
+	if st["mood"] <= -2.0 or day - int(st.get("talk_shut", -99)) <= 3:
+		open = maxi(1, open - 1)
+	var topics := _talk_topics(p)
+	convo = {"who": p, "kind": "talk", "left": TALK_QUESTIONS, "open": open, "log": [], "asked": [],
+		"topics": topics, "last": "", "emo": _talk_emo(p), "names": _talk_names(p)}
+	var first: String = topics[0] if not topics.is_empty() else "how"
+	_talk_say("surface." + first)
+	if not _talk_has("surface." + first):
+		_talk_say("surface.fine")
+
+
+# What's on their mind right now, the sharpest first. "work" and "how" are always there.
+func _talk_topics(p: String) -> Array:
+	var st: Dictionary = people[p]
+	var out: Array = []
+	for c in flags.get("credit_taken", []):
+		if c["owner"] == p and day - int(c["day"]) <= 7 and not flags.has("credit_said_%d" % c["uid"]):
+			out.append("credit")
+			break
+	if st["energy"] <= 4.0:
+		out.append("tired")
+	if _stuck_task(p) >= 0:
+		out.append("stuck")
+	if queue_of(p).size() >= 3:
+		out.append("load")
+	if st["idle_days"] >= 2 and queue_of(p).is_empty():
+		out.append("idle")
+	var q := queue_of(p)
+	if not q.is_empty() and info(p)["hates"].has(q[0]["cat"]):
+		out.append("hate")
+	if st["mood"] <= -1.5 and out.is_empty():
+		out.append("mood")
+	if _thread_ready(p):
+		out.append("thread")
+	if info(p)["drive"] in ["growth", "visibility"] and day >= 3 and not flags.has("asked_growth_" + p):
+		out.append("grow")
+	if day - st["last_done"] <= 2 and scenes._last_good(self, p) >= 0:
+		out.append("proud")
+	if not q.is_empty():
+		out.append("work")
+	out.append("how")
+	return out
+
+
+func _stuck_task(p: String) -> int:
+	for t in queue_of(p):
+		if t.get("stuck", 0) > 0:
+			return t["uid"]
+	return -1
+
+
+func _talk_names(p: String) -> Dictionary:
+	var names := {"who": "@name.%s.nom" % p, "days": str(people[p]["idle_days"])}
+	var q := queue_of(p)
+	if not q.is_empty():
+		names["task"] = "@taskname." + q[0]["id"]
+		names["cat"] = "@cat." + q[0]["cat"]
+	var stuck := _stuck_task(p)
+	if stuck >= 0:
+		names["stuck"] = "@taskname." + task(stuck)["id"]
+	var good: int = scenes._last_good(self, p)
+	if good >= 0:
+		names["done"] = "@taskname." + task(good)["id"]
+	return names
+
+
+func _talk_emo(p: String) -> String:
+	var st: Dictionary = people[p]
+	if st["mood"] <= -1.5 or st["energy"] <= 3.0:
+		return "sad"
+	if st["mood"] >= 2.0:
+		return "happy"
+	return "neutral"
+
+
+# Their story: the four have one, a step at a time, never two steps in a week, and only while they
+# trust you at least as much as when they told you the last bit.
+func _thread_ready(p: String) -> bool:
+	var st: Dictionary = people[p]
+	var step: int = st.get("thread", 0)
+	return chapter >= 2 and st["trust"] >= 1 and st["trust"] >= st.get("thread_trust", 0) \
+		and day - int(st.get("thread_day", -99)) >= TALK_THREAD_GAP and _talk_has("thread.%d" % (step + 1), p)
+
+
+# The line for whoever is talking: their own, their kind's (Loc.STAND_IN does that), or anyone's.
+func _talk_key(rest: String) -> String:
+	return _first_key(["talk.%s.%s" % [convo["who"], rest], "talk.any." + rest])
+
+
+func _talk_has(rest: String, who: String = "") -> bool:
+	return L.has_key("talk.%s.%s" % [who if who != "" else convo["who"], rest]) or L.has_key("talk.any." + rest)
+
+
+# An answer: what they do, then up to three lines in a row.
+func _talk_say(rest: String) -> void:
+	if not _talk_has(rest):
+		return
+	var who: String = convo["who"]
+	var base := _talk_key(rest)
+	if L.has_key(base + ".do"):
+		_convo_line("", base + ".do", convo["names"])
+	_convo_line(who, base, convo["names"])
+	for i in [2, 3]:
+		if L.has_key("%s.%d" % [base, i]):
+			_convo_line(who, "%s.%d" % [base, i], convo["names"])
+
+
+func _talk_fit(tone: String) -> int:
+	var p: String = convo["who"]
+	var table: Dictionary = C.TALK_TONES.get(p, C.TALK_TONES.get("hire_" + archetype(p), {}))
+	return int(table.get(tone, 0))
+
+
+# What you can say now: the sharpest thing in every way of asking it, the next two plainly, how the
+# work is going and how they are; what you can do about the last thing they told you; or leave it.
+func _talk_choices() -> Array:
+	var out: Array = []
+	if convo["left"] > 0:
+		var shown := 0
+		for topic in convo["topics"]:
+			if convo["asked"].has(topic) or topic in ["work", "how"]:
+				continue
+			var tones: Array = C.TALK_TOPICS[topic]["tones"]
+			if topic == "thread":
+				tones = [_thread_tone()]
+			for i in (mini(2, tones.size()) if shown == 0 else 1):
+				out.append("q:%s:%s" % [topic, tones[i]])
+			shown += 1
+			if shown >= 2:
+				break
+		for topic in ["work", "how"]:
+			if convo["topics"].has(topic) and not convo["asked"].has(topic):
+				out.append("q:%s:%s" % [topic, C.TALK_TOPICS[topic]["tones"][0]])
+	for act in _talk_acts(convo["last"]):
+		out.append("a:" + act)
+	return out
+
+
+func _thread_tone() -> String:
+	var best := "work"
+	for tone in ["work", "direct", "soft"]:
+		if _talk_fit(tone) > _talk_fit(best):
+			best = tone
+	return best
+
+
+func _talk_acts(topic: String) -> Array:
+	if topic == "":
+		return []
+	var p: String = convo["who"]
+	var out: Array = []
+	for each in C.TALK_TOPICS[topic]["acts"]:
+		var act: String = each
+		match act:
+			"lighten":
+				if queue_of(p).size() < 2:
+					continue
+			"sit":
+				if _stuck_task(p) < 0 or task(_stuck_task(p)).get("sit_today", false):
+					continue
+			"gift":
+				if not people[p]["known"].has("drive"):
+					continue
+				act = "gift_" + info(p)["drive"]
+			"promote":
+				if people[p]["promised"]:
+					continue
+		out.append(act)
+	return out
+
+
+func _talk_ask(topic: String, tone: String) -> void:
+	var p: String = convo["who"]
+	var st: Dictionary = people[p]
+	convo["asked"].append(topic)
+	convo["left"] -= 1
+	convo["last"] = topic
+	var ask := "talk.ask.%s.%s" % [topic, tone]
+	if topic == "thread":
+		ask = _talk_key("thread.%d.ask" % (int(st.get("thread", 0)) + 1))
+	_convo_line("you", ask, convo["names"])
+	var fit := _talk_fit(tone)
+	convo["open"] += fit
+	if fit != 0 and _talk_has("up" if fit > 0 else "down"):
+		# How they take the way you asked: narration, not a line of theirs.
+		_convo_line("", _talk_key("up" if fit > 0 else "down"), convo["names"])
+		if fit < 0:
+			convo["emo"] = "annoyed"
+	if convo["open"] <= 0:
+		_talk_shut()
+		return
+	var deep: bool = convo["open"] >= TALK_DEEP
+	match topic:
+		"thread":
+			if deep:
+				var step: int = int(st.get("thread", 0)) + 1
+				_talk_say("thread.%d" % step)
+				st["thread"] = step
+				st["thread_trust"] = st["trust"]
+				st["thread_day"] = day
+				flags["thread_%s_%d" % [p, step]] = true
+				lead("I", 0.3)
+			else:
+				_talk_say("thread.no")
+			return
+		"how":
+			# Open, they tell you something about themselves you didn't know (the window shows it, the chat gets the note).
+			var key := _next_unknown(p) if deep else ""
+			if key == "":
+				_talk_say("how.deep.nothing" if deep else "how.shallow")
+				return
+			_talk_say("how.deep")
+			var line := "talk.listen.%s.%s" % [p, key.replace("skill.", "")]
+			var names: Dictionary = convo["names"].duplicate()
+			if hires.has(p) and key.begins_with("skill."):
+				line = "talk.listen.hire.level.%d" % people[p]["skills"][key.replace("skill.", "")]
+				names["cat"] = "@cat." + key.replace("skill.", "")
+			_convo_line(p, line if L.has_key(line) else "talk.listen.any", names)
+			_reveal(p, key)
+			var note: Dictionary = history[-1]
+			if note["key"].begins_with("know."):
+				_convo_line("", note["key"], note["names"])
+			return
+		"hate":
+			if deep:
+				st["known"]["hates"] = true
+		"grow":
+			flags["asked_growth_" + p] = true
+		"credit":
+			for c in flags.get("credit_taken", []):
+				if c["owner"] == p:
+					flags["credit_said_%d" % c["uid"]] = true
+	var answer := topic + (".deep" if deep else ".shallow")
+	if topic == "work" and deep and _talk_has("work.deep." + _work_state(p)):
+		answer = "work.deep." + _work_state(p)
+	_talk_say(answer)
+	if deep:
+		st["mood"] += 0.3
+		if convo["emo"] == "annoyed":
+			convo["emo"] = "neutral"
+
+
+# How their first task really goes; only someone open with you says it as it is.
+func _work_state(p: String) -> String:
+	var q := queue_of(p)
+	if q.is_empty():
+		return ""
+	var t: Dictionary = q[0]
+	if t.get("stuck", 0) > 0 or t["blocked"] > 0:
+		return "stuck"
+	if days_needed(t) > t["due"] - day + 1.3:
+		return "behind"
+	return "on_track"
+
+
+func _talk_shut() -> void:
+	var p: String = convo["who"]
+	_talk_say("shut")
+	people[p]["mood"] -= 0.5
+	people[p]["talk_shut"] = day
+	convo["emo"] = "annoyed"
+	convo["left"] = 0
+	convo["last"] = ""
+	convo["shut"] = true
+
+
+# What you do about it: the talk ends on their answer.
+func _talk_act(act: String) -> void:
+	var p: String = convo["who"]
+	var st: Dictionary = people[p]
+	_convo_line("you", "talk.act." + act, convo["names"])
+	for pair in scenes.STYLE.get("talk/" + act, []):
+		lead(pair[0], pair[1])
+	var reply := "act." + act
+	match act:
+		"dayoff":
+			give_day_off(p)
+			st["mood"] += 1.0
+		"lighten":
+			lighten(p)
+			st["mood"] += 1.0
+			st["trust"] += 1
+		"push":
+			st["pushed"] = PUSH_DAYS
+			st["mood"] -= 2.0 if info(p)["drive"] == "peace" else 1.0
+			st["energy"] -= 0.5
+		"apologize":
+			st["mood"] += 1.5
+			st["trust"] += 1
+		"dismiss":
+			st["mood"] -= 0.5
+			if convo["last"] == "credit":
+				st["trust"] -= 1
+		"fix_bored":
+			offer_today[p] = true
+			if initiative_offer(p) != "":
+				accept_initiative(p)
+			st["mood"] += 1.0
+		"fix_hate":
+			st["mood"] += 1.0
+			flags["calm_" + p] = day + 3
+		"sit":
+			sit_with(_stuck_task(p))
+		"praise":
+			st["mood"] += 1.0
+			st["trust"] += 1
+		"critique":
+			var t: Dictionary = task(scenes._last_good(self, p))
+			if t.get("quality", "") == "good":
+				st["mood"] -= 1.5
+				st["trust"] -= 1
+				reply = "act.critique.unfair"
+			else:
+				st["mood"] -= 0.5
+				st["trust"] += 1
+				learn(p, t["cat"], 1.0)
+		"mention":
+			st["mood"] += 1.5
+			flags["mention_" + p] = scenes._last_good(self, p)
+		"stretch":
+			st["mood"] += 2.0
+			flags["stretch_" + p] = true
+		"promote":
+			make_promise(p)
+			st["mood"] += 2.0
+		"not_yet":
+			st["mood"] -= 0.5
+			st["trust"] += 1
+		"gift_craft", "gift_visibility", "gift_growth", "gift_peace":
+			st["mood"] += 1.5
+			st["trust"] += 1
+			match act:
+				"gift_visibility":
+					if p == "vika":
+						vika_up()
+				"gift_growth":
+					learn(p, "infra", 1.5)
+				"gift_peace":
+					flags["calm_" + p] = day + 4
+	convo["emo"] = "annoyed" if act in ["push", "dismiss", "not_yet"] or reply.ends_with("unfair") else "happy"
+	st["mood"] = clampf(st["mood"], -5.0, 5.0)
+	_talk_say(reply)
+	convo["left"] = 0
+	convo["last"] = ""
+	convo["done"] = true
 
 
 func can_hire(id: String) -> bool:
@@ -1739,7 +2114,7 @@ func unassign_now(t: Dictionary) -> void:
 	t["first"] = false
 
 
-# A one-on-one: they come with whatever is on their mind (see scenes.gd), you answer.
+# A one-on-one: one attention, a sitting in the conversation window (see "one-on-ones" above).
 func start_talk(p: String) -> void:
 	if not can_talk(p):
 		return
@@ -1749,7 +2124,7 @@ func start_talk(p: String) -> void:
 	lead("I", 0.3)
 	spend_attention()
 	history.append({"who": "you", "key": "talk.open", "args": [], "names": {}, "to": p, "day": day})
-	_open_conversation(scenes.talk_event(self, p))
+	_open_talk(p)
 
 
 # Going to Irina: one visit a day, one topic per visit.
@@ -1767,23 +2142,6 @@ func _open_conversation(ev: Dictionary) -> void:
 	events.push_front(ev)
 	_say_event_lines()
 	phase = "event"
-
-
-# Tell them what you've learned about yourself, in their own words.
-func reveal_next(p: String) -> void:
-	var key := _next_unknown(p)
-	if key == "":
-		_say(p, "talk.listen.nothing")
-		return
-	var line := "talk.listen.%s.%s" % [p, key.replace("skill.", "")]
-	if hires.has(p) and key.begins_with("skill."):
-		# A hire talks about their level in it; the four have their own words for each kind of work.
-		var cat := key.replace("skill.", "")
-		_say(p, "talk.listen.hire.level.%d" % people[p]["skills"][cat], [], {"cat": "@cat." + cat})
-		_reveal(p, key)
-		return
-	_say(p, line if L.has_key(line) else "talk.listen.any")
-	_reveal(p, key)
 
 
 func give_day_off(p: String) -> void:
@@ -1813,7 +2171,7 @@ func choice_costs(ev: Dictionary, choice: String) -> bool:
 
 
 func can_talk(p: String) -> bool:
-	return phase == "plan" and pending.is_empty() and not talked.has(p) and available(p) and not people[p]["absent"]
+	return phase == "plan" and pending.is_empty() and convo.is_empty() and not talked.has(p) and available(p) and not people[p]["absent"]
 
 
 # Every bit of managing costs a token of attention; past them you're staying late.

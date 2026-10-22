@@ -245,6 +245,8 @@ alex [annoyed]: Да неважно… было одно, на прошлой р
   en: What happened?
 * (Подождать.) -> wait
   en: (Wait.)
+{if flag thread_alex_3} * Это тот хотфикс в пятницу, да? -> wait
+  en: It's that Friday hotfix, isn't it?
 
 -- pushed
 alex [neutral]: Да обычное дело, прод уронили, кого-то уволили, всё как у всех.
@@ -290,8 +292,8 @@ alex [annoyed]: Вот и он так говорил.
 > flag alex_revealed
 {if flag alex_hotfix:pair_insist} alex [neutral]: Ладно, пойду. Гена мне тогда ночью с хотфиксом помог, если что, ну, ты помнишь.
   en: Right, I'm off. Gena helped me that night with the hotfix, by the way, you remember.
-{if flag alex_reports:pair_insist} alex [neutral]: Ладно, пойду. Вика, кстати, тогда с отчётами половину за меня сделала, ты видел.
-  en: Right, I'm off. Vika did half of those reports for me back then, by the way, you saw.
+{if flag alex_reports:pair_insist} alex [neutral]: Ладно, пойду. Вика, кстати, тогда с отчётами половину за меня сделала, ты в курсе.
+  en: Right, I'm off. Vika did half of those reports for me back then, by the way, you know that.
 {if not flag alex_hotfix:pair_insist, not flag alex_reports:pair_insist} alex [neutral]: Ладно, пойду. Свет выключи потом.
   en: Right, I'm off. Turn the lights off after.
 -> end

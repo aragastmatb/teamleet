@@ -2138,9 +2138,7 @@ func _prompt_box(list: VBoxContainer, title: String) -> VBoxContainer:
 
 func _event_prompt(list: VBoxContainer, ev: Dictionary) -> void:
 	var title := ""
-	if ev["id"].begins_with("talk_"):
-		title = Loc.render("talk_title", [], {"who": "@name.%s.ins" % ev["target"]})
-	elif ev["id"].begins_with("boss_visit") or ev["id"] == "boss_show":
+	if ev["id"].begins_with("boss_visit") or ev["id"] == "boss_show":
 		title = Loc.t("visit_title")
 	elif ev["id"] == "intervene":
 		title = Loc.render("intervene_title", [], ev["names"]) + " — " + Loc.person(ev["target"])
@@ -2360,7 +2358,7 @@ func _build_convo() -> void:
 	var body: BoxContainer = VBoxContainer.new() if mobile else HBoxContainer.new()
 	body.add_theme_constant_override("separation", 0)
 	panel.add_child(body)
-	body.add_child(_story_portrait(who, "", "meeting_room" if rules.convo["kind"] == "interview" else "office_day"))
+	body.add_child(_story_portrait(who, rules.convo.get("emo", ""), "meeting_room" if rules.convo["kind"] == "interview" else "office_day"))
 	var right := _vbox(0)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -2380,12 +2378,26 @@ func _build_convo() -> void:
 	var foot := _padded(actions, 18 if mobile else 28, 16)
 	foot.size_flags_vertical = Control.SIZE_SHRINK_END
 	right.add_child(foot)
-	if rules.convo["kind"] == "interview" and rules.convo["left"] > 0:
+	if rules.convo["left"] > 0:
 		actions.add_child(_label(Loc.t("convo.left", [rules.convo["left"]]), 12, COL_MUTED))
 	for c in rules.convo_choices():
-		var key: String = "convo.choice.end." + rules.convo["kind"] if c == "end" else "event.interview.choice." + c
-		actions.add_child(_answer_button(Loc.t(key), _convo_choose.bind(c)))
+		actions.add_child(_answer_button(Loc.render(_convo_choice_key(c), [], rules.convo.get("names", {})), _convo_choose.bind(c)))
 	_scroll_to_end(scroll)
+
+
+# Questions are "q:<topic>:<tone>", what you do about it "a:<act>" (rules.gd, one-on-ones).
+func _convo_choice_key(c: String) -> String:
+	if c == "end":
+		var over: bool = rules.convo.get("done", false) or rules.convo.get("shut", false) or rules.convo["left"] <= 0
+		return "convo.choice.end.%s%s" % [rules.convo["kind"], ".over" if over and rules.convo["kind"] == "talk" else ""]
+	if c.begins_with("q:"):
+		var parts := c.split(":")
+		if parts[1] == "thread":
+			return rules._talk_key("thread.%d.ask" % (int(rules.people[rules.convo["who"]].get("thread", 0)) + 1))
+		return "talk.ask.%s.%s" % [parts[1], parts[2]]
+	if c.begins_with("a:"):
+		return "talk.act." + c.substr(2)
+	return "event.interview.choice." + c
 
 
 func _convo_choose(c: String) -> void:

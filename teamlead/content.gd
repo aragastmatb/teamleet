@@ -94,6 +94,38 @@ const ARCHETYPES := {
 # What you can ask a candidate, in the order the window lists it (rules.gd, "conversations").
 const INTERVIEW_TOPICS := ["tech", "task", "last_job", "drive", "not_want", "overtime", "team"]
 
+# A one-on-one (rules.gd, "one-on-ones"): what you can bring up comes from what's going on with them.
+# heat: how sharp it is (the sharpest are offered first and decide what they open with);
+# tones: the ways to ask it, the first one the plain one; acts: what you can do about it, which ends the talk.
+const TALK_TOPICS := {
+	"credit": {"heat": 9, "tones": ["direct", "soft"], "acts": ["apologize", "dismiss"]},
+	"tired": {"heat": 8, "tones": ["soft", "direct", "work"], "acts": ["dayoff", "lighten", "push"]},
+	"stuck": {"heat": 7, "tones": ["work", "soft"], "acts": ["sit"]},
+	"load": {"heat": 6, "tones": ["work", "soft"], "acts": ["lighten", "dismiss"]},
+	"mood": {"heat": 5, "tones": ["soft", "direct"], "acts": []},
+	"idle": {"heat": 5, "tones": ["work", "direct"], "acts": ["fix_bored"]},
+	"hate": {"heat": 4, "tones": ["work", "direct"], "acts": ["fix_hate"]},
+	"thread": {"heat": 3, "tones": [], "acts": []},
+	"grow": {"heat": 3, "tones": ["direct", "soft"], "acts": ["stretch", "promote", "not_yet"]},
+	"proud": {"heat": 2, "tones": ["work", "soft"], "acts": ["praise", "mention", "critique"]},
+	"work": {"heat": 1, "tones": ["work"], "acts": []},
+	"how": {"heat": 0, "tones": ["soft"], "acts": ["gift"]},
+}
+# How each of the four takes a way of asking: +1 opens them up, -1 shuts them a little (docs/talks.md).
+# The thread, their own story, is asked their way. Hires go by their kind.
+const TALK_TONES := {
+	"alex": {"work": 1, "direct": 0, "soft": -1},
+	"vika": {"direct": 1, "work": 0, "soft": -1},
+	"dima": {"soft": 1, "work": 0, "direct": -1},
+	"gena": {"direct": 1, "work": 0, "soft": -1},
+	"hire_faker": {"work": 1, "direct": 0, "soft": 0},
+	"hire_genius": {"work": 1, "direct": 0, "soft": -1},
+	"hire_junior": {"soft": 1, "work": 0, "direct": 0},
+	"hire_stump": {"work": -1, "direct": -1, "soft": 0},
+	"hire_life_first": {"soft": 1, "direct": 0, "work": -1},
+	"hire_plodder": {"work": 1, "soft": 0, "direct": -1},
+}
+
 # Adizes' four roles of a manager: P produces results, A keeps order, E brings change, I holds people
 # together. Everything you do as a lead leans one way; nobody is strong in all four.
 const PAEI := ["P", "A", "E", "I"]
