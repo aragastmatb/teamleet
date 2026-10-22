@@ -17,7 +17,7 @@ oleg [tired]: Да-да, секундочку… Алексей?
   en: Alex looks at Vika, then at you. Then back at Vika, trying to work out the next move. The silence crackles with confusion.
 alex [embarrassed]: Ну… там, в общем, есть авторизационный одноразовый токен, мы выпускаем его вместе с сертификатом и потом…
   en: Well… there's, basically, a one-time authorization token, we issue it together with the certificate, and then…
-- Чем больше Алексей произносит слова, тем тяжелее шевелятся его губы. Кажется, что ещё немного, и они сползут с его лица на пол.
+- Чем больше Алексей произносит слов, тем тяжелее шевелятся его губы. Кажется, что ещё немного, и они сползут с его лица на пол.
   en: The more words Alex says, the heavier his lips move. It looks like any moment now they'll slide off his face onto the floor.
 * Олег, по подключению это к Вике, она ведёт ваш банк. Она занимается всеми нашими клиентами. -> defend
   en: Oleg, connection questions go to Vika, she runs your bank. She handles all our clients.
@@ -54,6 +54,7 @@ oleg [annoyed]: Хорошо, ждём. Большое спасибо, колл�
   en: Fine, we'll wait. Thank you very much, colleagues, have a great week!
 - Звонок завершился раньше, чем все предполагали. Ирина Викторовна ожидает отчёт.
   en: The call ended sooner than anyone expected. Irina is waiting for a report.
+> task bank_call_report
 > flag vika_unheard
 > mood vika -1
 > trust vika -1
@@ -62,7 +63,7 @@ oleg [annoyed]: Хорошо, ждём. Большое спасибо, колл�
 -- myself
 oleg [happy]: Отлично, спасибо! Так куда нам тыкаться?
   en: Great, thanks! So where do we go with this?
-- Вы быстро рассказываете в двух словах, какой процесс онбординга. Олег записывает и благодарит Вас. Вика всё это время молчит. Когда все отключились от встречи, Вика задержалась на секунду.
+- Вы быстро рассказываете в двух словах, как устроен процесс онбординга. Олег записывает и благодарит вас. Вика всё это время молчит. Когда все отключились от встречи, Вика задержалась на секунду.
   en: You quickly sum up how onboarding works. Oleg takes notes and thanks you. Vika says nothing the whole time. When everyone has dropped off the call, Vika stays on for a second.
 vika [sarcastic]: Спасибо, что ответили за меня.
   en: Thanks for answering for me.
