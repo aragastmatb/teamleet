@@ -1,0 +1,371 @@
+# Разговоры один на один с Геной. Коротко и по делу, иначе молчит.
+# Формат: docs/dialogues.md, «Разговоры один на один». Темы и когда они появляются: data/dialogue_catalog.json, topics.
+
+== talk_gena_credit
+who: gena
+topic: credit
+
+gena [neutral]: Если ты про задачи, там всё по плану.
+  en: If it's about tasks, everything's on schedule.
+? Это из-за разбора, да? (open +1) -> answer
+  en: This is about the review, isn't it?
+? Слушай, на разборе вышло некрасиво. Давай поговорим. (open -1) -> answer
+  en: Look, the review went badly. Let's talk about it.
+
+-- answer
+{if open 3} gena [sad]: Знаешь, что обидно? Не то, что Ирина не знает, а то, что ты знаешь и молчишь.
+  en: You know what hurts? Not that Irina doesn't know. That you know and say nothing.
+{if open 3} gena: Мне не нужны медали. Мне нужно, чтобы на разборе моё было моим.
+  en: I don't need medals. I need what's mine to be mine at the review.
+{if open 3} > mood them +0.3
+{if not open 3} gena [neutral]: Да ничего. Бывает. Работаем дальше.
+  en: It's nothing. It happens. Let's keep going.
+* Это было нечестно с моей стороны. -> apologize
+  en: That wasn't fair of me.
+* Сейчас всем тяжело. -> dismiss
+  en: It's hard for everyone right now.
+
+-- apologize
+gena [happy]: Ценю, что признаёшь.
+  en: I appreciate you owning it.
+> mood them +1.5
+> trust them +1
+> style I 0.5
+-> end
+
+-- dismiss
+gena [annoyed]: Ну да. Как всегда.
+  en: Sure. As always.
+> trust them -1
+> mood them -0.5
+> style P 0.3
+> style I -0.5
+-> end
+
+
+== talk_gena_tired
+who: gena
+topic: tired
+
+gena [neutral]: Нормально всё, просто кофе ещё не подействовал.
+  en: It's fine, the coffee just hasn't kicked in yet.
+? Ты вообще высыпаешься? (open -1) -> answer
+  en: Are you getting any sleep at all?
+? У тебя вид уставший. Что происходит? (open +1) -> answer
+  en: You look worn out. What's going on?
+? Сколько у тебя сейчас часов в день выходит? -> answer
+  en: How many hours a day are you putting in right now?
+
+-- answer
+{if open 3} gena [tired]: Годы не те. Устал я.
+  en: I'm not young anymore. I'm tired.
+{if open 3} gena: Только не надо меня жалеть, ладно? Просто много всего.
+  en: Just don't feel sorry for me, okay? It's just a lot.
+{if open 3} > mood them +0.3
+{if not open 3} gena [neutral]: Да нормально, просто неделя такая. Пройдёт.
+  en: It's fine, it's just one of those weeks. It'll pass.
+* Бери завтра выходной. -> dayoff
+  en: Take tomorrow off.
+{if busy them >= 2} * Давай я заберу у тебя одну задачу. -> lighten
+  en: Let me take one task off you.
+* Соберись, осталось немного. -> push
+  en: Pull yourself together, not long now.
+
+-- dayoff
+gena [happy]: Спасибо. Правда.
+  en: Thanks. Really.
+> dayoff them
+> mood them +1
+> style I 0.5
+-> end
+
+-- lighten
+gena [happy]: Фух. Спасибо.
+  en: Phew. Thanks.
+> lighten them
+> mood them +1
+> trust them +1
+> style I 0.5
+-> end
+
+-- push
+gena [annoyed]: Собраться. В моём возрасте. Ну-ну.
+  en: Pull myself together. At my age. Sure.
+> push them
+> mood them -1
+{if drive them peace} > mood them -1
+> style P 0.7
+> style I -0.3
+-> end
+
+
+== talk_gena_stuck
+who: gena
+topic: stuck
+
+gena [neutral]: Если про «{stuck}», то там уже почти всё понятно. Почти.
+  en: If it's about "{stuck}", it's almost figured out. Almost.
+? Что с «{stuck}», где затык? -> answer
+  en: What's up with "{stuck}", where's it stuck?
+? «{stuck}» что-то не идёт, да? Бывает, ничего страшного. (open -1) -> answer
+  en: "{stuck}" isn't moving, is it? Happens, no big deal.
+
+-- answer
+{if open 3} gena [worried]: Там вообще не то, что в задаче написано. Я третий день хожу по кругу и боюсь спросить, а то все решат, что я не тяну.
+  en: It's nothing like what the task says. I've been going round in circles for three days and I'm scared to ask, or everyone will think I can't cope.
+{if open 3} > mood them +0.3
+{if not open 3} gena [neutral]: Да разберусь, там мелочь осталась.
+  en: I'll sort it, there's just a small thing left.
+{if can_sit them} * Давай сядем вместе и посмотрим. -> sit
+  en: Let's sit down and look at it together.
+
+-- sit
+gena [happy]: Давай. Только не смейся, если там всё очевидно.
+  en: Okay. Just don't laugh if it turns out to be obvious.
+> sit them
+-> end
+
+
+== talk_gena_load
+who: gena
+topic: load
+
+gena [neutral]: Слушай, давай быстро, у меня тут всё горит.
+  en: Listen, make it quick, everything's on fire here.
+? Давай посмотрим, что у тебя на столе. Что горит? -> answer
+  en: Let's look at what's on your plate. What's on fire?
+? Тебе не много сейчас? (open -1) -> answer
+  en: Isn't it too much for you right now?
+
+-- answer
+{if open 3} gena [worried]: У меня сейчас всё срочное. А когда всё срочное, ничего не срочное, и я просто хватаю то, что громче кричит.
+  en: Everything I have is urgent. And when everything's urgent, nothing is, so I just grab whatever's screaming loudest.
+{if open 3} > mood them +0.3
+{if not open 3} gena [annoyed]: Справлюсь. Наверное.
+  en: I'll manage. Probably.
+{if busy them >= 2} * Давай я заберу у тебя одну задачу. -> lighten
+  en: Let me take one task off you.
+* Сейчас всем тяжело. -> dismiss
+  en: It's hard for everyone right now.
+
+-- lighten
+gena [happy]: Фух. Спасибо.
+  en: Phew. Thanks.
+> lighten them
+> mood them +1
+> trust them +1
+> style I 0.5
+-> end
+
+-- dismiss
+gena [annoyed]: Ну да. Как всегда.
+  en: Sure. As always.
+> mood them -0.5
+> style P 0.3
+> style I -0.5
+-> end
+
+
+== talk_gena_mood
+who: gena
+topic: mood
+
+gena [neutral]: А? Да нет, всё нормально.
+  en: Huh? No, everything's fine.
+? На тебе лица нет. Всё в порядке? (open -1) -> answer
+  en: You look like something's wrong. Are you okay?
+? Что случилось? (open +1) -> answer
+  en: What happened?
+
+-- answer
+{if open 3} gena [sad]: Да просто сижу и не понимаю, что от меня тут вообще зависит. Не в смысле уволиться, а… вообще.
+  en: I just sit here and can't tell what actually depends on me. Not like I want to quit, just… in general.
+{if open 3} > mood them +0.3
+{if not open 3} gena [neutral]: Да ерунда, не обращай внимания.
+  en: It's nothing, don't mind me.
+
+
+== talk_gena_idle
+who: gena
+topic: idle
+
+gena [neutral]: О. Наконец-то про меня кто-то вспомнил.
+  en: Oh. Finally someone remembers I exist.
+? Чем сейчас занимаешься? -> answer
+  en: What are you working on at the moment?
+? Ты уже который день без задач. Что думаешь? (open +1) -> answer
+  en: You've had no tasks for days. What do you make of it?
+
+-- answer
+{if open 3} gena [embarrassed]: Честно? Неловко. Все бегают, а я делаю вид, что работаю.
+  en: Honestly? It's awkward. Everyone's running around and I'm pretending to work.
+{if open 3} gena: Дай мне что-нибудь. Хоть что-нибудь настоящее.
+  en: Give me something. Anything real.
+{if open 3} > mood them +0.3
+{if not open 3} gena [sarcastic]: Читаю документацию. Очень увлекательно, не отрывай.
+  en: Reading the docs. Riveting, don't interrupt.
+* Есть одна штука в бэклоге, возьмёшься? -> fix_bored
+  en: There's something in the backlog. Want it?
+
+-- fix_bored
+gena [happy]: О, давай!
+  en: Oh, go on!
+> initiative them
+> mood them +1
+> style E 0.5
+-> end
+
+
+== talk_gena_hate
+who: gena
+topic: hate
+
+gena [neutral]: Сижу вот, ковыряю «{task}». Весело.
+  en: Just sitting here, picking at "{task}". Fun.
+? Как тебе «{task}»? -> answer
+  en: How's "{task}" treating you?
+? Тебе ведь «{task}» не нравится, да? (open +1) -> answer
+  en: You don't like "{task}", do you?
+
+-- answer
+{if open 3} gena [annoyed]: Терпеть такое не могу. Открываю «{task}», и сразу хочется закрыть ноутбук и пойти гулять.
+  en: I can't stand this kind of thing. I open "{task}" and immediately want to shut the laptop and go for a walk.
+{if open 3} > mood them +0.3
+{if not open 3} gena [neutral]: Задача как задача.
+  en: A task's a task.
+* Пару дней будешь делать только то, что тебе по душе. -> fix_hate
+  en: For a couple of days you'll only do what you like.
+
+-- fix_hate
+gena [happy]: Договорились.
+  en: Deal.
+> calm them 3
+> mood them +1
+> style I 0.3
+-> end
+
+
+== talk_gena_proud
+who: gena
+topic: proud
+
+gena [neutral]: Ну что, «{done}» на месте, всё работает!
+  en: So, "{done}" is live and it all works!
+? «{done}» вышло отлично. Расскажешь, как оно там внутри? -> answer
+  en: "{done}" came out great. Tell me how it works inside?
+? За «{done}» спасибо, правда хорошо вышло. (open -1) -> answer
+  en: Thanks for "{done}", it really turned out well.
+
+-- answer
+{if open 3} gena [happy]: Там есть одна штука, которую никто не заметит, а мне она нравится больше всего остального. Хочешь, покажу?
+  en: There's one bit in there nobody will notice, and I like it more than all the rest. Want me to show you?
+{if open 3} > mood them +0.3
+{if not open 3} gena [neutral]: Да, нормально получилось.
+  en: Yeah, it came out okay.
+* Отличная работа. Правда. -> praise
+  en: Great work. Really.
+* Расскажу о тебе Ирине Викторовне. -> mention
+  en: I'll tell Irina about you.
+* Неплохо, но можно было лучше. -> critique
+  en: Not bad, but it could have been better.
+
+-- praise
+gena [happy]: Спасибо! Приятно, что замечаешь.
+  en: Thanks! Nice to be noticed.
+> mood them +1
+> trust them +1
+> style I 0.3
+-> end
+
+-- mention
+gena [happy]: Правда? Это было бы здорово.
+  en: Really? That would be great.
+> mention them
+> mood them +1.5
+> style I 0.3
+-> end
+
+-- critique
+{if good_work them} gena [annoyed]: …Серьёзно? Там всё было хорошо.
+  en: …Seriously? It was all fine.
+{if good_work them} > mood them -1.5
+{if good_work them} > trust them -1
+{if not good_work them} gena [neutral]: Да, есть что подтянуть. Учту.
+  en: Yeah, there's room to improve. Noted.
+{if not good_work them} > mood them -0.5
+{if not good_work them} > trust them +1
+{if not good_work them} > learn them done 1
+> style P 0.3
+> style A 0.2
+-> end
+
+
+== talk_gena_work
+who: gena
+topic: work
+
+gena [neutral]: Да вот, сижу над «{task}».
+  en: Just sitting over "{task}".
+? Как там «{task}»? -> answer
+  en: How's "{task}" going?
+
+-- answer
+{if open 3, work behind} gena [worried]: Если честно, медленнее, чем хотелось бы. Дня на два отстаю.
+  en: Honestly, slower than I'd like. I'm about two days behind.
+{if open 3, work stuck} gena [worried]: Застряло. Сама задача несложная, но что-то не пускает дальше, и я не понимаю что.
+  en: It's stuck. The task isn't hard, but something won't let me through and I can't see what.
+{if open 3, work on_track} gena [neutral]: Нормально. Если надо, могу показать, что уже готово.
+  en: Fine. I can show you what's done, if you like.
+{if open 3} > mood them +0.3
+{if not open 3} gena [neutral]: Идёт. Нормально идёт.
+  en: It's going. Going fine.
+
+
+== talk_gena_how
+who: gena
+topic: how
+
+gena [neutral]: Нормально. Как всегда.
+  en: Fine. As always.
+? Как ты вообще? (open -1) -> answer
+  en: How are you, really?
+
+-- answer
+{if open 3} gena [happy]: А знаешь, ничего так. Спасибо, что спрашиваешь, у нас это редко.
+  en: You know, not bad. Thanks for asking, nobody here does.
+{if open 3} > confide them
+{if open 3} > mood them +0.3
+{if not open 3} gena [neutral]: Нормально.
+  en: Fine.
+{if known them drive, drive them peace} * До конца недели никаких срочных задач, обещаю. -> gift_peace
+  en: No urgent tasks till the end of the week, I promise.
+
+-- gift_peace
+gena [happy]: Вот это я понимаю.
+  en: Now that's what I like.
+> calm them 4
+> mood them +1.5
+> trust them +1
+> style I 0.3
+> style A 0.2
+-> end
+
+
+== talk_gena_react
+who: gena
+topic: react
+# Как человек принимает вопрос: up, если тон ему подходит, down, если нет, shut, когда закрылся совсем.
+
+-- up
+- Гена кивает.
+  en: Gena nods.
+
+-- down
+- Гена молчит дольше обычного.
+  en: Gena stays silent longer than usual.
+
+-- shut
+- {who} поворачивается обратно к монитору.
+  en: {who} turns back to the monitor.
+gena [annoyed]: Всё? Работать надо.
+  en: Done? I've got work.

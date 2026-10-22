@@ -153,6 +153,13 @@ function termsEditor(list, table, { allowNot = true, single = false, onChange })
 
 // ---------- the scene as a map ----------
 
+const isTalk = () => S.scene.header.some(h => h.key === "topic");
+
+function speakerOptions() {
+  const list = S.cat.speakers.map(p => [p, p === "you" ? "игрок (you)" : `${nameOf(p)} (${p})`]);
+  return isTalk() ? [["them", "тот, с кем говоришь (them)"], ...list] : list;
+}
+
 function labels() {
   return S.scene.nodes.slice(1).map(n => n.label);
 }
@@ -168,7 +175,7 @@ function exitsOf(node) {
 }
 
 function nodeTitle(node) {
-  return node.label === START ? "Начало" : node.label;
+  return node.label === START ? (isTalk() ? "Начало: так он начинает, если тема самая острая" : "Начало") : node.label;
 }
 
 function nodeHTML(node, n) {
@@ -182,17 +189,20 @@ function nodeHTML(node, n) {
     const when = S.scene.header.find(x => x.key === "when");
     if (when) h += `<div class="n-when">${when.value.split(",").map(t => `<span class="chip cond">${esc(termHuman(t, S.cat.catalog.terms))}</span>`).join(" ")}</div>`;
   }
-  lines.slice(0, 3).forEach(it => {
+  lines.slice(0, 4).forEach(it => {
     const who = it.type === "narr" ? "" : `<b>${esc(nameOf(it.who))}:</b> `;
-    h += `<div class="n-line ${it.cond.length ? "if" : ""}">${who}${esc(short(it.ru, 70))}</div>`;
+    const op = it.cond.find(t => /^(not )?open /.test(t));
+    const tag = op ? `<span class="n-tag ${op.startsWith("not") ? "closed" : "opened"}">${op.startsWith("not") ? "закрыт" : "открыт"}</span> ` : "";
+    h += `<div class="n-line ${it.cond.length ? "if" : ""}">${tag}${who}${esc(short(it.ru, 70))}</div>`;
   });
-  if (lines.length > 3) h += `<div class="n-more">ещё ${lines.length - 3}</div>`;
+  if (lines.length > 4) h += `<div class="n-more">ещё ${lines.length - 4}</div>`;
   if (fx.length) h += `<div class="n-fx">${fx.map(it => `<span class="chip">${esc(it.words.join(" "))}</span>`).join(" ")}</div>`;
   out.forEach(({ i, it }) => {
     const cond = it.cond.length ? `<span class="n-if" title="${esc(it.cond.join(", "))}">если</span>` : "";
     const to = it.to === "end" ? `<span class="n-end">конец</span>` : "";
-    const text = it.type === "choice" ? "«" + esc(short(it.ru, 46)) + "»" : "→ переход";
-    h += `<div class="n-exit ${it.type}" data-exit="${i}">${cond}<span class="t">${text}</span>${to}<span class="port" data-port="${i}" title="Тяни на другую ветку или в пустое место"></span></div>`;
+    const open = it.ask && it.open ? `<span class="n-open ${+it.open > 0 ? "up" : "down"}" title="как вопрос меняет открытость">${+it.open > 0 ? "+" : "−"}${Math.abs(+it.open)}</span>` : "";
+    const text = it.type === "choice" ? (it.ask ? "? " : "") + "«" + esc(short(it.ru, 46)) + "»" : "→ переход";
+    h += `<div class="n-exit ${it.type} ${it.ask ? "ask" : ""}" data-exit="${i}">${cond}<span class="t">${text}</span>${open}${to}<span class="port" data-port="${i}" title="Тяни на другую ветку или в пустое место"></span></div>`;
   });
   if (ends) h += `<div class="n-exit fall"><span class="t">сцена заканчивается</span></div>`;
   return h;
@@ -430,14 +440,14 @@ function targetSelect(it) {
   });
 }
 
-const ITEM_NAMES = { line: "Реплика", narr: "Описание", choice: "Вариант игрока", jump: "Переход", fx: "Эффект", comment: "Комментарий" };
+const ITEM_NAMES = { line: "Реплика", narr: "Описание", choice: "Вариант игрока", question: "Вопрос", jump: "Переход", fx: "Эффект", comment: "Комментарий" };
 
 function itemCard(node, it, i) {
   const card = document.createElement("div");
   card.className = "item " + it.type;
   const head = document.createElement("div");
   head.className = "item-head";
-  head.innerHTML = `<b>${ITEM_NAMES[it.type]}</b>`;
+  head.innerHTML = `<b>${it.type === "choice" && it.ask ? "Вопрос игрока" : it.type === "choice" && isTalk() ? "Действие игрока" : ITEM_NAMES[it.type]}</b>`;
   const tools = document.createElement("span");
   tools.className = "item-tools";
   [["↑", -1, "выше"], ["↓", 1, "ниже"]].forEach(([s, d, title]) => {
@@ -459,13 +469,20 @@ function itemCard(node, it, i) {
   if (it.type === "line") {
     const row = document.createElement("div");
     row.className = "row2";
-    row.append(field("Кто", select(S.cat.speakers.map(p => [p, p === "you" ? "игрок (you)" : `${nameOf(p)} (${p})`]), it.who, v => { it.who = v; changed(); })));
+    row.append(field("Кто", select(speakerOptions(), it.who, v => { it.who = v; changed(); })));
     row.append(field("Эмоция", select([["", "без эмоции"], ...Object.entries(C.emotions)], it.emo, v => { it.emo = v; changed(); })));
     card.append(row);
   }
   if (it.type === "line" || it.type === "narr" || it.type === "choice") {
     card.append(textArea(it.ru, "ru", v => { it.ru = v; changed(); }));
     card.append(textArea(it.en, "en", v => { it.en = v; changed(); }));
+  }
+  if (it.type === "choice" && isTalk()) {
+    const row = document.createElement("div");
+    row.className = "row2";
+    row.append(field("Что это", select([["q", "вопрос: тратит одну из трёх попыток"], ["a", "действие: заканчивает разговор"]], it.ask ? "q" : "a", v => { it.ask = v === "q"; if (!it.ask) it.open = ""; changed(true); })));
+    if (it.ask) row.append(field("Открытость", select([["+2", "+2 открывает сильно"], ["+1", "+1 ему так легче"], ["", "0 не меняет"], ["-1", "−1 его это задевает"], ["-2", "−2 задевает сильно"]], it.open || "", v => { it.open = v; changed(); })));
+    card.append(row);
   }
   if (it.type === "choice" || it.type === "jump") card.append(field("Ведёт в", targetSelect(it)));
   if (it.type === "fx") {
@@ -498,11 +515,26 @@ function headerEditor() {
     h.value = value;
     changed();
   };
+  if (isTalk()) {
+    const t = document.createElement("div");
+    t.className = "row2";
+    const whos = [["any", "все, у кого нет своей сцены (any)"], ["hire", "любой новичок (hire)"],
+      ...["solid", "faker", "junior", "stump", "life_first", "genius"].map(k => ["hire_" + k, "новичок-" + k]),
+      ...S.cat.speakers.filter(p => p !== "you").map(p => [p, `${nameOf(p)} (${p})`])];
+    t.append(field("С кем", select(whos, get("who") ? get("who").value : "any", v => set("who", v))));
+    t.append(field("Тема", select(Object.entries(C.topics).map(([k, v]) => [k, `${k}: ${v.ru}`]), get("topic").value, v => set("topic", v))));
+    box.append(t);
+    const note = document.createElement("div");
+    note.className = "hint";
+    note.textContent = "Тема появляется сама, по состоянию человека. Ниже можно добавить своё условие: например, шаги истории идут по отметкам.";
+    box.append(note);
+  }
   const when = get("when") ? get("when").value.split(",").map(s => s.trim()).filter(Boolean) : [];
   const w = document.createElement("div");
-  w.innerHTML = `<div class="panel-sub">Когда начинается (все условия сразу)</div>`;
+  w.innerHTML = `<div class="panel-sub">${isTalk() ? "Дополнительное условие (необязательно)" : "Когда начинается (все условия сразу)"}</div>`;
   w.append(termsEditor(when, C.terms, { onChange: () => set("when", when.join(", ")) }));
   box.append(w);
+  if (isTalk()) return box;
   const row = document.createElement("div");
   row.className = "row2";
   row.append(field("Время", select([["", "утром (по умолчанию)"], ["evening", "вечером"]], get("at") ? get("at").value : "", v => set("at", v))));
@@ -560,16 +592,18 @@ function drawPanel() {
   const add = document.createElement("div");
   add.className = "adds";
   const blank = {
-    line: () => ({ type: "line", who: S.cat.speakers[0], emo: "", ru: "", en: "", cond: [] }),
+    line: () => ({ type: "line", who: isTalk() ? "them" : S.cat.speakers[0], emo: "", ru: "", en: "", cond: [] }),
     narr: () => ({ type: "narr", ru: "", en: "", cond: [] }),
-    choice: () => ({ type: "choice", ru: "", en: "", to: "end", cond: [], open: "" }),
+    choice: () => ({ type: "choice", ru: "", en: "", to: "end", cond: [], open: "", ask: false }),
+    question: () => ({ type: "choice", ru: "", en: "", to: "end", cond: [], open: "", ask: true }),
     fx: () => ({ type: "fx", words: ["flag", "new_flag"], cond: [] }),
     jump: () => ({ type: "jump", to: "end", cond: [] }),
     comment: () => ({ type: "comment", text: "" }),
   };
-  for (const k of ["line", "narr", "choice", "fx", "jump", "comment"]) {
+  const kinds = isTalk() ? ["line", "narr", "question", "choice", "fx", "jump", "comment"] : ["line", "narr", "choice", "fx", "jump", "comment"];
+  for (const k of kinds) {
     const b = document.createElement("button");
-    b.textContent = "+ " + ITEM_NAMES[k].toLowerCase();
+    b.textContent = "+ " + (isTalk() && k === "choice" ? "действие" : ITEM_NAMES[k].toLowerCase());
     b.addEventListener("click", () => {
       // New lines go before the first choice or jump, so they're said before you answer; the rest go last.
       let at = node.items.length;
@@ -579,7 +613,7 @@ function drawPanel() {
       }
       // A choice replaces the branch's plain "-> …" at the end: with choices it would never be reached.
       const last = node.items[node.items.length - 1];
-      if (k === "choice" && last && last.type === "jump" && !last.cond.length) { node.items.pop(); at = node.items.length; }
+      if ((k === "choice" || k === "question") && last && last.type === "jump" && !last.cond.length) { node.items.pop(); at = node.items.length; }
       node.items.splice(at, 0, blank[k]());
       changed(true);
     });
@@ -744,6 +778,9 @@ function catalogPage() {
     <table class="ref"><tr><th>Слово</th><th>Выполнено, если</th><th>Пример</th><th>Что нужно указать</th></tr>${rows(C.terms)}</table>
     <h3>Эффекты</h3><p class="intro">Что меняется в игре, когда сцена доходит до этой строки.</p>
     <table class="ref"><tr><th>Слово</th><th>Что делает</th><th>Пример</th><th>Что нужно указать</th></tr>${rows(C.fx)}</table>
+    <h3>Темы разговоров один на один</h3><p class="intro">Тема появляется сама, когда с человеком происходит описанное. Острота решает, с чего он начнёт и какие вопросы предложат первыми. Сцена темы: <code>who:</code> и <code>topic:</code> в начале, файлы <code>talk_*.dlg</code>.</p>
+    <table class="ref"><tr><th>Тема</th><th>Когда появляется</th><th>Острота</th></tr>${Object.entries(C.topics).map(([k, v]) => `<tr><td><code>${esc(k)}</code></td><td>${esc(v.ru)}</td><td>${v.heat}</td></tr>`).join("")}</table>
+    <p class="intro">В разговоре: <code>? вопрос (open +1) -> ветка</code> тратит одну из трёх попыток и меняет открытость человека (она стартует от доверия), <code>* действие -> ветка</code> заканчивает разговор. Реплики с условием «open 3» он скажет, только если открыт. <code>them</code> — тот, с кем говоришь.</p>
     <h3>Что указывать</h3>
     <table class="ref">${Object.entries(C.args).map(([k, v]) => `<tr><td><code>${esc(k)}</code></td><td>${esc(v)}</td></tr>`).join("")}</table>
     <h3>Места</h3><table class="ref">${Object.entries(C.places).map(([k, v]) => `<tr><td><code>${esc(k)}</code></td><td>${esc(v)}</td></tr>`).join("")}</table>
@@ -801,6 +838,11 @@ function newScenePage() {
     <p class="intro">Сцена появится в конце выбранного файла. Дальше её можно строить на схеме.</p>
     <div class="newform">
       <label class="field"><span>id сцены (латиницей, уникальный)</span><input id="ns-id" placeholder="vika_coffee"></label>
+      <label class="field"><span>Что это</span><select id="ns-kind"><option value="story">сюжетная сцена</option><option value="talk">разговор один на один: тема</option></select></label>
+      <div class="row2" id="ns-talk" hidden>
+        <label class="field"><span>С кем</span><select id="ns-who"><option value="any">все без своей сцены (any)</option>${S.cat.speakers.filter(p => p !== "you").map(p => `<option value="${p}">${esc(nameOf(p))}</option>`).join("")}</select></label>
+        <label class="field"><span>Тема</span><select id="ns-topic">${Object.keys(S.cat.catalog.topics).map(k => `<option>${k}</option>`).join("")}</select></label>
+      </div>
       <label class="field"><span>Файл</span><select id="ns-file">${S.cat.files.map(f => `<option>${esc(f)}</option>`).join("")}<option value="+">+ новый файл…</option></select></label>
       <label class="field" id="ns-newfile" hidden><span>Имя нового файла</span><input id="ns-fname" placeholder="ch2_extra.dlg"></label>
       <button id="ns-go" class="primary">Создать</button> <span id="ns-msg" class="state"></span>
@@ -809,11 +851,19 @@ function newScenePage() {
 
 function bindNewScene() {
   $("#ns-file").addEventListener("change", e => ($("#ns-newfile").hidden = e.target.value !== "+"));
+  $("#ns-kind").addEventListener("change", e => ($("#ns-talk").hidden = e.target.value !== "talk"));
   $("#ns-go").addEventListener("click", async () => {
     const id = $("#ns-id").value.trim();
     const file = $("#ns-file").value === "+" ? $("#ns-fname").value.trim() : $("#ns-file").value;
-    const scene = { id, file, header: [{ key: "when", value: "chapter 1" }],
-      nodes: [{ label: "", lead: [], items: [{ type: "narr", ru: "Здесь начинается сцена.", en: "The scene starts here.", cond: [] }, { type: "jump", to: "end", cond: [] }] }] };
+    const talk = $("#ns-kind").value === "talk";
+    const scene = talk
+      ? { id, file, header: [{ key: "who", value: $("#ns-who").value }, { key: "topic", value: $("#ns-topic").value }],
+        nodes: [{ label: "", lead: [], items: [{ type: "line", who: "them", emo: "neutral", ru: "Что он говорит первым.", en: "What they say first.", cond: [] },
+          { type: "choice", ask: true, open: "", ru: "Твой вопрос.", en: "Your question.", to: "answer", cond: [] }] },
+          { label: "answer", lead: [], items: [{ type: "line", who: "them", emo: "", ru: "Настоящий ответ.", en: "The real answer.", cond: ["open 3"] },
+            { type: "line", who: "them", emo: "", ru: "Отговорка.", en: "A brush-off.", cond: ["not open 3"] }] }] }
+      : { id, file, header: [{ key: "when", value: "chapter 1" }],
+        nodes: [{ label: "", lead: [], items: [{ type: "narr", ru: "Здесь начинается сцена.", en: "The scene starts here.", cond: [] }, { type: "jump", to: "end", cond: [] }] }] };
     try {
       await postJSON("/api/scene/save", { scene, src: "" });
       await reloadTexts();

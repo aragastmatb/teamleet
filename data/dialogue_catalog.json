@@ -2,7 +2,7 @@
  "about": "Справочник сцен: какие бывают условия, эффекты, места, эмоции и кто говорит. Отсюда берут списки игра (teamlead/dialogue.gd) и редактор текстов (tools/text_editor). Добавил условие или эффект в код: допиши сюда, иначе сцены с ним не пройдут проверку.",
  "args": {
   "range": "число или диапазон: 2 или 2-4",
-  "person": "человек из команды",
+  "person": "человек из команды; в разговоре один на один them — тот, с кем говоришь",
   "people": "один или несколько человек через пробел",
   "flag": "отметка: любое слово латиницей, например alex_closed или сцена:ветка",
   "cmp": "сравнение: >=, >, <, <=",
@@ -13,41 +13,368 @@
   "bosses": "тип Ирины: P, A, E, I или X (хаотичная)",
   "task": "id задачи или улучшения из data/tasks.tsv и data/improvements.tsv",
   "candidate": "id кандидата, например palych",
-  "known": "что узнаёт игрок: drive (мотив) или skill.pipelines / skill.infra / skill.portal / skill.support",
-  "text": "слово"
+  "known": "что игрок знает: drive (мотив), hates (что не любит) или skill.pipelines / skill.infra / skill.portal / skill.support",
+  "text": "слово",
+  "work_state": "как идёт его задача: on_track (по плану), behind (отстаёт), stuck (застрял)",
+  "drives": "мотив, один или несколько: craft (мастерство), growth (рост), visibility (на виду), peace (покой)",
+  "category": "pipelines, infra, portal, support или done (то, чем была его последняя удачная задача)"
  },
  "terms": {
-  "chapter": {"args": ["range"], "ru": "идёт эта глава", "example": "chapter 2-3"},
-  "day": {"args": ["range"], "ru": "день главы в этих пределах, считая с первого", "example": "day 3-8"},
-  "here": {"args": ["people"], "ru": "все эти люди в команде и сегодня на работе", "example": "here alex vika"},
-  "flag": {"args": ["flag"], "ru": "в игре стоит отметка", "example": "flag alex_closed"},
-  "busy": {"args": ["person", "cmp", "number"], "ru": "сколько задач у человека в работе", "example": "busy dima < 4"},
-  "taras": {"args": ["cmp", "number"], "ru": "насколько игрок поступает как Тарас (счёт Тараса)", "example": "taras >= 3"},
-  "irina": {"args": ["bosses"], "ru": "Ирина в этой игре такого типа", "example": "irina P A"},
-  "style": {"args": ["styles"], "ru": "ведущий стиль руководства игрока сейчас такой", "example": "style P"},
-  "laid_off": {"args": ["person"], "ru": "в главе 3 по приказу сократили этого человека", "example": "laid_off gena"},
-  "incident": {"args": [], "ru": "сейчас есть незакрытая авария", "example": "incident"},
-  "overload": {"args": [], "ru": "завал: работы больше двух дней на человека", "example": "overload"}
+  "chapter": {
+   "args": [
+    "range"
+   ],
+   "ru": "идёт эта глава",
+   "example": "chapter 2-3"
+  },
+  "day": {
+   "args": [
+    "range"
+   ],
+   "ru": "день главы в этих пределах, считая с первого",
+   "example": "day 3-8"
+  },
+  "here": {
+   "args": [
+    "people"
+   ],
+   "ru": "все эти люди в команде и сегодня на работе",
+   "example": "here alex vika"
+  },
+  "flag": {
+   "args": [
+    "flag"
+   ],
+   "ru": "в игре стоит отметка",
+   "example": "flag alex_closed"
+  },
+  "busy": {
+   "args": [
+    "person",
+    "cmp",
+    "number"
+   ],
+   "ru": "сколько задач у человека в работе",
+   "example": "busy dima < 4"
+  },
+  "taras": {
+   "args": [
+    "cmp",
+    "number"
+   ],
+   "ru": "насколько игрок поступает как Тарас (счёт Тараса)",
+   "example": "taras >= 3"
+  },
+  "irina": {
+   "args": [
+    "bosses"
+   ],
+   "ru": "Ирина в этой игре такого типа",
+   "example": "irina P A"
+  },
+  "style": {
+   "args": [
+    "styles"
+   ],
+   "ru": "ведущий стиль руководства игрока сейчас такой",
+   "example": "style P"
+  },
+  "laid_off": {
+   "args": [
+    "person"
+   ],
+   "ru": "в главе 3 по приказу сократили этого человека",
+   "example": "laid_off gena"
+  },
+  "incident": {
+   "args": [],
+   "ru": "сейчас есть незакрытая авария",
+   "example": "incident"
+  },
+  "overload": {
+   "args": [],
+   "ru": "завал: работы больше двух дней на человека",
+   "example": "overload"
+  },
+  "open": {
+   "args": [
+    "number"
+   ],
+   "ru": "разговор: человек открыт настолько или больше (стартует от доверия, двигают вопросы)",
+   "example": "open 3",
+   "talk": true
+  },
+  "work": {
+   "args": [
+    "work_state"
+   ],
+   "ru": "разговор: его задача сейчас идёт так",
+   "example": "work behind",
+   "talk": true
+  },
+  "drive": {
+   "args": [
+    "person",
+    "drives"
+   ],
+   "ru": "у человека такой мотив",
+   "example": "drive them craft"
+  },
+  "known": {
+   "args": [
+    "person",
+    "known"
+   ],
+   "ru": "игрок уже знает это о человеке",
+   "example": "known them drive"
+  },
+  "promised": {
+   "args": [
+    "person"
+   ],
+   "ru": "человеку уже обещали повышение",
+   "example": "promised them"
+  },
+  "good_work": {
+   "args": [
+    "person"
+   ],
+   "ru": "его последняя удачная задача сделана на «хорошо»",
+   "example": "good_work them"
+  },
+  "can_sit": {
+   "args": [
+    "person"
+   ],
+   "ru": "у человека застрявшая задача, и сегодня вы с ним над ней ещё не сидели",
+   "example": "can_sit them"
+  }
  },
  "not": "Любое условие можно перевернуть словом not: not flag x, not here vika.",
  "fx": {
-  "flag": {"args": ["flag"], "ru": "поставить отметку", "example": "flag alex_closed"},
-  "unflag": {"args": ["flag"], "ru": "снять отметку", "example": "unflag alex_closed"},
-  "days": {"args": ["flag", "number"], "ru": "отметка, которая действует столько дней", "example": "days calm 3"},
-  "mood": {"args": ["person", "delta"], "ru": "настроение человека (от −5 до 5)", "example": "mood alex +1"},
-  "trust": {"args": ["person", "delta"], "ru": "доверие человека к игроку", "example": "trust alex -1"},
-  "energy": {"args": ["person", "delta"], "ru": "силы человека", "example": "energy alex -2"},
-  "style": {"args": ["style", "delta"], "ru": "сдвиг стиля руководства игрока", "example": "style I 0.5"},
-  "boss": {"args": ["delta"], "ru": "вес игрока у Ирины", "example": "boss +1"},
-  "taras": {"args": ["delta"], "ru": "игрок поступил как Тарас (или наоборот)", "example": "taras +1"},
-  "give": {"args": ["task", "person"], "ru": "отдать задачу или улучшение человеку прямо в разговоре, без возражений; можно добавить helper и напарника", "example": "give automate_report alex helper vika"},
-  "grab": {"args": ["person", "number"], "ru": "человек сам набрал себе работы, пока в работе не станет столько", "example": "grab dima 5"},
-  "drop": {"args": ["person", "number"], "ru": "оставить человеку столько задач (где он дальше всех продвинулся), остальные вернуть в очередь", "example": "drop dima 2"},
-  "task": {"args": ["task"], "ru": "положить карточку в очередь, как будто её прислали", "example": "task old_jenkins_down"},
-  "shrink": {"args": ["task", "number"], "ru": "задача оказалась меньше во столько раз (incident: все открытые аварии)", "example": "shrink bus_factor 0.5"},
-  "reveal": {"args": ["person", "known"], "ru": "игрок узнаёт навык или мотив человека", "example": "reveal alex skill.support"},
-  "interview": {"args": ["candidate"], "ru": "после сцены открыть собеседование с кандидатом, бесплатно", "example": "interview palych"},
-  "openings": {"args": ["number"], "ru": "Ирина открывает столько ставок на найм", "example": "openings 2"}
+  "flag": {
+   "args": [
+    "flag"
+   ],
+   "ru": "поставить отметку",
+   "example": "flag alex_closed"
+  },
+  "unflag": {
+   "args": [
+    "flag"
+   ],
+   "ru": "снять отметку",
+   "example": "unflag alex_closed"
+  },
+  "days": {
+   "args": [
+    "flag",
+    "number"
+   ],
+   "ru": "отметка, которая действует столько дней",
+   "example": "days calm 3"
+  },
+  "mood": {
+   "args": [
+    "person",
+    "delta"
+   ],
+   "ru": "настроение человека (от −5 до 5)",
+   "example": "mood alex +1"
+  },
+  "trust": {
+   "args": [
+    "person",
+    "delta"
+   ],
+   "ru": "доверие человека к игроку",
+   "example": "trust alex -1"
+  },
+  "energy": {
+   "args": [
+    "person",
+    "delta"
+   ],
+   "ru": "силы человека",
+   "example": "energy alex -2"
+  },
+  "style": {
+   "args": [
+    "style",
+    "delta"
+   ],
+   "ru": "сдвиг стиля руководства игрока",
+   "example": "style I 0.5"
+  },
+  "boss": {
+   "args": [
+    "delta"
+   ],
+   "ru": "вес игрока у Ирины",
+   "example": "boss +1"
+  },
+  "taras": {
+   "args": [
+    "delta"
+   ],
+   "ru": "игрок поступил как Тарас (или наоборот)",
+   "example": "taras +1"
+  },
+  "give": {
+   "args": [
+    "task",
+    "person"
+   ],
+   "ru": "отдать задачу или улучшение человеку прямо в разговоре, без возражений; можно добавить helper и напарника",
+   "example": "give automate_report alex helper vika"
+  },
+  "grab": {
+   "args": [
+    "person",
+    "number"
+   ],
+   "ru": "человек сам набрал себе работы, пока в работе не станет столько",
+   "example": "grab dima 5"
+  },
+  "drop": {
+   "args": [
+    "person",
+    "number"
+   ],
+   "ru": "оставить человеку столько задач (где он дальше всех продвинулся), остальные вернуть в очередь",
+   "example": "drop dima 2"
+  },
+  "task": {
+   "args": [
+    "task"
+   ],
+   "ru": "положить карточку в очередь, как будто её прислали",
+   "example": "task old_jenkins_down"
+  },
+  "shrink": {
+   "args": [
+    "task",
+    "number"
+   ],
+   "ru": "задача оказалась меньше во столько раз (incident: все открытые аварии)",
+   "example": "shrink bus_factor 0.5"
+  },
+  "reveal": {
+   "args": [
+    "person",
+    "known"
+   ],
+   "ru": "игрок узнаёт навык или мотив человека",
+   "example": "reveal alex skill.support"
+  },
+  "interview": {
+   "args": [
+    "candidate"
+   ],
+   "ru": "после сцены открыть собеседование с кандидатом, бесплатно",
+   "example": "interview palych"
+  },
+  "openings": {
+   "args": [
+    "number"
+   ],
+   "ru": "Ирина открывает столько ставок на найм",
+   "example": "openings 2"
+  },
+  "dayoff": {
+   "args": [
+    "person"
+   ],
+   "ru": "завтра у человека выходной (и долги по переработкам прощены)",
+   "example": "dayoff them"
+  },
+  "lighten": {
+   "args": [
+    "person"
+   ],
+   "ru": "забрать у человека одну неначатую задачу обратно в очередь",
+   "example": "lighten them"
+  },
+  "push": {
+   "args": [
+    "person"
+   ],
+   "ru": "человека подогнали: несколько дней работает быстрее, сил меньше",
+   "example": "push them"
+  },
+  "sit": {
+   "args": [
+    "person"
+   ],
+   "ru": "сесть вместе над его застрявшей задачей (тратит внимание)",
+   "example": "sit them"
+  },
+  "initiative": {
+   "args": [
+    "person"
+   ],
+   "ru": "дать человеку его инициативу из бэклога",
+   "example": "initiative them"
+  },
+  "calm": {
+   "args": [
+    "person",
+    "number"
+   ],
+   "ru": "столько дней без срочного и нелюбимого (обещание: нарушишь, вспомнит)",
+   "example": "calm them 3"
+  },
+  "mention": {
+   "args": [
+    "person"
+   ],
+   "ru": "пообещать рассказать Ирине про его последнюю удачную задачу",
+   "example": "mention them"
+  },
+  "stretch": {
+   "args": [
+    "person"
+   ],
+   "ru": "пообещать ему следующую ключевую задачу (нарушишь, вспомнит)",
+   "example": "stretch them"
+  },
+  "promise": {
+   "args": [
+    "person"
+   ],
+   "ru": "пообещать поговорить о повышении",
+   "example": "promise them"
+  },
+  "learn": {
+   "args": [
+    "person",
+    "category",
+    "number"
+   ],
+   "ru": "человек подтянул навык",
+   "example": "learn them done 1"
+  },
+  "visible": {
+   "args": [
+    "person"
+   ],
+   "ru": "Вику берут на встречу с Ириной (только для Вики)",
+   "example": "visible them"
+  },
+  "confide": {
+   "args": [
+    "person"
+   ],
+   "ru": "человек рассказывает о себе то, чего игрок ещё не знал (мотив или навык)",
+   "example": "confide them"
+  },
+  "thread": {
+   "args": [
+    "person"
+   ],
+   "ru": "сделан шаг его истории: следующий не раньше чем через пять дней и только при том же доверии",
+   "example": "thread them"
+  }
  },
  "places": {
   "office_day": "опенспейс днём",
@@ -58,8 +385,81 @@
   "lift": "лифт",
   "home_night": "дома ночью"
  },
- "at": {"morning": "утром, до сцен в чате", "evening": "вечером, в конце дня перед итогами"},
- "emotions": {"neutral": "спокойствие", "happy": "радость", "excited": "воодушевление", "annoyed": "раздражение", "angry": "злость",
-  "tired": "усталость", "sad": "грусть", "worried": "тревога", "embarrassed": "смущение", "sarcastic": "сарказм"},
- "team": ["alex", "vika", "dima", "gena"]
+ "at": {
+  "morning": "утром, до сцен в чате",
+  "evening": "вечером, в конце дня перед итогами"
+ },
+ "emotions": {
+  "neutral": "спокойствие",
+  "happy": "радость",
+  "excited": "воодушевление",
+  "annoyed": "раздражение",
+  "angry": "злость",
+  "tired": "усталость",
+  "sad": "грусть",
+  "worried": "тревога",
+  "embarrassed": "смущение",
+  "sarcastic": "сарказм"
+ },
+ "team": [
+  "alex",
+  "vika",
+  "dima",
+  "gena"
+ ],
+ "topics": {
+  "credit": {
+   "heat": 9,
+   "ru": "на разборе его работу назвали чужой (неделю после)"
+  },
+  "tired": {
+   "heat": 8,
+   "ru": "силы на исходе"
+  },
+  "stuck": {
+   "heat": 7,
+   "ru": "застрял на задаче"
+  },
+  "load": {
+   "heat": 6,
+   "ru": "три задачи и больше"
+  },
+  "mood": {
+   "heat": 5,
+   "ru": "настроение плохое, а видимой причины нет"
+  },
+  "idle": {
+   "heat": 5,
+   "ru": "два дня и больше без задач"
+  },
+  "hate": {
+   "heat": 4,
+   "ru": "делает нелюбимое"
+  },
+  "thread": {
+   "heat": 3,
+   "ru": "своя история: с главы 2, доверие 1+, не чаще раза в пять дней"
+  },
+  "grow": {
+   "heat": 3,
+   "ru": "хочет расти или быть на виду, про рост ещё не говорили"
+  },
+  "proud": {
+   "heat": 2,
+   "ru": "за последние два дня сделал хорошую задачу"
+  },
+  "work": {
+   "heat": 1,
+   "ru": "есть задача в работе"
+  },
+  "how": {
+   "heat": 0,
+   "ru": "«как ты вообще», есть всегда"
+  },
+  "react": {
+   "heat": -1,
+   "ru": "не тема: как человек принимает вопрос (ветки up, down, shut)"
+  }
+ },
+ "talk_who": "who: в разговорной сцене: alex, vika, dima, gena, palych, hire_<типаж> (hire_faker, hire_genius, hire_junior, hire_stump, hire_life_first, hire_solid), hire или any (для всех, у кого нет своей сцены)"
 }

@@ -1,0 +1,391 @@
+# Разговоры один на один с Димой. Открывается, когда спокойно и мягко; закрывается на давлении.
+# Формат: docs/dialogues.md, «Разговоры один на один». Темы и когда они появляются: data/dialogue_catalog.json, topics.
+
+== talk_dima_credit
+who: dima
+topic: credit
+
+dima [neutral]: Если ты про задачи, там всё по плану.
+  en: If it's about tasks, everything's on schedule.
+? Это из-за разбора, да? (open -1) -> answer
+  en: This is about the review, isn't it?
+? Слушай, на разборе вышло некрасиво. Давай поговорим. (open +1) -> answer
+  en: Look, the review went badly. Let's talk about it.
+
+-- answer
+{if open 3} dima [sad]: Знаешь, что обидно? Не то, что Ирина не знает, а то, что ты знаешь и молчишь.
+  en: You know what hurts? Not that Irina doesn't know. That you know and say nothing.
+{if open 3} dima: Мне не нужны медали. Мне нужно, чтобы на разборе моё было моим.
+  en: I don't need medals. I need what's mine to be mine at the review.
+{if open 3} > mood them +0.3
+{if not open 3} dima [neutral]: Да ничего. Бывает. Работаем дальше.
+  en: It's nothing. It happens. Let's keep going.
+* Это было нечестно с моей стороны. -> apologize
+  en: That wasn't fair of me.
+* Сейчас всем тяжело. -> dismiss
+  en: It's hard for everyone right now.
+
+-- apologize
+dima [happy]: Ценю, что признаёшь.
+  en: I appreciate you owning it.
+> mood them +1.5
+> trust them +1
+> style I 0.5
+-> end
+
+-- dismiss
+dima [annoyed]: Ну да. Как всегда.
+  en: Sure. As always.
+> trust them -1
+> mood them -0.5
+> style P 0.3
+> style I -0.5
+-> end
+
+
+== talk_dima_tired
+who: dima
+topic: tired
+
+dima [neutral]: Нормально всё, просто кофе ещё не подействовал.
+  en: It's fine, the coffee just hasn't kicked in yet.
+? Ты вообще высыпаешься? (open +1) -> answer
+  en: Are you getting any sleep at all?
+? У тебя вид уставший. Что происходит? (open -1) -> answer
+  en: You look worn out. What's going on?
+? Сколько у тебя сейчас часов в день выходит? -> answer
+  en: How many hours a day are you putting in right now?
+
+-- answer
+{if open 3} dima [tired]: Я… кажется, перестарался. Сплю по четыре часа.
+  en: I… think I overdid it. I'm sleeping four hours a night.
+{if open 3} dima: Только не надо меня жалеть, ладно? Просто много всего.
+  en: Just don't feel sorry for me, okay? It's just a lot.
+{if open 3} > mood them +0.3
+{if not open 3} dima [neutral]: Да нормально, просто неделя такая. Пройдёт.
+  en: It's fine, it's just one of those weeks. It'll pass.
+* Бери завтра выходной. -> dayoff
+  en: Take tomorrow off.
+{if busy them >= 2} * Давай я заберу у тебя одну задачу. -> lighten
+  en: Let me take one task off you.
+* Соберись, осталось немного. -> push
+  en: Pull yourself together, not long now.
+
+-- dayoff
+dima [happy]: Спасибо. Правда.
+  en: Thanks. Really.
+> dayoff them
+> mood them +1
+> style I 0.5
+-> end
+
+-- lighten
+dima [happy]: Фух. Спасибо.
+  en: Phew. Thanks.
+> lighten them
+> mood them +1
+> trust them +1
+> style I 0.5
+-> end
+
+-- push
+dima [annoyed]: Да! Я соберусь! Наверное.
+  en: Yes! I'll pull myself together! Probably.
+> push them
+> mood them -1
+{if drive them peace} > mood them -1
+> style P 0.7
+> style I -0.3
+-> end
+
+
+== talk_dima_stuck
+who: dima
+topic: stuck
+
+dima [neutral]: Если про «{stuck}», то там уже почти всё понятно. Почти.
+  en: If it's about "{stuck}", it's almost figured out. Almost.
+? Что с «{stuck}», где затык? -> answer
+  en: What's up with "{stuck}", where's it stuck?
+? «{stuck}» что-то не идёт, да? Бывает, ничего страшного. (open +1) -> answer
+  en: "{stuck}" isn't moving, is it? Happens, no big deal.
+
+-- answer
+{if open 3} dima [worried]: Там вообще не то, что в задаче написано. Я третий день хожу по кругу и боюсь спросить, а то все решат, что я не тяну.
+  en: It's nothing like what the task says. I've been going round in circles for three days and I'm scared to ask, or everyone will think I can't cope.
+{if open 3} > mood them +0.3
+{if not open 3} dima [neutral]: Да разберусь, там мелочь осталась.
+  en: I'll sort it, there's just a small thing left.
+{if can_sit them} * Давай сядем вместе и посмотрим. -> sit
+  en: Let's sit down and look at it together.
+
+-- sit
+dima [happy]: Давай. Только не смейся, если там всё очевидно.
+  en: Okay. Just don't laugh if it turns out to be obvious.
+> sit them
+-> end
+
+
+== talk_dima_load
+who: dima
+topic: load
+
+dima [neutral]: Слушай, давай быстро, у меня тут всё горит.
+  en: Listen, make it quick, everything's on fire here.
+? Давай посмотрим, что у тебя на столе. Что горит? -> answer
+  en: Let's look at what's on your plate. What's on fire?
+? Тебе не много сейчас? (open +1) -> answer
+  en: Isn't it too much for you right now?
+
+-- answer
+{if open 3} dima [worried]: У меня сейчас всё срочное. А когда всё срочное, ничего не срочное, и я просто хватаю то, что громче кричит.
+  en: Everything I have is urgent. And when everything's urgent, nothing is, so I just grab whatever's screaming loudest.
+{if open 3} > mood them +0.3
+{if not open 3} dima [annoyed]: Справлюсь. Наверное.
+  en: I'll manage. Probably.
+{if busy them >= 2} * Давай я заберу у тебя одну задачу. -> lighten
+  en: Let me take one task off you.
+* Сейчас всем тяжело. -> dismiss
+  en: It's hard for everyone right now.
+
+-- lighten
+dima [happy]: Фух. Спасибо.
+  en: Phew. Thanks.
+> lighten them
+> mood them +1
+> trust them +1
+> style I 0.5
+-> end
+
+-- dismiss
+dima [annoyed]: Ну да. Как всегда.
+  en: Sure. As always.
+> mood them -0.5
+> style P 0.3
+> style I -0.5
+-> end
+
+
+== talk_dima_mood
+who: dima
+topic: mood
+
+dima [neutral]: А? Да нет, всё нормально.
+  en: Huh? No, everything's fine.
+? На тебе лица нет. Всё в порядке? (open +1) -> answer
+  en: You look like something's wrong. Are you okay?
+? Что случилось? (open -1) -> answer
+  en: What happened?
+
+-- answer
+{if open 3} dima [sad]: Да просто сижу и не понимаю, что от меня тут вообще зависит. Не в смысле уволиться, а… вообще.
+  en: I just sit here and can't tell what actually depends on me. Not like I want to quit, just… in general.
+{if open 3} > mood them +0.3
+{if not open 3} dima [neutral]: Да ерунда, не обращай внимания.
+  en: It's nothing, don't mind me.
+
+
+== talk_dima_idle
+who: dima
+topic: idle
+
+dima [neutral]: О. Наконец-то про меня кто-то вспомнил.
+  en: Oh. Finally someone remembers I exist.
+? Чем сейчас занимаешься? -> answer
+  en: What are you working on at the moment?
+? Ты уже который день без задач. Что думаешь? (open -1) -> answer
+  en: You've had no tasks for days. What do you make of it?
+
+-- answer
+{if open 3} dima [embarrassed]: Честно? Неловко. Все бегают, а я делаю вид, что работаю.
+  en: Honestly? It's awkward. Everyone's running around and I'm pretending to work.
+{if open 3} dima: Дай мне что-нибудь. Хоть что-нибудь настоящее.
+  en: Give me something. Anything real.
+{if open 3} > mood them +0.3
+{if not open 3} dima [sarcastic]: Читаю документацию. Очень увлекательно, не отрывай.
+  en: Reading the docs. Riveting, don't interrupt.
+* Есть одна штука в бэклоге, возьмёшься? -> fix_bored
+  en: There's something in the backlog. Want it?
+
+-- fix_bored
+dima [happy]: О, давай!
+  en: Oh, go on!
+> initiative them
+> mood them +1
+> style E 0.5
+-> end
+
+
+== talk_dima_grow
+who: dima
+topic: grow
+
+dima [neutral]: Как удачно, у меня к тебе тоже разговор есть.
+  en: Good timing, I wanted to talk to you too.
+? Чего ты хочешь добиться здесь через год? (open -1) -> answer
+  en: What do you want to have achieved here in a year?
+? Куда тебе хочется расти? (open +1) -> answer
+  en: Where do you want to grow?
+
+-- answer
+{if open 3} dima [excited]: А как мне стать… ну, не стажёром? Что для этого надо?
+  en: How do I become… well, not an intern? What does it take?
+{if open 3} > mood them +0.3
+{if not open 3} dima [neutral]: Не знаю. Куда-нибудь вверх, наверное?
+  en: Don't know. Up somewhere, I suppose?
+* Следующий ключевой проект твой. -> stretch
+  en: The next key project is yours.
+{if not promised them} * Поговорю о твоём повышении. -> promote
+  en: I'll bring up your promotion.
+* Пока рано. Но я скажу, что подтянуть. -> not_yet
+  en: Not yet. But I'll tell you what to work on.
+
+-- stretch
+dima [happy]: Правда?! Не подведу.
+  en: Really?! I won't let you down.
+> stretch them
+> mood them +2
+> style E 0.5
+-> end
+
+-- promote
+dima [happy]: Меня?! Повысят?!
+  en: Me?! Promoted?!
+> promise them
+> mood them +2
+> style I 0.3
+-> end
+
+-- not_yet
+dima [annoyed]: Хорошо. Скажи, что именно.
+  en: Okay. Tell me what exactly.
+> mood them -0.5
+> trust them +1
+> style A 0.3
+-> end
+
+
+== talk_dima_proud
+who: dima
+topic: proud
+
+dima [neutral]: Ну что, «{done}» на месте, всё работает!
+  en: So, "{done}" is live and it all works!
+? «{done}» вышло отлично. Расскажешь, как оно там внутри? -> answer
+  en: "{done}" came out great. Tell me how it works inside?
+? За «{done}» спасибо, правда хорошо вышло. (open +1) -> answer
+  en: Thanks for "{done}", it really turned out well.
+
+-- answer
+{if open 3} dima [happy]: Там есть одна штука, которую никто не заметит, а мне она нравится больше всего остального. Хочешь, покажу?
+  en: There's one bit in there nobody will notice, and I like it more than all the rest. Want me to show you?
+{if open 3} > mood them +0.3
+{if not open 3} dima [neutral]: Да, нормально получилось.
+  en: Yeah, it came out okay.
+* Отличная работа. Правда. -> praise
+  en: Great work. Really.
+* Расскажу о тебе Ирине Викторовне. -> mention
+  en: I'll tell Irina about you.
+* Неплохо, но можно было лучше. -> critique
+  en: Not bad, but it could have been better.
+
+-- praise
+dima [happy]: Спасибо! Приятно, что замечаешь.
+  en: Thanks! Nice to be noticed.
+> mood them +1
+> trust them +1
+> style I 0.3
+-> end
+
+-- mention
+dima [happy]: Правда? Это было бы здорово.
+  en: Really? That would be great.
+> mention them
+> mood them +1.5
+> style I 0.3
+-> end
+
+-- critique
+{if good_work them} dima [annoyed]: …Серьёзно? Там всё было хорошо.
+  en: …Seriously? It was all fine.
+{if good_work them} > mood them -1.5
+{if good_work them} > trust them -1
+{if not good_work them} dima [neutral]: Да, есть что подтянуть. Учту.
+  en: Yeah, there's room to improve. Noted.
+{if not good_work them} > mood them -0.5
+{if not good_work them} > trust them +1
+{if not good_work them} > learn them done 1
+> style P 0.3
+> style A 0.2
+-> end
+
+
+== talk_dima_work
+who: dima
+topic: work
+
+dima [neutral]: Да вот, сижу над «{task}».
+  en: Just sitting over "{task}".
+? Как там «{task}»? -> answer
+  en: How's "{task}" going?
+
+-- answer
+{if open 3, work behind} dima [worried]: Если честно, медленнее, чем хотелось бы. Дня на два отстаю.
+  en: Honestly, slower than I'd like. I'm about two days behind.
+{if open 3, work stuck} dima [worried]: Застряло. Сама задача несложная, но что-то не пускает дальше, и я не понимаю что.
+  en: It's stuck. The task isn't hard, but something won't let me through and I can't see what.
+{if open 3, work on_track} dima [neutral]: Нормально. Если надо, могу показать, что уже готово.
+  en: Fine. I can show you what's done, if you like.
+{if open 3} > mood them +0.3
+{if not open 3} dima [neutral]: Идёт. Нормально идёт.
+  en: It's going. Going fine.
+
+
+== talk_dima_how
+who: dima
+topic: how
+
+dima [neutral]: Всё супер! А что?
+  en: All great! Why?
+? Как ты вообще? (open +1) -> answer
+  en: How are you, really?
+
+-- answer
+{if open 3} dima [happy]: А знаешь, ничего так. Спасибо, что спрашиваешь, у нас это редко.
+  en: You know, not bad. Thanks for asking, nobody here does.
+{if open 3} > confide them
+{if open 3} > mood them +0.3
+{if not open 3} dima [neutral]: Нормально. Как обычно.
+  en: Fine. Same as always.
+{if known them drive, drive them growth} * Хочешь, научу кое-чему? -> gift_growth
+  en: Want me to teach you something?
+
+-- gift_growth
+dima [happy]: Давай!
+  en: Go on!
+> learn them infra 1.5
+> mood them +1.5
+> trust them +1
+> style I 0.3
+> style E 0.2
+-> end
+
+
+== talk_dima_react
+who: dima
+topic: react
+# Как человек принимает вопрос: up, если тон ему подходит, down, если нет, shut, когда закрылся совсем.
+
+-- up
+- {who} заметно расслабляется.
+  en: {who} visibly relaxes.
+
+-- down
+- {who} отводит взгляд.
+  en: {who} looks away.
+
+-- shut
+- {who} поворачивается обратно к монитору.
+  en: {who} turns back to the monitor.
+dima [annoyed]: Слушай, мне правда работать надо.
+  en: Look, I really need to get on with work.

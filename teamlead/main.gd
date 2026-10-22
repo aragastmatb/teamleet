@@ -2373,31 +2373,23 @@ func _build_convo() -> void:
 	var log: Array = rules.convo["log"]
 	for i in log.size():
 		var e: Dictionary = log[i]
-		list.add_child(_story_entry({"who": e["who"], "emo": "", "ru": Loc.render(e["key"], [], e["names"]), "en": ""}, i == log.size() - 1))
+		var said: String = Loc.render(e["key"], [], e["names"]) if e.has("key") else Loc.fill(e["ru"], e["en"], e["names"])
+		list.add_child(_story_entry({"who": e["who"], "emo": "", "ru": said, "en": ""}, i == log.size() - 1))
 	var actions := _vbox(8)
 	var foot := _padded(actions, 18 if mobile else 28, 16)
 	foot.size_flags_vertical = Control.SIZE_SHRINK_END
 	right.add_child(foot)
 	if rules.convo["left"] > 0:
 		actions.add_child(_label(Loc.t("convo.left", [rules.convo["left"]]), 12, COL_MUTED))
+	# In a talk, what you do about it ends the talk: it's set apart from the questions.
+	var group := ""
 	for c in rules.convo_choices():
-		actions.add_child(_answer_button(Loc.render(_convo_choice_key(c), [], rules.convo.get("names", {})), _convo_choose.bind(c)))
+		var kind: String = "act" if c.begins_with("a:") else ("ask" if c.begins_with("q:") else "")
+		if kind != group and kind != "" and rules.convo["kind"] == "talk":
+			actions.add_child(_label(Loc.t("convo.group." + kind), 12, COL_MUTED))
+		group = kind
+		actions.add_child(_answer_button(rules.convo_label(c), _convo_choose.bind(c)))
 	_scroll_to_end(scroll)
-
-
-# Questions are "q:<topic>:<tone>", what you do about it "a:<act>" (rules.gd, one-on-ones).
-func _convo_choice_key(c: String) -> String:
-	if c == "end":
-		var over: bool = rules.convo.get("done", false) or rules.convo.get("shut", false) or rules.convo["left"] <= 0
-		return "convo.choice.end.%s%s" % [rules.convo["kind"], ".over" if over and rules.convo["kind"] == "talk" else ""]
-	if c.begins_with("q:"):
-		var parts := c.split(":")
-		if parts[1] == "thread":
-			return rules._talk_key("thread.%d.ask" % (int(rules.people[rules.convo["who"]].get("thread", 0)) + 1))
-		return "talk.ask.%s.%s" % [parts[1], parts[2]]
-	if c.begins_with("a:"):
-		return "talk.act." + c.substr(2)
-	return "event.interview.choice." + c
 
 
 func _convo_choose(c: String) -> void:

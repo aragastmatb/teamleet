@@ -112,6 +112,9 @@ button.danger { color: var(--danger); }
 .n-when .chip { font-size: 10.5px; }
 .n-line { padding: 3px 10px; color: var(--text); line-height: 1.35; }
 .n-line.if { border-left: 3px solid #dcd5ff; }
+.n-tag { font-size: 10px; border-radius: 4px; padding: 0 4px; font-weight: 600; }
+.n-tag.opened { background: var(--good-bg); color: var(--good); }
+.n-tag.closed { background: #f4f5f7; color: var(--muted); border: 1px solid var(--border); }
 .n-more { padding: 0 10px 2px; color: var(--faint); font-size: 11.5px; }
 .n-fx { padding: 3px 10px; display: flex; flex-wrap: wrap; gap: 3px; }
 .n-fx .chip { font-size: 10.5px; }
@@ -121,6 +124,10 @@ button.danger { color: var(--danger); }
 .n-exit:last-child { border-radius: 0 0 10px 10px; }
 .n-exit .t { flex: 1; }
 .n-if { font-size: 10px; background: #f3f0ff; color: #403294; border-radius: 4px; padding: 0 4px; }
+.n-open { font-size: 10.5px; font-weight: 700; border-radius: 4px; padding: 0 4px; }
+.n-open.up { background: var(--good-bg); color: var(--good); }
+.n-open.down { background: #ffebe6; color: var(--danger); }
+.n-exit.ask { background: #fff; }
 .n-end { font-size: 10.5px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
 .port { position: absolute; right: -7px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--surface); border: 2px solid var(--primary); cursor: crosshair; }
 .port:hover { background: var(--primary); }
@@ -189,7 +196,7 @@ let DATA = null;
 const groups = {};       // id -> {title, section, kind, items|scene}
 const byId = {};         // item id -> item
 const SECTIONS = [
-  ["scenes", "Сюжетные сцены"], ["event", "События в чате"], ["talk", "Разговоры"], ["react", "Реакции и ответы"],
+  ["scenes", "Сюжетные сцены"], ["talks", "Разговоры один на один"], ["event", "События в чате"], ["talk", "Разговоры: о себе"], ["react", "Реакции и ответы"],
   ["hire", "Найм"], ["standup", "Стендап"], ["init", "Инициативы"], ["story", "Главы и концовки"],
   ["tables", "Задачи и улучшения"], ["other", "Прочее и интерфейс"],
 ];
@@ -216,7 +223,8 @@ function rebuildGroups() {
   for (const sc of DATA.scenes) {
     const items = sc.rows.filter(r => r.type === "text");
     items.forEach(it => byId[it.id] = it);
-    groups["scene:" + sc.id] = { title: sc.id, sub: sc.file, section: "scenes", kind: "scene", scene: sc, items };
+    const talk = sc.meta.some(m => m.startsWith("topic:"));
+    groups["scene:" + sc.id] = { title: sc.id, sub: sc.file, section: talk ? "talks" : "scenes", kind: "scene", scene: sc, items };
   }
   for (const g in DATA.locale) {
     const items = DATA.locale[g];
@@ -317,7 +325,8 @@ function renderScene(g) {
       const hidden = shown.has(r.id) ? "" : "hidden";
       const done = isDone(r) ? "done" : "";
       if (r.kind === "choice") {
-        html += `<div class="row choice ${hidden} ${done}"><div><div class="head"><b>Вариант игрока</b> ${cond} <span class="key">→ <a href="#" data-goto="${esc(r.to)}">${esc(r.to)}</a></span></div>${textBlock(r)}</div></div>`;
+        const what = r.mark === "?" ? "Вопрос игрока" + (r.open ? ` (открытость ${r.open})` : "") : sc.meta.some(m => m.startsWith("topic:")) ? "Действие игрока" : "Вариант игрока";
+        html += `<div class="row choice ${hidden} ${done}"><div><div class="head"><b>${what}</b> ${cond} <span class="key">→ <a href="#" data-goto="${esc(r.to)}">${esc(r.to)}</a></span></div>${textBlock(r)}</div></div>`;
       } else if (r.kind === "narration") {
         html += `<div class="row narration ${hidden} ${done}">${portrait("", "")}<div><div class="head"><b>Описание</b> ${cond}</div>${textBlock(r)}</div></div>`;
       } else {

@@ -32,7 +32,7 @@ PEOPLE = ["alex", "vika", "dima", "gena", "taras", "boss", "marina", "boris", "s
 # ---------- story scenes (.dlg) ----------
 
 LINE_RE = re.compile(r"^(?P<who>[a-z_0-9]+)(?:\s*\[(?P<emo>[a-z_]+)\])?:\s(?P<text>.*)$")
-CHOICE_RE = re.compile(r"^\*\s(?P<text>.*?)\s->\s(?P<to>[A-Za-z_0-9]+)\s*$")
+CHOICE_RE = re.compile(r"^(?P<mark>[*?])\s(?P<text>.*?)(?:\s\(open (?P<open>[+-]?\d+)\))?\s->\s(?P<to>[A-Za-z_0-9]+)\s*$")
 COND_RE = re.compile(r"^(?P<cond>\{if [^}]*\})\s*(?P<rest>.*)$")
 
 
@@ -65,7 +65,7 @@ def parse_dlg(path):
                 last["en"] = s[3:].strip()
                 last["en_line"] = i
             continue
-        if s.split(":")[0] in ("when", "at", "place") and ":" in s:
+        if s.split(":")[0] in ("when", "at", "place", "who", "topic") and ":" in s:
             scene["meta"].append(s)
             continue
         cond, rest = _split_cond(s)
@@ -78,10 +78,11 @@ def parse_dlg(path):
             row = {"type": "fx", "text": rest[1:].strip(), "cond": cond}
         elif rest.startswith("- "):
             row = {"type": "text", "kind": "narration", "who": "", "emo": "", "ru": rest[2:], "cond": cond}
-        elif rest.startswith("* "):
+        elif rest.startswith("* ") or rest.startswith("? "):
             m = CHOICE_RE.match(rest)
             if m:
-                row = {"type": "text", "kind": "choice", "who": "you", "emo": "", "ru": m.group("text"), "to": m.group("to"), "cond": cond}
+                row = {"type": "text", "kind": "choice", "who": "you", "emo": "", "ru": m.group("text"), "to": m.group("to"), "cond": cond,
+                       "mark": m.group("mark"), "open": m.group("open") or ""}
         else:
             m = LINE_RE.match(rest)
             if m:
@@ -131,7 +132,7 @@ def save_dlg(item_id, lang, old, new):
         if row["kind"] == "narration":
             body = "- " + new
         elif row["kind"] == "choice":
-            body = "* %s -> %s" % (new, row["to"])
+            body = "%s %s%s -> %s" % (row["mark"], new, " (open %s)" % row["open"] if row["open"] else "", row["to"])
         else:
             body = row["who"] + (" [%s]" % row["emo"] if row["emo"] else "") + ": " + new
         lines[line] = lead + cond + body

@@ -533,6 +533,17 @@ func convo_choices() -> Array:
 	return out
 
 
+# What a choice in the window says.
+func convo_label(c: String) -> String:
+	if c == "end":
+		var over: bool = convo.get("done", false) or convo.get("shut", false) or convo["left"] <= 0
+		return L.t("convo.choice.end.%s%s" % [convo["kind"], ".over" if over and convo["kind"] == "talk" else ""])
+	if convo["kind"] == "talk":
+		var item := _talk_item(c)
+		return L.fill(item["ru"], item["en"], convo["names"])
+	return L.t("event.interview.choice." + c)
+
+
 func convo_choose(choice: String) -> void:
 	if not choice in convo_choices():
 		return
@@ -540,11 +551,8 @@ func convo_choose(choice: String) -> void:
 		_convo_close()
 	elif convo["kind"] == "interview":
 		_interview_ask(choice)
-	elif choice.begins_with("q:"):
-		var parts := choice.split(":")
-		_talk_ask(parts[1], parts[2])
-	elif choice.begins_with("a:"):
-		_talk_act(choice.substr(2))
+	elif convo["kind"] == "talk":
+		_talk_choose(choice)
 
 
 func _convo_close() -> void:
@@ -631,19 +639,21 @@ func _interview_ask(topic: String) -> void:
 
 
 # ---------- one-on-ones ----------
-# A talk is a sitting in the conversation window (docs/talks.md). They open with whatever they're
-# ready to show; you pick what to ask and how. Inside the talk they have a hidden openness: it starts
-# from how much they trust you, the way you ask moves it (C.TALK_TONES), and only an open person gives
-# the real answer. At zero they shut the talk. What you can do about a thing (a day off, a lighter
-# load, a promise) ends the talk. Their own story (the thread) goes a step further each time you get
-# them to open up, unless they've stopped trusting you since; each step leaves a flag (thread_<p>_<n>)
-# the story scenes can read.
+# A talk is a sitting in the conversation window (docs/talks.md). What's going on with them right now
+# gives the topics (_talk_topics); everything said and done is written in scenes, data/dialogues/talk_*.dlg,
+# one scene per topic per person ("who: alex", "topic: tired"; "who: any" for whoever has no own one).
 #
-# The lines are all keyed "talk.<who>.<...>", who being alex, vika, dima, gena, a hire (hire_<kind>,
-# then hire) or "any" for everyone. An answer is "<key>.do" (what they do, optional), "<key>" and up
-# to "<key>.3" said in a row. Your questions are "talk.ask.<topic>.<tone>", what you do "talk.act.<act>".
+# - The sharpest topic's scene opens the talk: its lines before the first question are what they're
+#   ready to show.
+# - Its questions ("? … (open +1) -> branch") are offered in full, the next topic's first question, how
+#   the work goes and how they are. A question spends one of three and moves their openness: it starts
+#   from trust, and lines marked {if open 3} are the real answers. At zero they shut the talk (the
+#   "react" scene says how they take it).
+# - In an answer, "?" asks further, "*" does something about it and ends the talk.
+# - Their story (topic thread) goes a step at a time: ready (_thread_ready), then the scene's own
+#   when: picks the step; "> thread them" marks a step taken.
+# In a talk scene "them" is whoever you're talking to: a speaker, and a person in conditions and effects.
 const TALK_QUESTIONS := 3
-const TALK_DEEP := 3 # openness for the real answer
 const TALK_THREAD_GAP := 5 # days between steps of someone's story
 
 
@@ -652,46 +662,67 @@ func _open_talk(p: String) -> void:
 	var open := clampi(2 + int(st["trust"]), 1, 4)
 	if st["mood"] <= -2.0 or day - int(st.get("talk_shut", -99)) <= 3:
 		open = maxi(1, open - 1)
-	var topics := _talk_topics(p)
-	convo = {"who": p, "kind": "talk", "left": TALK_QUESTIONS, "open": open, "log": [], "asked": [],
-		"topics": topics, "last": "", "emo": _talk_emo(p), "names": _talk_names(p)}
-	var first: String = topics[0] if not topics.is_empty() else "how"
-	_talk_say("surface." + first)
-	if not _talk_has("surface." + first):
-		_talk_say("surface.fine")
+	convo = {"who": p, "kind": "talk", "left": TALK_QUESTIONS, "open": open, "log": [], "asked": [], "here": [],
+		"scene": "", "emo": _talk_emo(p), "names": _talk_names(p)}
+	convo["topics"] = _talk_topics(p)
+	if not convo["topics"].is_empty():
+		_talk_run(convo["topics"][0][1], 0)
+		convo["here"] = []
 
 
-# What's on their mind right now, the sharpest first. "work" and "how" are always there.
+# What's on their mind right now, sharpest first, each with the scene that will play it: [[topic, scene]].
+# "work" and "how" are always there.
 func _talk_topics(p: String) -> Array:
 	var st: Dictionary = people[p]
-	var out: Array = []
+	var found: Array = []
 	for c in flags.get("credit_taken", []):
 		if c["owner"] == p and day - int(c["day"]) <= 7 and not flags.has("credit_said_%d" % c["uid"]):
-			out.append("credit")
+			found.append("credit")
 			break
 	if st["energy"] <= 4.0:
-		out.append("tired")
+		found.append("tired")
 	if _stuck_task(p) >= 0:
-		out.append("stuck")
-	if queue_of(p).size() >= 3:
-		out.append("load")
-	if st["idle_days"] >= 2 and queue_of(p).is_empty():
-		out.append("idle")
+		found.append("stuck")
 	var q := queue_of(p)
+	if q.size() >= 3:
+		found.append("load")
+	if st["idle_days"] >= 2 and q.is_empty():
+		found.append("idle")
 	if not q.is_empty() and info(p)["hates"].has(q[0]["cat"]):
-		out.append("hate")
-	if st["mood"] <= -1.5 and out.is_empty():
-		out.append("mood")
+		found.append("hate")
+	if st["mood"] <= -1.5 and found.is_empty():
+		found.append("mood")
 	if _thread_ready(p):
-		out.append("thread")
+		found.append("thread")
 	if info(p)["drive"] in ["growth", "visibility"] and day >= 3 and not flags.has("asked_growth_" + p):
-		out.append("grow")
+		found.append("grow")
 	if day - st["last_done"] <= 2 and scenes._last_good(self, p) >= 0:
-		out.append("proud")
+		found.append("proud")
 	if not q.is_empty():
-		out.append("work")
-	out.append("how")
+		found.append("work")
+	found.append("how")
+	found.sort_custom(func(a, b): return Dialogue.TOPICS[a]["heat"] > Dialogue.TOPICS[b]["heat"])
+	var out: Array = []
+	for topic in found:
+		var sid := _talk_scene(p, topic)
+		if sid != "":
+			out.append([topic, sid])
 	return out
+
+
+# Their own scene for the topic if there is one, else their kind's (hires), else anyone's; the first
+# whose when: holds.
+func _talk_scene(p: String, topic: String) -> String:
+	var whos: Array = [p]
+	if hires.has(p):
+		whos += ["hire_" + archetype(p), "hire"]
+	whos.append("any")
+	for who in whos:
+		for id in Dialogue.TALKS.get(topic, []):
+			var sc: Dictionary = Dialogue.SCENES[id]
+			if sc["who"] == who and story_true(sc["when"]):
+				return id
+	return ""
 
 
 func _stuck_task(p: String) -> int:
@@ -725,174 +756,162 @@ func _talk_emo(p: String) -> String:
 	return "neutral"
 
 
-# Their story: the four have one, a step at a time, never two steps in a week, and only while they
-# trust you at least as much as when they told you the last bit.
+# Their story is ready for another step: from chapter two, while they trust you at least as much as when
+# they told you the last bit, never two steps in a week. Which step it is, the scenes decide.
 func _thread_ready(p: String) -> bool:
 	var st: Dictionary = people[p]
-	var step: int = st.get("thread", 0)
 	return chapter >= 2 and st["trust"] >= 1 and st["trust"] >= st.get("thread_trust", 0) \
-		and day - int(st.get("thread_day", -99)) >= TALK_THREAD_GAP and _talk_has("thread.%d" % (step + 1), p)
+		and day - int(st.get("thread_day", -99)) >= TALK_THREAD_GAP
 
 
-# The line for whoever is talking: their own, their kind's (Loc.STAND_IN does that), or anyone's.
-func _talk_key(rest: String) -> String:
-	return _first_key(["talk.%s.%s" % [convo["who"], rest], "talk.any." + rest])
+# Plays a talk scene from an op until a label (the branch is over), a jump, or choices (they wait in "here").
+func _talk_run(sid: String, pos: int) -> void:
+	convo["scene"] = sid
+	var ops: Array = Dialogue.SCENES[sid]["ops"]
+	while pos < ops.size():
+		var op: Dictionary = ops[pos]
+		match op["op"]:
+			"label":
+				return
+			"line":
+				if story_true(op["if"]):
+					_talk_line(op)
+			"choices":
+				convo["here"] = [sid, pos]
+				return
+			"fx":
+				if story_true(op["if"]):
+					_story_fx(op["words"])
+			"jump":
+				if story_true(op["if"]):
+					_talk_goto(sid, op["to"])
+					return
+		pos += 1
 
 
-func _talk_has(rest: String, who: String = "") -> bool:
-	return L.has_key("talk.%s.%s" % [who if who != "" else convo["who"], rest]) or L.has_key("talk.any." + rest)
+func _talk_goto(sid: String, to: String) -> void:
+	if to != "end":
+		_talk_run(sid, Dialogue.SCENES[sid]["labels"][to] + 1)
 
 
-# An answer: what they do, then up to three lines in a row.
-func _talk_say(rest: String) -> void:
-	if not _talk_has(rest):
-		return
-	var who: String = convo["who"]
-	var base := _talk_key(rest)
-	if L.has_key(base + ".do"):
-		_convo_line("", base + ".do", convo["names"])
-	_convo_line(who, base, convo["names"])
-	for i in [2, 3]:
-		if L.has_key("%s.%d" % [base, i]):
-			_convo_line(who, "%s.%d" % [base, i], convo["names"])
+func _talk_line(op: Dictionary) -> void:
+	var who: String = convo["who"] if op["who"] == "them" else op["who"]
+	if who == convo["who"] and op["emo"] != "":
+		convo["emo"] = op["emo"]
+	convo["log"].append({"who": who, "ru": op["ru"], "en": op["en"], "names": convo["names"]})
 
 
-func _talk_fit(tone: String) -> int:
-	var p: String = convo["who"]
-	var table: Dictionary = C.TALK_TONES.get(p, C.TALK_TONES.get("hire_" + archetype(p), {}))
-	return int(table.get(tone, 0))
-
-
-# What you can say now: the sharpest thing in every way of asking it, the next two plainly, how the
-# work is going and how they are; what you can do about the last thing they told you; or leave it.
+# What you can say now: what the answer leaves open, then the topics not yet touched.
 func _talk_choices() -> Array:
 	var out: Array = []
-	if convo["left"] > 0:
-		var shown := 0
-		for topic in convo["topics"]:
-			if convo["asked"].has(topic) or topic in ["work", "how"]:
-				continue
-			var tones: Array = C.TALK_TOPICS[topic]["tones"]
-			if topic == "thread":
-				tones = [_thread_tone()]
-			for i in (mini(2, tones.size()) if shown == 0 else 1):
-				out.append("q:%s:%s" % [topic, tones[i]])
-			shown += 1
+	if convo.get("done", false) or convo.get("shut", false):
+		return out
+	if not convo["here"].is_empty():
+		var sid: String = convo["here"][0]
+		var at: int = convo["here"][1]
+		var items: Array = Dialogue.SCENES[sid]["ops"][at]["items"]
+		for i in items.size():
+			if story_true(items[i]["if"]) and (not items[i]["ask"] or convo["left"] > 0):
+				out.append("%s:%s:%d:%d" % ["q" if items[i]["ask"] else "a", sid, at, i])
+	if convo["left"] <= 0:
+		return out
+	var shown := 0
+	for pair in convo["topics"]:
+		var topic: String = pair[0]
+		if convo["asked"].has(topic):
+			continue
+		var qs := _talk_questions(pair[1])
+		if qs.is_empty():
+			continue
+		var take := 1
+		if not topic in ["work", "how"]:
 			if shown >= 2:
-				break
-		for topic in ["work", "how"]:
-			if convo["topics"].has(topic) and not convo["asked"].has(topic):
-				out.append("q:%s:%s" % [topic, C.TALK_TOPICS[topic]["tones"][0]])
-	for act in _talk_acts(convo["last"]):
-		out.append("a:" + act)
+				continue
+			take = qs.size() if shown == 0 else 1
+			shown += 1
+		out.append_array(qs.slice(0, take))
 	return out
 
 
-func _thread_tone() -> String:
-	var best := "work"
-	for tone in ["work", "direct", "soft"]:
-		if _talk_fit(tone) > _talk_fit(best):
-			best = tone
-	return best
-
-
-func _talk_acts(topic: String) -> Array:
-	if topic == "":
-		return []
-	var p: String = convo["who"]
+# The questions a topic's scene starts with: the first choices before any branch.
+func _talk_questions(sid: String) -> Array:
 	var out: Array = []
-	for each in C.TALK_TOPICS[topic]["acts"]:
-		var act: String = each
-		match act:
-			"lighten":
-				if queue_of(p).size() < 2:
-					continue
-			"sit":
-				if _stuck_task(p) < 0 or task(_stuck_task(p)).get("sit_today", false):
-					continue
-			"gift":
-				if not people[p]["known"].has("drive"):
-					continue
-				act = "gift_" + info(p)["drive"]
-			"promote":
-				if people[p]["promised"]:
-					continue
-		out.append(act)
+	var ops: Array = Dialogue.SCENES[sid]["ops"]
+	for at in ops.size():
+		if ops[at]["op"] == "label":
+			break
+		if ops[at]["op"] == "choices":
+			var items: Array = ops[at]["items"]
+			for i in items.size():
+				if items[i]["ask"] and story_true(items[i]["if"]):
+					out.append("q:%s:%d:%d" % [sid, at, i])
+			break
 	return out
 
 
-func _talk_ask(topic: String, tone: String) -> void:
+func _talk_item(c: String) -> Dictionary:
+	var parts := c.split(":")
+	return Dialogue.SCENES[parts[1]]["ops"][int(parts[2])]["items"][int(parts[3])]
+
+
+func _talk_choose(c: String) -> void:
 	var p: String = convo["who"]
-	var st: Dictionary = people[p]
-	convo["asked"].append(topic)
+	var sid: String = c.split(":")[1]
+	var item := _talk_item(c)
+	convo["log"].append({"who": "you", "ru": item["ru"], "en": item["en"], "names": convo["names"]})
+	convo["here"] = []
+	if c.begins_with("a:"):
+		_talk_goto(sid, item["to"])
+		people[p]["mood"] = clampf(people[p]["mood"], -5.0, 5.0)
+		convo["done"] = true
+		convo["left"] = 0
+		return
 	convo["left"] -= 1
-	convo["last"] = topic
-	var ask := "talk.ask.%s.%s" % [topic, tone]
-	if topic == "thread":
-		ask = _talk_key("thread.%d.ask" % (int(st.get("thread", 0)) + 1))
-	_convo_line("you", ask, convo["names"])
-	var fit := _talk_fit(tone)
-	convo["open"] += fit
-	if fit != 0 and _talk_has("up" if fit > 0 else "down"):
-		# How they take the way you asked: narration, not a line of theirs.
-		_convo_line("", _talk_key("up" if fit > 0 else "down"), convo["names"])
-		if fit < 0:
+	var topic: String = Dialogue.SCENES[sid]["topic"]
+	if not convo["asked"].has(topic):
+		convo["asked"].append(topic)
+		_talk_touched(p, topic)
+	var moved: int = item["open"]
+	convo["open"] += moved
+	if moved != 0:
+		_talk_react("up" if moved > 0 else "down")
+		if moved < 0:
 			convo["emo"] = "annoyed"
 	if convo["open"] <= 0:
-		_talk_shut()
+		_talk_react("shut")
+		people[p]["mood"] -= 0.5
+		people[p]["talk_shut"] = day
+		convo["emo"] = "annoyed"
+		convo["shut"] = true
+		convo["left"] = 0
 		return
-	var deep: bool = convo["open"] >= TALK_DEEP
+	_talk_goto(sid, item["to"])
+	people[p]["mood"] = clampf(people[p]["mood"], -5.0, 5.0)
+
+
+# Bringing a thing up at all settles some of it: they've told you about growing, you've talked about the review.
+func _talk_touched(p: String, topic: String) -> void:
 	match topic:
-		"thread":
-			if deep:
-				var step: int = int(st.get("thread", 0)) + 1
-				_talk_say("thread.%d" % step)
-				st["thread"] = step
-				st["thread_trust"] = st["trust"]
-				st["thread_day"] = day
-				flags["thread_%s_%d" % [p, step]] = true
-				lead("I", 0.3)
-			else:
-				_talk_say("thread.no")
-			return
-		"how":
-			# Open, they tell you something about themselves you didn't know (the window shows it, the chat gets the note).
-			var key := _next_unknown(p) if deep else ""
-			if key == "":
-				_talk_say("how.deep.nothing" if deep else "how.shallow")
-				return
-			_talk_say("how.deep")
-			var line := "talk.listen.%s.%s" % [p, key.replace("skill.", "")]
-			var names: Dictionary = convo["names"].duplicate()
-			if hires.has(p) and key.begins_with("skill."):
-				line = "talk.listen.hire.level.%d" % people[p]["skills"][key.replace("skill.", "")]
-				names["cat"] = "@cat." + key.replace("skill.", "")
-			_convo_line(p, line if L.has_key(line) else "talk.listen.any", names)
-			_reveal(p, key)
-			var note: Dictionary = history[-1]
-			if note["key"].begins_with("know."):
-				_convo_line("", note["key"], note["names"])
-			return
-		"hate":
-			if deep:
-				st["known"]["hates"] = true
 		"grow":
 			flags["asked_growth_" + p] = true
 		"credit":
 			for c in flags.get("credit_taken", []):
 				if c["owner"] == p:
 					flags["credit_said_%d" % c["uid"]] = true
-	var answer := topic + (".deep" if deep else ".shallow")
-	if topic == "work" and deep and _talk_has("work.deep." + _work_state(p)):
-		answer = "work.deep." + _work_state(p)
-	_talk_say(answer)
-	if deep:
-		st["mood"] += 0.3
-		if convo["emo"] == "annoyed":
-			convo["emo"] = "neutral"
 
 
-# How their first task really goes; only someone open with you says it as it is.
+# How they take the way you asked: a branch (up, down, shut) of their "react" scene.
+func _talk_react(branch: String) -> void:
+	var sid := _talk_scene(convo["who"], "react")
+	if sid == "" or not Dialogue.SCENES[sid]["labels"].has(branch):
+		return
+	var keep: String = convo["scene"]
+	_talk_goto(sid, branch)
+	convo["scene"] = keep
+	convo["here"] = []
+
+
+# How their first task really goes; the scenes only let someone open with you say it as it is.
 func _work_state(p: String) -> String:
 	var q := queue_of(p)
 	if q.is_empty():
@@ -905,96 +924,72 @@ func _work_state(p: String) -> String:
 	return "on_track"
 
 
-func _talk_shut() -> void:
-	var p: String = convo["who"]
-	_talk_say("shut")
-	people[p]["mood"] -= 0.5
-	people[p]["talk_shut"] = day
-	convo["emo"] = "annoyed"
-	convo["left"] = 0
-	convo["last"] = ""
-	convo["shut"] = true
-
-
-# What you do about it: the talk ends on their answer.
-func _talk_act(act: String) -> void:
-	var p: String = convo["who"]
+# What only a talk can do (_story_fx): the person is always the first word after the effect's name.
+func _talk_fx(w: Array) -> void:
+	var p: String = w[1]
+	if not people.has(p):
+		return
 	var st: Dictionary = people[p]
-	_convo_line("you", "talk.act." + act, convo["names"])
-	for pair in scenes.STYLE.get("talk/" + act, []):
-		lead(pair[0], pair[1])
-	var reply := "act." + act
-	match act:
+	match w[0]:
 		"dayoff":
 			give_day_off(p)
-			st["mood"] += 1.0
 		"lighten":
 			lighten(p)
-			st["mood"] += 1.0
-			st["trust"] += 1
 		"push":
 			st["pushed"] = PUSH_DAYS
-			st["mood"] -= 2.0 if info(p)["drive"] == "peace" else 1.0
 			st["energy"] -= 0.5
-		"apologize":
-			st["mood"] += 1.5
-			st["trust"] += 1
-		"dismiss":
-			st["mood"] -= 0.5
-			if convo["last"] == "credit":
-				st["trust"] -= 1
-		"fix_bored":
+		"sit":
+			if _stuck_task(p) >= 0:
+				sit_with(_stuck_task(p))
+		"initiative":
 			offer_today[p] = true
 			if initiative_offer(p) != "":
 				accept_initiative(p)
-			st["mood"] += 1.0
-		"fix_hate":
-			st["mood"] += 1.0
-			flags["calm_" + p] = day + 3
-		"sit":
-			sit_with(_stuck_task(p))
-		"praise":
-			st["mood"] += 1.0
-			st["trust"] += 1
-		"critique":
-			var t: Dictionary = task(scenes._last_good(self, p))
-			if t.get("quality", "") == "good":
-				st["mood"] -= 1.5
-				st["trust"] -= 1
-				reply = "act.critique.unfair"
-			else:
-				st["mood"] -= 0.5
-				st["trust"] += 1
-				learn(p, t["cat"], 1.0)
+		"calm":
+			flags["calm_" + p] = day + int(w[2])
 		"mention":
-			st["mood"] += 1.5
 			flags["mention_" + p] = scenes._last_good(self, p)
 		"stretch":
-			st["mood"] += 2.0
 			flags["stretch_" + p] = true
-		"promote":
+		"promise":
 			make_promise(p)
-			st["mood"] += 2.0
-		"not_yet":
-			st["mood"] -= 0.5
-			st["trust"] += 1
-		"gift_craft", "gift_visibility", "gift_growth", "gift_peace":
-			st["mood"] += 1.5
-			st["trust"] += 1
-			match act:
-				"gift_visibility":
-					if p == "vika":
-						vika_up()
-				"gift_growth":
-					learn(p, "infra", 1.5)
-				"gift_peace":
-					flags["calm_" + p] = day + 4
-	convo["emo"] = "annoyed" if act in ["push", "dismiss", "not_yet"] or reply.ends_with("unfair") else "happy"
-	st["mood"] = clampf(st["mood"], -5.0, 5.0)
-	_talk_say(reply)
-	convo["left"] = 0
-	convo["last"] = ""
-	convo["done"] = true
+		"learn":
+			var cat: String = w[2]
+			if cat == "done":
+				var good: int = scenes._last_good(self, p)
+				cat = task(good)["cat"] if good >= 0 else ""
+			if cat in C.CATEGORIES:
+				learn(p, cat, float(w[3]))
+		"visible":
+			if p == "vika":
+				vika_up()
+		"confide":
+			_confide(p)
+		"thread":
+			st["thread"] = int(st.get("thread", 0)) + 1
+			st["thread_trust"] = st["trust"]
+			st["thread_day"] = day
+			lead("I", 0.3)
+
+
+# They tell you something about themselves you didn't know: their words in the window, the note in the chat.
+func _confide(p: String) -> void:
+	var key := _next_unknown(p)
+	if key == "":
+		return
+	var line := "talk.listen.%s.%s" % [p, key.replace("skill.", "")]
+	var names: Dictionary = convo.get("names", {}).duplicate()
+	if hires.has(p) and key.begins_with("skill."):
+		line = "talk.listen.hire.level.%d" % people[p]["skills"][key.replace("skill.", "")]
+		names["cat"] = "@cat." + key.replace("skill.", "")
+	if not L.has_key(line):
+		line = "talk.listen.any"
+	if not convo.is_empty():
+		convo["log"].append({"who": p, "key": line, "names": names})
+	_reveal(p, key)
+	var note: Dictionary = history[-1]
+	if not convo.is_empty() and note["key"].begins_with("know."):
+		convo["log"].append({"who": "", "key": note["key"], "names": note["names"]})
 
 
 func can_hire(id: String) -> bool:
@@ -1406,7 +1401,7 @@ func _queue_story(at: String = "morning") -> void:
 	story = {}
 	for id in Dialogue.ORDER:
 		var sc: Dictionary = Dialogue.SCENES[id]
-		if sc["at"] == at and not flags.has("story_" + id) and story_true(sc["when"]):
+		if sc["topic"] == "" and sc["at"] == at and not flags.has("story_" + id) and story_true(sc["when"]):
 			flags["story_" + id] = true
 			story = {"id": id, "pos": 0, "wait": "", "log": [], "then": phase if at == "evening" else ""}
 			phase = "story"
@@ -1417,6 +1412,9 @@ func _queue_story(at: String = "morning") -> void:
 func story_true(terms: Array) -> bool:
 	for term in terms:
 		var t: Array = term
+		if t.has("them"):
+			# In a talk, "them" is whoever you're talking to.
+			t = t.map(func(x): return convo.get("who", "") if x == "them" else x)
 		var neg: bool = t[0] == "not"
 		if neg:
 			t = t.slice(1)
@@ -1446,6 +1444,20 @@ func story_true(terms: Array) -> bool:
 				ok = people.has(t[1]) and _compare(queue_of(t[1]).size(), t[2], float(t[3]))
 			"overload":
 				ok = workload() >= OVERLOAD_STORY
+			"open":
+				ok = int(convo.get("open", 0)) >= int(t[1])
+			"work":
+				ok = convo.has("who") and _work_state(convo["who"]) == t[1]
+			"drive":
+				ok = people.has(t[1]) and t.slice(2).has(info(t[1])["drive"])
+			"known":
+				ok = people.has(t[1]) and people[t[1]]["known"].has(t[2])
+			"promised":
+				ok = people.has(t[1]) and people[t[1]]["promised"]
+			"good_work":
+				ok = people.has(t[1]) and scenes._last_good(self, t[1]) >= 0 and task(scenes._last_good(self, t[1])).get("quality", "") == "good"
+			"can_sit":
+				ok = people.has(t[1]) and _stuck_task(t[1]) >= 0 and not task(_stuck_task(t[1])).get("sit_today", false)
 			_:
 				ok = flags.has(t[0])
 		if ok == neg:
@@ -1537,8 +1549,13 @@ func story_choose(i: int) -> void:
 	_story_run()
 
 
-# What a scene can change: see docs/dialogues.md.
-func _story_fx(w: Array) -> void:
+# What a scene can change: see docs/dialogues.md and data/dialogue_catalog.json.
+const TALK_FX := ["dayoff", "lighten", "push", "sit", "initiative", "calm", "mention", "stretch", "promise", "learn", "visible", "confide", "thread"]
+func _story_fx(words: Array) -> void:
+	var w: Array = words.map(func(x): return convo.get("who", "") if x == "them" else x)
+	if w[0] in TALK_FX:
+		_talk_fx(w)
+		return
 	match w[0]:
 		"flag":
 			flags[w[1]] = true

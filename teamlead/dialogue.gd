@@ -7,7 +7,8 @@ extends RefCounted
 #
 # Ops:
 #   {"op": "line", "who", "emo", "ru", "en", "if": [terms]}   who: a person id, "you", or "" for narration
-#   {"op": "choices", "items": [{"ru", "en", "to", "if"}]}
+#   {"op": "choices", "items": [{"ru", "en", "to", "if", "ask", "open"}]}
+#       "* text -> label" is a choice; "? text (open +1) -> label" a question in a talk (ask, and how it moves openness)
 #   {"op": "fx", "words": [String], "if"}
 #   {"op": "jump", "to", "if"}
 #   {"op": "label", "name"}                                    reached by falling through: the scene ends
@@ -21,8 +22,11 @@ const CATALOG := "res://data/dialogue_catalog.json"
 static var FX: Array = []
 static var PLACES: Array = []
 static var TERMS: Array = ["not"]
+static var TOPICS := {} # talk topics: {"heat", "ru"}
 
 static var SCENES := {}
+# Talk scenes (one-on-ones, rules.gd) by topic: they have "topic:" and "who:" and never start on their own.
+static var TALKS := {}
 static var ORDER: Array[String] = []
 static var ERRORS: Array[String] = []
 
@@ -33,6 +37,7 @@ static func _static_init() -> void:
 		FX = catalog["fx"].keys()
 		PLACES = catalog["places"].keys()
 		TERMS = ["not"] + catalog["terms"].keys()
+		TOPICS = catalog["topics"]
 	else:
 		ERRORS.append("%s: can't read" % CATALOG)
 	var dir := DirAccess.open(DIR)
@@ -68,7 +73,7 @@ static func _parse(path: String) -> void:
 			var id := s.substr(2).strip_edges()
 			if SCENES.has(id):
 				ERRORS.append("%s: scene %s defined twice" % [where, id])
-			scene = {"id": id, "when": [], "at": "morning", "ops": [], "labels": {}, "where": where}
+			scene = {"id": id, "when": [], "at": "morning", "ops": [], "labels": {}, "where": where, "topic": "", "who": ""}
 			last = {}
 			continue
 		if scene.is_empty():
@@ -91,6 +96,10 @@ static func _parse(path: String) -> void:
 			if not scene["place"] in PLACES:
 				ERRORS.append("%s: place: is one of %s" % [where, ", ".join(PLACES)])
 			continue
+		if s.begins_with("topic:") or s.begins_with("who:"):
+			var key := s.substr(0, s.find(":"))
+			scene[key] = s.substr(key.length() + 1).strip_edges()
+			continue
 		if s.begins_with("when:"):
 			scene["when"] = _terms(s.substr(5), where)
 			continue
@@ -105,13 +114,20 @@ static func _parse(path: String) -> void:
 			var close := s.find("}")
 			cond = _terms(s.substr(4, close - 4), where)
 			s = s.substr(close + 1).strip_edges()
-		if s.begins_with("*"):
+		if s.begins_with("*") or s.begins_with("?"):
 			var body := s.substr(1).strip_edges()
 			var arrow := body.rfind("->")
 			if arrow < 0:
 				ERRORS.append("%s: a choice needs -> where it leads" % where)
 				continue
-			var item := {"ru": body.substr(0, arrow).strip_edges(), "en": "", "to": body.substr(arrow + 2).strip_edges(), "if": cond, "where": where}
+			var text := body.substr(0, arrow).strip_edges()
+			var opened := 0
+			var mark := text.rfind("(open ")
+			if mark >= 0 and text.ends_with(")"):
+				opened = int(text.substr(mark + 6, text.length() - mark - 7))
+				text = text.substr(0, mark).strip_edges()
+			var item := {"ru": text, "en": "", "to": body.substr(arrow + 2).strip_edges(), "if": cond, "where": where,
+				"ask": s.begins_with("?"), "open": opened}
 			if ops.is_empty() or ops[-1]["op"] != "choices":
 				ops.append({"op": "choices", "items": []})
 			ops[-1]["items"].append(item)
@@ -177,6 +193,10 @@ static func _finish(scene: Dictionary) -> void:
 		for t in targets:
 			if t[0] != "end" and not scene["labels"].has(t[0]):
 				ERRORS.append("%s: no -- %s in scene %s" % [t[1], t[0], scene["id"]])
+	if scene["topic"] != "":
+		if not TALKS.has(scene["topic"]):
+			TALKS[scene["topic"]] = []
+		TALKS[scene["topic"]].append(scene["id"])
 	SCENES[scene["id"]] = scene
 	ORDER.append(scene["id"])
 

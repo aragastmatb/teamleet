@@ -21,7 +21,7 @@ DLG_DIR = ROOT / "data" / "dialogues"
 CATALOG = ROOT / "data" / "dialogue_catalog.json"
 CODE_DIR = ROOT / "teamlead"
 ID_RE = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*$")
-HEAD_KEYS = ("when", "at", "place")
+HEAD_KEYS = ("who", "topic", "when", "at", "place")
 
 
 def catalog():
@@ -330,7 +330,13 @@ def _arg_ok(kind, value, ctx):
     if kind == "range":
         return _range_ok(value)
     if kind in ("person",):
-        return value in ctx["people"]
+        return value in ctx["people"] or value == "them"
+    if kind == "work_state":
+        return value in ("on_track", "behind", "stuck")
+    if kind == "drives":
+        return value in ("craft", "growth", "visibility", "peace")
+    if kind == "category":
+        return value in ("pipelines", "infra", "portal", "support", "done")
     if kind == "cmp":
         return value in (">=", ">", "<", "<=")
     if kind == "number":
@@ -344,7 +350,7 @@ def _arg_ok(kind, value, ctx):
     if kind == "task":
         return value in ctx["tasks"] or value == "incident"
     if kind == "known":
-        return value == "drive" or value in ("skill.pipelines", "skill.infra", "skill.portal", "skill.support")
+        return value in ("drive", "hates") or value in ("skill.pipelines", "skill.infra", "skill.portal", "skill.support")
     return bool(value)
 
 
@@ -357,12 +363,12 @@ def _check_words(words, table, what, ctx):
         return ["неизвестное %s «%s»" % (what, " ".join(words))]
     args, given = spec["args"], words[1:]
     out = []
-    many = args and args[-1] in ("people", "styles", "bosses")
+    many = args and args[-1] in ("people", "styles", "bosses", "drives")
     if len(given) < len(args) or (not many and len(given) > len(args) and words[0] != "give"):
         out.append("«%s»: нужно так: %s" % (" ".join(words), spec["example"]))
         return out
     for i, kind in enumerate(args):
-        values = given[i:] if kind in ("people", "styles", "bosses") else [given[i]]
+        values = given[i:] if kind in ("people", "styles", "bosses", "drives") else [given[i]]
         kind1 = {"people": "person"}.get(kind, kind)
         for v in values:
             if not _arg_ok(kind1, v, ctx):
@@ -394,7 +400,12 @@ def check_scene(scene, ctx=None, flags=None):
         if not ID_RE.match(l or "-"):
             bad("error", l, "имя ветки «%s»: латиница, цифры и _" % l)
     has_when = False
+    talk = any(h.get("key") == "topic" for h in scene["header"])
     for h in scene["header"]:
+        if h.get("key") == "topic" and h["value"] not in cat["topics"]:
+            bad("error", "", "тема «%s» не из списка" % h["value"])
+        if h.get("key") == "who" and not (h["value"] in ctx["people"] or h["value"] in ("any", "hire") or h["value"].startswith("hire_")):
+            bad("error", "", "who: «%s» — нет такого" % h["value"])
         if h.get("key") == "when":
             has_when = True
             for term in [t.strip() for t in h["value"].split(",") if t.strip()]:
@@ -405,7 +416,9 @@ def check_scene(scene, ctx=None, flags=None):
             bad("error", "", "место «%s» не из списка" % h["value"])
         if h.get("key") == "at" and h["value"] not in cat["at"]:
             bad("error", "", "время «%s»: morning или evening" % h["value"])
-    if not has_when:
+    if talk and not any(h.get("key") == "who" for h in scene["header"]):
+        bad("error", "", "у разговорной сцены нет who:")
+    if not has_when and not talk:
         bad("warn", "", "нет условия запуска: сцена начнётся в первое же утро")
     reached = {""}
     for node in scene["nodes"]:
@@ -427,8 +440,12 @@ def check_scene(scene, ctx=None, flags=None):
             if t == "fx":
                 for p in _check_words(it["words"], cat["fx"], "эффект", ctx):
                     bad("error", lbl, p)
+            if t == "choice" and it.get("ask") and not talk:
+                bad("error", lbl, "вопрос (?) бывает только в разговоре один на один")
             if t == "line":
-                if it["who"] not in ctx["people"]:
+                if it["who"] == "them" and talk:
+                    pass
+                elif it["who"] not in ctx["people"]:
                     bad("error", lbl, "неизвестно, кто говорит: %s" % it["who"])
                 if it.get("emo") and it["emo"] not in cat["emotions"]:
                     bad("error", lbl, "неизвестная эмоция %s" % it["emo"])
@@ -439,8 +456,9 @@ def check_scene(scene, ctx=None, flags=None):
                     bad("warn", lbl, "нет перевода: «%s»" % it.get("ru", "")[:40])
                 if "—" in it.get("ru", ""):
                     bad("warn", lbl, "длинное тире: «%s»" % it.get("ru", "")[:40])
+    react = talk and any(h.get("key") == "topic" and h["value"] == "react" for h in scene["header"])
     for l in labels:
-        if l not in reached:
+        if l not in reached and not react:
             bad("warn", l, "в ветку %s ничего не ведёт" % l)
     return out
 

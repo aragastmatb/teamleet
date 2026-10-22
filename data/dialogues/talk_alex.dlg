@@ -1,0 +1,448 @@
+# Разговоры один на один с Алексеем. Говорит гладко, как по написанному; открывается на разговоре через работу.
+# Формат: docs/dialogues.md, «Разговоры один на один». Темы и когда они появляются: data/dialogue_catalog.json, topics.
+
+== talk_alex_credit
+who: alex
+topic: credit
+
+alex [neutral]: Если вопрос по задачам, статус в трекере актуальный.
+  en: If it's about tasks, the tracker is up to date.
+? Это из-за разбора, да? -> answer
+  en: This is about the review, isn't it?
+? Слушай, на разборе вышло некрасиво. Давай поговорим. (open -1) -> answer
+  en: Look, the review went badly. Let's talk about it.
+
+-- answer
+{if open 3} - Пауза.
+  en: A pause.
+{if open 3} alex [sad]: Мне без разницы, чьё имя на слайде. Правда.
+  en: I don't care whose name is on the slide. Really.
+{if open 3} alex: Просто в прошлый раз, когда моё назвали чужим, это плохо кончилось. Не для меня.
+  en: It's just that last time my work got someone else's name on it, it ended badly. Not for me.
+{if open 3} > mood them +0.3
+{if not open 3} alex [neutral]: Всё нормально. Задача сделана, остальное не так важно.
+  en: It's fine. The task is done, the rest doesn't matter much.
+* Это было нечестно с моей стороны. -> apologize
+  en: That wasn't fair of me.
+* Сейчас всем тяжело. -> dismiss
+  en: It's hard for everyone right now.
+
+-- apologize
+alex [happy]: Ценю, что признаёшь.
+  en: I appreciate you owning it.
+> mood them +1.5
+> trust them +1
+> style I 0.5
+-> end
+
+-- dismiss
+alex [annoyed]: Ну да. Как всегда.
+  en: Sure. As always.
+> trust them -1
+> mood them -0.5
+> style P 0.3
+> style I -0.5
+-> end
+
+
+== talk_alex_tired
+who: alex
+topic: tired
+
+alex [neutral]: Всё под контролем. Просто ночью докручивал одну штуку, ничего страшного.
+  en: Everything's under control. I was just polishing something last night, nothing serious.
+? Ты вообще высыпаешься? (open -1) -> answer
+  en: Are you getting any sleep at all?
+? У тебя вид уставший. Что происходит? -> answer
+  en: You look worn out. What's going on?
+? Сколько у тебя сейчас часов в день выходит? (open +1) -> answer
+  en: How many hours a day are you putting in right now?
+
+-- answer
+{if open 3} - Он долго трёт глаза.
+  en: He rubs his eyes for a long time.
+{if open 3} alex [tired]: Если по-честному, третью ночь доделываю то, что днём не успел. Днём дёргают, а ночью тихо, можно нормально подумать.
+  en: If I'm honest, it's the third night I'm finishing what I didn't get to in the day. In the day people pull at me, at night it's quiet and I can actually think.
+{if open 3} alex: Это не проблема, это просто режим. Хотя к обеду голова уже ватная, да.
+  en: It's not a problem, it's just a routine. Though by lunch my head's like cotton wool, yes.
+{if open 3} > mood them +0.3
+{if not open 3} alex [neutral]: Нормально. Режим у меня сейчас такой, высплюсь на выходных.
+  en: Fine. That's just my schedule right now, I'll catch up at the weekend.
+* Бери завтра выходной. -> dayoff
+  en: Take tomorrow off.
+{if busy them >= 2} * Давай я заберу у тебя одну задачу. -> lighten
+  en: Let me take one task off you.
+* Соберись, осталось немного. -> push
+  en: Pull yourself together, not long now.
+
+-- dayoff
+alex [happy]: Выходной. Хорошо. Ноутбук я всё равно возьму, на всякий случай.
+  en: A day off. Okay. I'll take the laptop anyway, just in case.
+> dayoff them
+> mood them +1
+> style I 0.5
+-> end
+
+-- lighten
+alex [happy]: Фух. Спасибо.
+  en: Phew. Thanks.
+> lighten them
+> mood them +1
+> trust them +1
+> style I 0.5
+-> end
+
+-- push
+alex [annoyed]: Я и так работаю за двоих. Но ладно.
+  en: I already work for two. But fine.
+> push them
+> mood them -1
+{if drive them peace} > mood them -1
+> style P 0.7
+> style I -0.3
+-> end
+
+
+== talk_alex_stuck
+who: alex
+topic: stuck
+
+alex [neutral]: «{stuck}» в работе. Есть пара нюансов, решаю.
+  en: "{stuck}" is in progress. A couple of nuances, I'm on it.
+? Что с «{stuck}», где затык? (open +1) -> answer
+  en: What's up with "{stuck}", where's it stuck?
+? «{stuck}» что-то не идёт, да? Бывает, ничего страшного. (open -1) -> answer
+  en: "{stuck}" isn't moving, is it? Happens, no big deal.
+
+-- answer
+{if open 3} alex [worried]: Ладно. Окружение ведёт себя не так, как в документации, и я второй день проверяю гипотезы по одной.
+  en: Fine. The environment doesn't behave like the docs say, and I've spent two days checking hypotheses one by one.
+{if open 3} alex: Можно спросить у Гены, конечно. Но он начнёт рассказывать, как было в две тысячи двенадцатом.
+  en: I could ask Gena, sure. But he'll start telling me how it was back in 2012.
+{if open 3} > mood them +0.3
+{if not open 3} alex [neutral]: Затыка нет. Есть задача, которая требует времени, это разные вещи.
+  en: It's not stuck. It's a task that takes time, those are different things.
+{if can_sit them} * Давай сядем вместе и посмотрим. -> sit
+  en: Let's sit down and look at it together.
+
+-- sit
+alex [happy]: Ладно. Только я сам веду, а ты смотришь.
+  en: Fine. But I drive, you watch.
+> sit them
+-> end
+
+
+== talk_alex_load
+who: alex
+topic: load
+
+alex [neutral]: Давай коротко, у меня три задачи в работе, и все важные.
+  en: Let's keep it short, I've got three tasks going and they all matter.
+? Давай посмотрим, что у тебя на столе. Что горит? (open +1) -> answer
+  en: Let's look at what's on your plate. What's on fire?
+? Тебе не много сейчас? (open -1) -> answer
+  en: Isn't it too much for you right now?
+
+-- answer
+{if open 3} alex [worried]: Если честно, взял больше, чем могу. Но если отдать, кто-то сделает хуже, и оно всё равно вернётся ко мне.
+  en: Honestly, I took on more than I can handle. But if I hand it over, someone'll do it worse and it'll come back to me anyway.
+{if open 3} alex: Это не про то, что я лучше. Это про то, что чинить потом буду я.
+  en: It's not that I'm better. It's that I'll be the one fixing it.
+{if open 3} > mood them +0.3
+{if not open 3} alex [annoyed]: Справляюсь. Сейчас расставлю приоритеты.
+  en: I'm coping. I'll sort the priorities out now.
+{if busy them >= 2} * Давай я заберу у тебя одну задачу. -> lighten
+  en: Let me take one task off you.
+* Сейчас всем тяжело. -> dismiss
+  en: It's hard for everyone right now.
+
+-- lighten
+alex [happy]: Фух. Спасибо.
+  en: Phew. Thanks.
+> lighten them
+> mood them +1
+> trust them +1
+> style I 0.5
+-> end
+
+-- dismiss
+alex [annoyed]: Ну да. Как всегда.
+  en: Sure. As always.
+> mood them -0.5
+> style P 0.3
+> style I -0.5
+-> end
+
+
+== talk_alex_mood
+who: alex
+topic: mood
+
+alex [neutral]: Что-то срочное? Если по задаче, к четвергу будет.
+  en: Something urgent? If it's about the task, it'll be done by Thursday.
+? На тебе лица нет. Всё в порядке? (open -1) -> answer
+  en: You look like something's wrong. Are you okay?
+? Что случилось? -> answer
+  en: What happened?
+
+-- answer
+{if open 3} alex [sad]: Да ничего такого. Просто открываю чат, а там опять «Алексей, глянь», «Алексей, срочно».
+  en: Nothing really. I just open the chat and it's "Alex, have a look", "Alex, urgent" again.
+{if open 3} alex: И думаю: а если меня завтра не будет, что тут вообще останется?
+  en: And I think: if I'm not here tomorrow, what's even left?
+{if open 3} > mood them +0.3
+{if not open 3} alex [neutral]: Всё в порядке. Просто думаю.
+  en: Everything's fine. Just thinking.
+
+
+== talk_alex_idle
+who: alex
+topic: idle
+
+alex [neutral]: Я тут разбираю наш старый пайплайн. Сам себе задачу нашёл.
+  en: I'm going through our old pipeline. Found myself a task.
+? Чем сейчас занимаешься? (open +1) -> answer
+  en: What are you working on at the moment?
+? Ты уже который день без задач. Что думаешь? -> answer
+  en: You've had no tasks for days. What do you make of it?
+
+-- answer
+{if open 3} alex [embarrassed]: Знаешь, что бесит больше всего? Не когда много, а когда ничего. Сразу начинаешь думать, зачем ты тут.
+  en: You know what's worst? Not too much. Nothing. You immediately start wondering why you're here.
+{if open 3} alex: Дай мне что-нибудь. Хоть что-нибудь настоящее.
+  en: Give me something. Anything real.
+{if open 3} > mood them +0.3
+{if not open 3} alex [sarcastic]: Я не без дела. Нашёл, что улучшить в пайплайнах, никто не просил, но надо.
+  en: I'm not idle. I found something to improve in the pipelines, nobody asked, but it needs doing.
+* Есть одна штука в бэклоге, возьмёшься? -> fix_bored
+  en: There's something in the backlog. Want it?
+
+-- fix_bored
+alex [happy]: О, давай!
+  en: Oh, go on!
+> initiative them
+> mood them +1
+> style E 0.5
+-> end
+
+
+== talk_alex_hate
+who: alex
+topic: hate
+
+alex [neutral]: «{task}» делаю. Не самая интересная задача в моей жизни, но делаю.
+  en: Doing "{task}". Not the most exciting task of my life, but I'm doing it.
+? Как тебе «{task}»? (open +1) -> answer
+  en: How's "{task}" treating you?
+? Тебе ведь «{task}» не нравится, да? -> answer
+  en: You don't like "{task}", do you?
+
+-- answer
+{if open 3} alex [annoyed]: Ненавижу такое. Тут нечего придумывать, надо сидеть и аккуратно переносить, а я начинаю переделывать всё вокруг, и выходит ещё хуже.
+  en: I hate this kind of thing. There's nothing to invent, you just sit and carefully move things over, and I start redoing everything around it and make it worse.
+{if open 3} > mood them +0.3
+{if not open 3} alex [neutral]: Нормальная задача. Кто-то же должен.
+  en: It's a normal task. Someone has to.
+* Пару дней будешь делать только то, что тебе по душе. -> fix_hate
+  en: For a couple of days you'll only do what you like.
+
+-- fix_hate
+alex [happy]: Договорились.
+  en: Deal.
+> calm them 3
+> mood them +1
+> style I 0.3
+-> end
+
+
+== talk_alex_proud
+who: alex
+topic: proud
+
+alex [neutral]: Если ты по «{done}», там всё сделано с запасом, можно не проверять.
+  en: If it's about "{done}", it's done with margin to spare, no need to check.
+? «{done}» вышло отлично. Расскажешь, как оно там внутри? (open +1) -> answer
+  en: "{done}" came out great. Tell me how it works inside?
+? За «{done}» спасибо, правда хорошо вышло. (open -1) -> answer
+  en: Thanks for "{done}", it really turned out well.
+
+-- answer
+{if open 3} - Он оживляется.
+  en: He brightens.
+{if open 3} alex [happy]: Самое интересное там не видно. Я переписал, как оно падает: теперь если что-то ломается, то громко и сразу, а не тихо через неделю.
+  en: The interesting part doesn't show. I rewrote how it fails: now if something breaks, it breaks loudly and at once, not quietly a week later.
+{if open 3} alex: Никто не оценит, конечно. Но мне приятно.
+  en: Nobody will notice, of course. But I like it.
+{if open 3} > mood them +0.3
+{if not open 3} alex [neutral]: Спасибо. Там ничего сложного.
+  en: Thanks. Nothing complicated there.
+* Отличная работа. Правда. -> praise
+  en: Great work. Really.
+* Расскажу о тебе Ирине Викторовне. -> mention
+  en: I'll tell Irina about you.
+* Неплохо, но можно было лучше. -> critique
+  en: Not bad, but it could have been better.
+
+-- praise
+alex [happy]: Спасибо! Приятно, что замечаешь.
+  en: Thanks! Nice to be noticed.
+> mood them +1
+> trust them +1
+> style I 0.3
+-> end
+
+-- mention
+alex [happy]: Правда? Это было бы здорово.
+  en: Really? That would be great.
+> mention them
+> mood them +1.5
+> style I 0.3
+-> end
+
+-- critique
+{if good_work them} alex [annoyed]: …Серьёзно? Там всё было хорошо.
+  en: …Seriously? It was all fine.
+{if good_work them} > mood them -1.5
+{if good_work them} > trust them -1
+{if not good_work them} alex [neutral]: Да, есть что подтянуть. Учту.
+  en: Yeah, there's room to improve. Noted.
+{if not good_work them} > mood them -0.5
+{if not good_work them} > trust them +1
+{if not good_work them} > learn them done 1
+> style P 0.3
+> style A 0.2
+-> end
+
+
+== talk_alex_work
+who: alex
+topic: work
+
+alex [neutral]: Сижу над «{task}». Что-то нужно?
+  en: Working on "{task}". Need something?
+? Как там «{task}»? (open +1) -> answer
+  en: How's "{task}" going?
+
+-- answer
+{if open 3, work behind} alex [worried]: Если честно, отстаю. Дня на два. Думал, успею ночью, но нет.
+  en: Honestly, I'm behind. About two days. I thought I'd catch up at night, but no.
+{if open 3, work stuck} alex [worried]: Застрял. Не люблю это слово, но да.
+  en: I'm stuck. I hate that word, but yes.
+{if open 3, work on_track} alex [neutral]: По плану. Могу показать, что уже готово, если хочешь.
+  en: On schedule. I can show you what's done, if you want.
+{if open 3} > mood them +0.3
+{if not open 3} alex [neutral]: Идёт по плану.
+  en: On schedule.
+
+
+== talk_alex_how
+who: alex
+topic: how
+
+alex [neutral]: Привет. Слушаю.
+  en: Hi. I'm listening.
+? Как ты вообще? (open -1) -> answer
+  en: How are you, really?
+
+-- answer
+{if open 3} alex [happy]: Нормально. Странный вопрос для рабочего дня, но спасибо.
+  en: Fine. Strange question for a workday, but thanks.
+{if open 3} > confide them
+{if open 3} > mood them +0.3
+{if not open 3} alex [neutral]: Нормально. А что, по мне видно что-то?
+  en: Fine. Why, does something show?
+{if known them drive, drive them craft} * Хочешь самую сложную задачу недели? -> gift_craft
+  en: Want the hardest task of the week?
+
+-- gift_craft
+alex [happy]: О. Вот это разговор.
+  en: Oh. Now we're talking.
+> mood them +1.5
+> trust them +1
+> style I 0.5
+-> end
+
+
+== talk_alex_react
+who: alex
+topic: react
+# Как человек принимает вопрос: up, если тон ему подходит, down, если нет, shut, когда закрылся совсем.
+
+-- up
+- Алексей откидывается на спинку кресла и впервые за разговор смотрит прямо на вас.
+  en: Alex leans back and looks straight at you for the first time in the conversation.
+
+-- down
+- Алексей едва заметно морщится и косится в монитор.
+  en: Alex winces, barely, and glances at the monitor.
+
+-- shut
+- Алексей разворачивается к монитору.
+  en: Alex turns back to his monitor.
+alex [annoyed]: Давай я лучше пойду работать. Это продуктивнее, чем вот это всё.
+  en: How about I just get back to work. That's more productive than all this.
+
+
+== talk_alex_thread1
+who: alex
+topic: thread
+when: not flag thread_alex_1
+
+alex [neutral]: Привет. Слушаю.
+  en: Hi. I'm listening.
+? Слушай, а на прошлой работе у вас как релизы были устроены? (open +1) -> answer
+  en: Say, how were releases done at your last job?
+
+-- answer
+{if open 3} alex [neutral]: Нормально были устроены. Был один человек, который всё за мной перепроверял, каждый релиз. Я сначала бесился, потом привык.
+  en: They were done fine. There was one guy who double-checked everything after me, every release. It drove me mad at first, then I got used to it.
+{if open 3} alex: Хороший был… ладно, неважно. У нас по-другому, и это нормально.
+  en: He was good… anyway, doesn't matter. We do it differently here, and that's fine.
+{if open 3} > flag thread_alex_1
+{if open 3} > thread them
+{if not open 3} alex [annoyed]: Это было давно и к делу не относится. Давай про задачи.
+  en: That was a long time ago and it's not relevant. Let's talk tasks.
+
+
+== talk_alex_thread2
+who: alex
+topic: thread
+when: flag thread_alex_1, not flag thread_alex_2
+
+alex [neutral]: Привет. Слушаю.
+  en: Hi. I'm listening.
+? Тот человек, который за тобой перепроверял. Он сейчас где? (open +1) -> answer
+  en: That guy who double-checked your work. Where is he now?
+
+-- answer
+{if open 3} - Алексей долго не отвечает.
+  en: Alex takes a long time to answer.
+{if open 3} alex [sad]: Без понятия. Мы не общаемся.
+  en: No idea. We're not in touch.
+{if open 3} alex: Был один хотфикс в проде, в пятницу вечером. Мой. А дальше всё быстро случилось, я даже не понял как.
+  en: There was a hotfix in prod, Friday evening. Mine. Then everything happened fast, I didn't even understand how.
+{if open 3} > flag thread_alex_2
+{if open 3} > thread them
+{if not open 3} alex [annoyed]: Это было давно и к делу не относится. Давай про задачи.
+  en: That was a long time ago and it's not relevant. Let's talk tasks.
+
+
+== talk_alex_thread3
+who: alex
+topic: thread
+when: flag thread_alex_2, not flag thread_alex_3
+
+alex [neutral]: Привет. Слушаю.
+  en: Hi. I'm listening.
+? Тот хотфикс в пятницу. Что тогда случилось? (open +1) -> answer
+  en: That Friday hotfix. What happened?
+
+-- answer
+{if open 3} alex [sad]: Да ничего особенного. Я ошибся, а разбираться пошёл не я.
+  en: Nothing special. I made a mistake, and it wasn't me who went in to answer for it.
+{if open 3} alex: Давай не сейчас, хорошо? Я правда ценю, что ты спрашиваешь. Просто не сейчас.
+  en: Not now, okay? I really appreciate you asking. Just not now.
+{if open 3} > flag thread_alex_3
+{if open 3} > thread them
+{if not open 3} alex [annoyed]: Это было давно и к делу не относится. Давай про задачи.
+  en: That was a long time ago and it's not relevant. Let's talk tasks.

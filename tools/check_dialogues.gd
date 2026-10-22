@@ -11,9 +11,13 @@ func _initialize() -> void:
 		for op in sc["ops"]:
 			var where: String = op.get("where", sc["where"])
 			if op["op"] == "line":
-				if op["who"] != "" and op["who"] != "you" and not Loc.has_key("name.%s.nom" % op["who"]):
+				if op["who"] == "them" and sc["topic"] == "":
+					bad.append("%s: them speaks only in talk scenes" % where)
+				elif op["who"] in ["", "you", "them"]:
+					pass
+				elif not Loc.has_key("name.%s.nom" % op["who"]):
 					bad.append("%s: unknown speaker %s" % [where, op["who"]])
-				if op["who"] != "" and op["who"] != "you" and not Loc.has_key("name.%s.ins" % op["who"]):
+				if not op["who"] in ["", "you", "them"] and not Loc.has_key("name.%s.ins" % op["who"]):
 					bad.append("%s: no name.%s.ins" % [where, op["who"]])
 				if op["emo"] != "" and not Loc.has_key("emo." + op["emo"]):
 					bad.append("%s: unknown mood %s" % [where, op["emo"]])
@@ -31,6 +35,10 @@ func _initialize() -> void:
 					bad.append("%s: %s %s — no such task" % [sc["where"], w[0], w[1]])
 				if w[0] in ["mood", "trust", "energy", "give", "days", "grab", "drop"] and w.size() < 3:
 					bad.append("%s: %s needs more words" % [sc["where"], " ".join(w)])
-	print("scenes: ", D.ORDER.size(), "  problems: ", bad.size())
+		if sc["topic"] != "" and not D.TOPICS.has(sc["topic"]):
+			bad.append("%s: unknown topic %s" % [sc["where"], sc["topic"]])
+		if sc["topic"] != "" and sc["who"] == "":
+			bad.append("%s: a talk scene needs who:" % sc["where"])
+	print("scenes: ", D.ORDER.size(), "  talks: ", D.ORDER.filter(func(x): return D.SCENES[x]["topic"] != "").size(), "  problems: ", bad.size())
 	for b in bad: print("  ", b)
 	quit()
