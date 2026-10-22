@@ -663,16 +663,57 @@ func _teach_chat() -> bool:
 	return false
 
 
+# The key art: the whole screen on desktop with the card in the corner where only the floor is
+# (the empty chair in the middle is the player's, Taras in the doorway on the left keeps his face);
+# on a phone the picture is a strip on top, uncut, and the card sits under it.
+const KEY_ART := "res://art/key_art.png"
+
+
 func _build_title() -> void:
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.add_child(center)
+	var art: Texture2D = load(KEY_ART) if ResourceLoader.exists(KEY_ART) else null
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 32))
-	center.add_child(card)
+	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 24 if mobile else 32))
 	var v := _vbox(16)
-	v.custom_minimum_size.x = mini(860, int(_view_width()) - 80)
 	card.add_child(v)
+	if art == null:
+		var center := CenterContainer.new()
+		center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		ui.add_child(center)
+		center.add_child(card)
+		v.custom_minimum_size.x = mini(860, int(_view_width()) - 80)
+	elif mobile:
+		var scroll := ScrollContainer.new()
+		scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		ui.add_child(scroll)
+		var col := _vbox(0)
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		scroll.add_child(col)
+		var pic := TextureRect.new()
+		pic.texture = art
+		pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		pic.expand_mode = TextureRect.EXPAND_FIT_HEIGHT_PROPORTIONAL
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+		pic.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.add_child(pic)
+		col.add_child(_padded(card, 12, 12))
+	else:
+		var pic := TextureRect.new()
+		pic.texture = art
+		pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		pic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		ui.add_child(pic)
+		var w := minf(600.0, _view_width() * 0.5)
+		card.anchor_top = 1.0
+		card.anchor_bottom = 1.0
+		card.offset_left = 32
+		card.offset_right = 32 + w
+		card.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		card.offset_top = -32
+		card.offset_bottom = -32
+		ui.add_child(card)
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 12)
 	v.add_child(head)
@@ -680,14 +721,13 @@ func _build_title() -> void:
 	head.add_child(_label(Loc.t("title"), 34, COL_TEXT, false, true))
 	v.add_child(_label(Loc.t("tagline"), 19, COL_MUTED, true))
 	v.add_child(_spacer(4))
-	var buttons := HBoxContainer.new()
-	buttons.add_theme_constant_override("separation", 12)
+	var buttons := _flow(12, 12)
 	v.add_child(buttons)
 	if Rules.has_save():
-		buttons.add_child(_button(Loc.t("continue"), _continue_run, 160 if mobile else 260, "primary"))
+		buttons.add_child(_button(Loc.t("continue"), _continue_run, 160 if mobile else 220, "primary"))
 		buttons.add_child(_button(Loc.t("new_game"), _open_setup.bind(true), 0))
 	else:
-		buttons.add_child(_button(Loc.t("start"), _open_setup.bind(true), 160 if mobile else 260, "primary"))
+		buttons.add_child(_button(Loc.t("start"), _open_setup.bind(true), 160 if mobile else 220, "primary"))
 	buttons.add_child(_button(Loc.t("lang_button"), _toggle_lang, 110 if mobile else 140))
 
 
