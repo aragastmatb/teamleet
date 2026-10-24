@@ -2821,8 +2821,8 @@ func _entry_text(entry: Dictionary) -> String:
 # in fractions of the picture). No picture yet: the coloured circle with a letter.
 const PORTRAIT_DIR := "res://art/portraits/"
 const PORTRAIT_FACE := {
-	"gena": Rect2(0.19, 0.04, 0.56, 0.56), "alex": Rect2(0.33, 0.06, 0.6, 0.6), "vika": Rect2(0.39, 0.1, 0.54, 0.54), "marina": Rect2(0.32, 0.08, 0.56, 0.56),
-	"dima": Rect2(0.22, 0.1, 0.56, 0.56), "taras": Rect2(0.24, 0.05, 0.54, 0.54), "boss": Rect2(0.3, 0.08, 0.6, 0.6),
+	"gena": Rect2(0.33, 0.03, 0.5, 0.547), "alex": Rect2(0.18, 0.06, 0.62, 0.517), "vika": Rect2(0.32, 0.03, 0.52, 0.476), "marina": Rect2(0.27, 0.08, 0.46, 0.503),
+	"dima": Rect2(0.17, 0.1, 0.66, 0.604), "taras": Rect2(0.18, 0.05, 0.6, 0.556), "boss": Rect2(0.12, 0.05, 0.62, 0.517),
 }
 # A character needs only a few pictures: an emotion without its own falls back to the nearest one there is.
 const PORTRAIT_NEAREST := {

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://3hbpole0pbvc"
-path="res://.godot/imported/gena_sad.png-266876f16f0ae086ea9c79dae1887878.ctex"
+uid="uid://c778gbjwoord8"
+path="res://.godot/imported/dima_worried.png-d3950cf7ba92f124662bd0959b2f1a47.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://art/portraits/gena_sad.png"
-dest_files=["res://.godot/imported/gena_sad.png-266876f16f0ae086ea9c79dae1887878.ctex"]
+source_file="res://art/portraits/dima_worried.png"
+dest_files=["res://.godot/imported/dima_worried.png-d3950cf7ba92f124662bd0959b2f1a47.ctex"]
 
 [params]
 
@@ -23,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
