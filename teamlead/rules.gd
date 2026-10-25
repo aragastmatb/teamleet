@@ -90,6 +90,8 @@ var attention := 0
 var overtime_today := 0
 var my_energy := 10.0
 var my_sick := 0
+# A late night (a scene says so): tomorrow you have this much less attention.
+var my_hangover := 0
 var sick_today := false
 var visited_today := false
 var init_next := {}
@@ -158,6 +160,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	_refill_deck()
 	my_energy = 10.0
 	my_sick = 0
+	my_hangover = 0
 	init_next.clear()
 	boss_type = boss_kind
 	profile = profile_kind
@@ -235,6 +238,8 @@ func _start_day() -> void:
 	elif not queue_of("me").is_empty():
 		# Doing a task yourself takes most of your day.
 		attention = maxi(0, attention - 2)
+	attention = maxi(0, attention - my_hangover)
+	my_hangover = 0
 	# A story conversation comes first, on its own screen; the morning's chat waits for it.
 	_queue_story()
 	if story.is_empty():
@@ -1573,6 +1578,8 @@ func _story_fx(words: Array) -> void:
 			boss += float(w[1])
 		"taras":
 			taras_like(float(w[1]))
+		"hangover":
+			my_hangover = 1
 		"interview":
 			interview(w[1], true)
 		"openings":

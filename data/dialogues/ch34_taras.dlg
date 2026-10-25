@@ -108,11 +108,9 @@ alex [tired]: Слушай, я третью неделю до ночи сижу,
   en: I'll lighten your load, I'll hand out the extra.
 * Потерпи до сделки, немного осталось. -> endure
   en: Hang on till the deal, not long now.
-{if flag taras_drink:end} * Это поначалу у всех так. -> quote
+{if taras >= 3} * Это поначалу у всех так. -> quote
   en: Everyone's like that at first.
-{if flag taras_drink:smoothed} * Это поначалу у всех так. -> quote
-  en: Everyone's like that at first.
-{if not flag taras_drink:end, not flag taras_drink:smoothed} * Тебе же несложно. -> quote
+{if taras < 3} * Тебе же несложно. -> quote
   en: It's not hard for you, is it.
 
 -- relief

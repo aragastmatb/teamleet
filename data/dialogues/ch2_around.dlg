@@ -9,41 +9,117 @@ when: chapter 2, day 10-18
 
 - Вечер. У лифта Тарас.
   en: Evening. Taras is by the lift.
-{if taras >= 3} taras [happy]: О, вот и ты, слушай, мы с ребятами в бар собрались, пойдём? Ты, я смотрю, нормальный оказался, без этих вот…
-  en: Oh, there you are, listen, a few of us are heading to the bar, coming? You turned out all right, I see, none of that…
-{if taras >= 3} - Он неопределённо машет рукой, будто отгоняет что-то липкое.
-  en: He waves a hand vaguely, as if brushing off something sticky.
-{if taras < 3} taras [sarcastic]: Всё со своими нянчишься? Ну-ну, это поначалу у всех так.
-  en: Still babysitting your lot? Well, well, everyone's like that at first.
-{if taras >= 3} * Пойдём. -> drink
-  en: Let's go.
-{if taras >= 3} * Давай в другой раз. -> another_time
-  en: Another time.
-{if taras < 3} * Посмотрим. -> end
-  en: We'll see.
-{if taras < 3} * А у тебя, значит, прошло? -> smoothed
-  en: So it wore off for you, did it?
+taras [sarcastic]: О, здорово, ну что, как там наша платформа поживает?
+  en: Oh, hey there, so how's our platform doing?
+{if taras >= 3} * Вашими молитвами, да хрен дождёшься, а ты чего, куда намылился? -> bars
+  en: Thanks to your prayers, though fat chance of that, and what about you, where are you off to?
+{if taras < 3} * Как всегда, всё по-старому. У тебя событие сегодня какое-то? -> bars
+  en: Same as always, nothing new. Got some event on today?
+{if taras < 3} * Лучше всех. Хотел чего-то? -> smoothed
+  en: Never better. Did you want something?
 
--- drink
-- В баре Тарас рассказывает, как «оптимизировал» отдел в прошлом году, и сам смеётся громче всех.
-  en: At the bar Taras tells how he "optimised" a department last year, and laughs louder than anyone.
-- Под конец вечера он хлопает вас по плечу: «Ты свой».
-  en: At the end of the night he claps you on the shoulder: "You're one of us."
+-- in_bar
+- В баре, после нескольких раундов алкоголя, Тарас рассказывает, как «оптимизировал» отдел неделю назад. Оптимизация выписала ему премию за «продуктивные решения».
+  en: At the bar, a few rounds in, Taras tells how he "optimised" a department a week ago. The optimisation earned him a bonus for "productive decisions".
+taras [happy]: …Зато теперь посидеть спокойно могу! Кстати, а ты чего не пьёшь? А ну, давай исправляй эту оплошность!
+  en: …But now I can finally sit back and relax! By the way, how come you're not drinking? Come on, let's fix that oversight!
 > flag taras_drink
-> taras +1
--> end
-
--- another_time
-taras [neutral]: Ну как знаешь, предложение в силе.
-  en: Suit yourself, the offer stands.
--> end
+* Выпить -> drink
+  en: Drink
+* Не пить -> no_drink
+  en: Don't drink
 
 -- smoothed
-taras [neutral]: У меня? У меня и не начиналось.
-  en: For me? It never started.
-- Кнопку лифта он держит чуть дольше, чем нужно.
-  en: He holds the lift button a little longer than he needs to.
+taras [neutral]: Да нет, завтра увидимся.
+  en: Nah, see you tomorrow.
+- Из лифта он вышел так быстро, что вы не успели даже попрощаться.
+  en: He's out of the lift so fast you don't even get to say goodbye.
 > flag taras_asked
+-> end
+
+-- bars
+{if taras >= 3} taras [excited]: Да вот, в бар идём с мужиками, с нами пойдёшь?
+  en: Me and the guys are off to the bar, coming with us?
+{if taras < 3} taras [neutral]: Нет, просто в бар собрался.
+  en: No, just heading to the bar.
+{if taras < 3} - Немного подумав, Тарас добавляет:
+  en: After a moment's thought, Taras adds:
+{if taras < 3} taras [neutral]: С нами пойдёшь?
+  en: Coming with us?
+{if taras >= 3} * Не вопрос, конечно, идём. -> in_bar
+  en: No question, sure, let's go.
+{if taras < 3} * Я - за, день сегодня был ну полное говно. -> in_bar
+  en: I'm in, today was a total shitshow.
+* Нет, спасибо, завтра тяжёлый день. -> no_bar
+  en: No thanks, big day tomorrow.
+
+-- no_bar
+taras [tired]: Как знаешь, как знаешь…
+  en: Suit yourself, suit yourself…
+{if taras >= 3} - Тарас взял вас за плечо.
+  en: Taras takes you by the shoulder.
+{if taras >= 3} taras [excited]: Ты, главное, себя поменьше напрягай, они пусть работают, а дивиденды - тебе.
+  en: Main thing is, don't strain yourself, let them do the work, and the dividends go to you.
+taras [neutral]: Ладно, бывай.
+  en: All right, take care.
+-> end
+
+-- drink
+taras [excited]: Ой, ты бы знал, с каким удовольствием я от него избавился. Сидел, чёт, нудил днями. Как чего хорошее сделал - сразу бежать к начальству, будто он один всё делал. А я? А про меня он совсем забыл? Наглые они все, вот что я тебе скажу!
+  en: Oh, if you only knew how glad I was to get rid of him. He'd sit there whining for days on end. The moment he did anything good, off he'd run to the bosses, as if he'd done it all on his own. And me? Did he just forget about me? They're all cheeky, that's what I'm telling you!
+* Точно, некоторые аж из трусов прыгают, лишь бы тебя обойти. -> laugh
+  en: Right, some of them would jump out of their pants just to get ahead of you.
+* Да ладно тебе, Тарас, давай ещё по одной. -> stay
+  en: Oh come on, Taras, let's have another round.
+* А ты чё так плохо о них говоришь? Нормальные у тебя ребята были, это ты - гниль, никакого толка от тебя нет. -> fight
+  en: Why are you talking about them like that? Your people were fine, you're the rotten one, you're no use to anyone.
+
+-- no_drink
+taras [annoyed]: А эта у тебя, Вика, с ней-то что не так? Вчера подошёл к ней, вроде, ничего плохого, комплиментами одарил, а она меня будто взглядом убить пыталась…
+  en: And that one of yours, Vika, what's her problem? I went up to her yesterday, nothing bad, paid her a few compliments, and she looked at me like she wanted to kill me…
+* Ты моих ребят не трогай, своих обсуждай сколько влезет, а к моим лезть не надо. -> fight
+  en: Leave my people alone, talk about yours all you like, but don't you go near mine.
+* Слушай, да чёрт её знает. И вообще, не пора ли нам пора? А то времени уже много. -> leave
+  en: Listen, who the hell knows. And anyway, isn't it time we made tracks? It's getting late.
+
+-- leave
+taras [sad]: Ну, пора так пора, ты иди пока, а я ещё посижу.
+  en: Well, if it's time, it's time, you go on, I'll sit a bit longer.
+- Оставив Тараса наедине со своими мыслями, вы наконец ощущаете, что можете спокойно вернуться домой и выпить горячего чаю перед сном.
+  en: Leaving Taras alone with his thoughts, you finally feel you can go home in peace and have a hot cup of tea before bed.
+-> end
+
+-- stay
+taras [embarrassed]: Да я-то чё? Я ничё, другие вон чё и ни чё.
+  en: What, me? I'm nothing, look at what the others get up to, and nothing happens to them.
+taras [happy]: Хоба, а вот и ещё шотики!
+  en: Whoa, here come more shots!
+- В итоге, вы просидели до двух ночи, голова с утра гудит так, будто локомотив встроили прямо в уши.
+  en: In the end you sat there till two in the morning, and your head is pounding like someone built a locomotive right into your ears.
+> hangover
+-> end
+
+-- fight
+taras [annoyed]: Ты ща на грубость нарываешься или обидеть норовишь?
+  en: Are you asking for trouble right now, or just trying to offend me?
+- Вы продолжаете настаивать на неправоте Тараса.
+  en: You keep insisting Taras is in the wrong.
+taras [angry]: Шёл бы ты на хер отсюда, дружок, пока разговаривать в состоянии.
+  en: Why don't you fuck off out of here, pal, while you can still talk.
+- Хоть до драки так и не дошло, но ощущение было такое, будто всё тело покрыто синяками, и домой вы пошли «побитыми», но с чувством победы.
+  en: It never came to a fight, but it felt as if your whole body was covered in bruises, and you went home "beaten up", but feeling you had won.
+> taras -1
+-> end
+
+-- laugh
+taras [happy]: И потом до утра без трусов остаются.
+  en: And then they're left without pants till morning.
+- Эта реплика Тарасу понравилась особенно сильно, он смеялся над ней до конца этого вечера.
+  en: Taras liked that one especially, he kept laughing at it for the rest of the evening.
+- В итоге, вы просидели до двух ночи, голова с утра гудит так, будто локомотив встроили прямо в уши.
+  en: In the end you sat there till two in the morning, and your head is pounding like someone built a locomotive right into your ears.
+> taras +1
+> hangover
 -> end
 
 
