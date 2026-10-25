@@ -759,10 +759,10 @@ func _teach_chat() -> bool:
 
 # The key art fills the screen and darkens towards the bottom, where the menu sits straight on it.
 # An upright phone sees a third of the picture, so the view looks round the room like the player would:
-# Taras in the doorway and Gena, then Alex and Dima, then Vika and Irina, and slowly back. It never
+# Taras in the doorway and Gena, then Alex and Dima, then Irina and Vika, and slowly back. It never
 # stops dead (a little drift while it rests on each pair), so it doesn't feel like a slideshow.
 const KEY_ART := "res://art/key_art.png"
-const PAN_STOPS := [0.17, 0.47, 0.81] # where each pair is, as a fraction of the picture's width
+const PAN_STOPS := [0.17, 0.55, 0.83] # where each pair is, as a fraction of the picture's width
 const PAN_REST := 5.0 # seconds on each pair
 const PAN_MOVE := 3.5 # seconds between neighbours; the way back takes twice that
 const PAN_DRIFT := 0.025
