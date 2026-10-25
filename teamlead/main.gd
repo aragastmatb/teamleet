@@ -808,16 +808,12 @@ func _build_title() -> void:
 	v.offset_top = -margin
 	v.offset_bottom = -margin
 	ui.add_child(v)
+	# The logo is stuck on top of the menu, on the dark part of the picture, so it never covers a face.
+	if menu_page == "":
+		var sticker := _logo(96 if mobile else 84)
+		sticker.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		v.add_child(sticker)
 	_menu_page(v, false)
-	# The logo is stuck on the corner of the screen, where the picture has only ceiling and window.
-	var sticker := _logo(96 if mobile else 84)
-	sticker.anchor_left = 1.0
-	sticker.anchor_right = 1.0
-	sticker.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	sticker.offset_left = -14 if mobile else -20
-	sticker.offset_right = sticker.offset_left
-	sticker.offset_top = 14 if mobile else 16
-	ui.add_child(sticker)
 
 
 # Where the view is pan_time seconds in: rest, move, rest, move, rest, then the long way back. The path is
