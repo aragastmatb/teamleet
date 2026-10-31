@@ -50,7 +50,7 @@ const COMP_STYLE := {
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
 	"probation", "chapter_intro", "layoff_order", "weekend_fire", "chaos_meeting", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
-	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "dima_question", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow", "boris_drunk", "friday_deploy",
+	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "dima_question", "vika_takes_task", "gena_mentor", "taras_steal", "taras_poach", "taras_brag", "vika_rising", "taras_borrow", "boris_drunk", "friday_deploy",
 ]
 
 
@@ -219,6 +219,35 @@ func _check_taras_brag(r) -> Dictionary:
 	if r.day < 3 or not once(r, "taras_brag"):
 		return {}
 	return {"who": "taras", "lines": [{"who": "taras", "key": "event.taras_brag.ask"}], "choices": ["noted", "who_did"]}
+
+
+# The endless run's rival plays dirty. Each trick at most once a period.
+const TARAS_TRICK_CHANCE := 0.25
+
+
+# Something of yours done well in the last two days: Taras has already told Irina it was his idea.
+func _check_taras_steal(r) -> Dictionary:
+	if not r.endless() or r.chapter_day() < 3 or r.flags.has("taras_steal_%d" % r.period) or r.rng.randf() > TARAS_TRICK_CHANCE:
+		return {}
+	for t in r.tasks:
+		if t["status"] == "done" and t.get("done_day", 0) >= r.day - 2 and t["quality"] in ["good", "ok"] and t["owner"] != "taras" \
+				and not t.get("stolen", false) and t["size"] >= 1.0 and not t["id"].begins_with("init_"):
+			r.flags["taras_steal_%d" % r.period] = true
+			return {"who": "taras", "uid": t["uid"], "names": task_names(r, t),
+				"lines": [{"who": "taras", "key": "event.taras_steal.ask"}], "choices": ["let_go", "call_out"]}
+	return {}
+
+
+# Someone unhappy: Taras has offered them a place, for more money.
+func _check_taras_poach(r) -> Dictionary:
+	if not r.endless() or r.chapter_day() < 3 or r.flags.has("taras_poach_%d" % r.period) or r.rng.randf() > TARAS_TRICK_CHANCE:
+		return {}
+	for p in r.team:
+		if here(r, p) and r.people[p]["mood"] <= r.UNHAPPY_MOOD + 1.0 and r.day - r.people[p]["joined"] >= r.NEWBIE_DAYS:
+			r.flags["taras_poach_%d" % r.period] = true
+			return {"who": p, "names": {"who": "@name.%s.nom" % p, "pay": str(int(round(r.salary(p) * r.RAISE)))},
+				"lines": [{"who": p, "key": "event.taras_poach.ask"}], "choices": ["raise", "persuade", "let_go"], "person": p}
+	return {}
 
 
 # Irina lets slip that Vika is rising.
@@ -1128,6 +1157,31 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.say(arg, "event.taras_borrow.lent." + arg)
 		"taras_borrow/refuse":
 			r.flags["taras_grudge"] = true
+
+		"taras_steal/let_go":
+			t["stolen"] = true
+		"taras_steal/call_out":
+			r.spend_attention()
+			# Irina believes whoever she listens to more; a coin toss otherwise.
+			if r.boss >= 2.0 or r.rng.randf() < 0.5:
+				r.boss += 0.3
+			else:
+				t["stolen"] = true
+				r.boss -= 0.5
+				reply = "event.taras_steal.call_out.lost"
+		"taras_poach/raise":
+			r.give_raise(ev["person"])
+			r.people[ev["person"]]["mood"] += 2.0
+		"taras_poach/persuade":
+			r.spend_attention()
+			var st: Dictionary = r.people[ev["person"]]
+			if r.rng.randf() < 0.4 + 0.15 * st["trust"]:
+				st["mood"] += 1.0
+			else:
+				reply = "event.taras_poach.persuade.gone"
+				r.lose_to_taras(ev["person"])
+		"taras_poach/let_go":
+			r.lose_to_taras(ev["person"])
 
 		"boris_drunk/take":
 			_add_tagged(r, "boris_promise")

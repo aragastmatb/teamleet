@@ -58,6 +58,12 @@ var period_start := 1
 var money := 0
 # Before the first day: the CVs you're choosing the team from, and who you've picked.
 var draft_picked: Array = []
+# Taras's department this period: what it has delivered so far and what it's on course for. Who delivers
+# more gets the bigger share of next month's budget (see _split_budget).
+var taras_points := 0.0
+var taras_target := 0.0
+# Last period's race, for the summary: {"mine", "taras", "budget"}.
+var last_race := {}
 var phase := "title" # plan, event, evening, report, review, end
 var people := {}
 # Everyone who has been on the team this run, the first four and those hired since; people[p]["gone"]
@@ -161,6 +167,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 		team = []
 		money = START_MONEY
 		draft_picked.clear()
+		last_race = {}
 		for i in DRAFT_SIZE:
 			_draft_add()
 	else:
@@ -2448,6 +2455,8 @@ func end_day() -> void:
 		if t["blocked"] > 0:
 			t["blocked"] -= 1
 	_end_of_my_day()
+	if endless():
+		_taras_day()
 	shares.clear()
 	for t in tasks:
 		if t["status"] == "taras" and t["due"] <= day:
@@ -3623,7 +3632,61 @@ func salary(p: String) -> int:
 	var levels := 0
 	for cat in cv:
 		levels += cv[cat]
-	return SALARY_BASE + SALARY_PER_LEVEL * levels
+	# A raise (to keep them from Taras) stays for good.
+	return int(round((SALARY_BASE + SALARY_PER_LEVEL * levels) * (1.0 + info(p).get("raise", 0.0))))
+
+
+# ---------- Taras, the rival (endless run) ----------
+
+# Points for work delivered this period: its size, by how well it was done; a slipped deadline costs.
+const QUALITY_POINTS := {"good": 1.0, "ok": 0.7, "bad": 0.3}
+const LATE_PENALTY := 0.5
+const TARAS_BASE := 80.0
+const TARAS_GROWTH := 0.06 # a period
+const BUDGET_POT := 2000 # both departments' budget together
+const SHARE_MIN := 0.3
+const SHARE_MAX := 0.7
+const RAISE := 0.2
+
+
+func _task_points(t: Dictionary) -> float:
+	return t["size"] * QUALITY_POINTS.get(t["quality"], 0.5)
+
+
+func my_points() -> float:
+	var sum := 0.0
+	for t in tasks:
+		if t["status"] == "done" and t.get("done_day", 0) >= first_day() and t["owner"] != "taras" and not t.get("stolen", false):
+			sum += _task_points(t)
+		if t["late"] and t.get("late_day", 0) >= first_day():
+			sum -= t["size"] * LATE_PENALTY
+	return snappedf(sum, 0.1)
+
+
+# Taras's own department, plus whatever of yours went to him: handed over or claimed.
+func taras_total() -> float:
+	var sum := taras_points
+	for t in tasks:
+		if t["status"] == "done" and t.get("done_day", 0) >= first_day() and (t["owner"] == "taras" or t.get("stolen", false)):
+			sum += _task_points(t)
+	return snappedf(sum, 0.1)
+
+
+func _taras_period() -> void:
+	taras_points = 0.0
+	taras_target = TARAS_BASE * pow(1.0 + TARAS_GROWTH, period - 1)
+
+
+func _taras_day() -> void:
+	taras_points += taras_target / PERIOD_DAYS * rng.randf_range(0.6, 1.4)
+
+
+# The month is over: the pot is split by how the two departments did.
+func _split_budget() -> void:
+	var mine := maxf(0.0, my_points())
+	var his := maxf(0.0, taras_total())
+	var share := 0.5 if mine + his <= 0.0 else clampf(mine / (mine + his), SHARE_MIN, SHARE_MAX)
+	last_race = {"mine": int(round(my_points())), "taras": int(round(taras_total())), "budget": int(round(BUDGET_POT * share / 10.0)) * 10}
 
 
 func weekly_pay(p: String) -> int:
@@ -3697,8 +3760,13 @@ func draft_start() -> void:
 
 
 func _period_budget() -> void:
-	money += PERIOD_BUDGET
-	_say("boss", "money.budget", [PERIOD_BUDGET])
+	_taras_period()
+	if last_race.is_empty():
+		money += PERIOD_BUDGET
+		_say("boss", "money.budget", [PERIOD_BUDGET])
+		return
+	money += last_race["budget"]
+	_say("boss", "money.split", [last_race["mine"], last_race["taras"], last_race["budget"]])
 
 
 func _payday() -> void:
@@ -3707,6 +3775,21 @@ func _payday() -> void:
 	_narrate("money.payday", [pay, money])
 	if money < 0:
 		flags["bankrupt"] = true
+
+
+# Taras takes someone: they go to his department, salary and all, and he's the stronger for it.
+func lose_to_taras(p: String) -> void:
+	people[p]["gone"] = true
+	people[p]["to_taras"] = true
+	_drop_tasks(p)
+	taras_target += TARAS_BASE * 0.1
+	for q in team:
+		if q != p and available(q):
+			people[q]["mood"] = clampf(people[q]["mood"] - 0.3, -5.0, 5.0)
+
+
+func give_raise(p: String) -> void:
+	hires[p]["raise"] = hires[p].get("raise", 0.0) + RAISE
 
 
 func _bankrupt() -> bool:
@@ -3754,6 +3837,8 @@ func chapter_keys() -> Array:
 func _finish_chapter() -> void:
 	if _bankrupt():
 		return
+	if endless():
+		_split_budget()
 	if chapter > 1:
 		_chapter_verdict()
 		return

@@ -1273,7 +1273,7 @@ func _top_bar() -> Control:
 	style.content_margin_right = 12
 	bar.add_theme_stylebox_override("panel", style)
 	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 18)
+	top.add_theme_constant_override("separation", 14 if rules.endless() else 18)
 	bar.add_child(top)
 	top.add_child(_logo(26))
 	top.add_child(_label(Loc.t("title"), 18, COL_ON_TOP, false, true))
@@ -1284,6 +1284,7 @@ func _top_bar() -> Control:
 	top.add_child(_label(_attention_text(), 15, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
 	if rules.endless():
 		top.add_child(_label(_money_text(), 15, _money_color()))
+		top.add_child(_race_label(15))
 	else:
 		var k := rules.key_status()
 		top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
@@ -1388,6 +1389,16 @@ func _team_sidebar() -> Control:
 		menu.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		v.add_child(menu)
 	return panel
+
+
+# You against Taras this month, in the top bar; what it means is in the tooltip.
+func _race_label(size: int) -> Label:
+	var mine := int(round(rules.my_points()))
+	var his := int(round(rules.taras_total()))
+	var l := _label(Loc.t("race.label", [mine, his]), size, COL_ON_TOP if mine >= his else COL_ON_TOP_DANGER)
+	l.tooltip_text = Loc.t("race.hint")
+	l.mouse_filter = Control.MOUSE_FILTER_PASS
+	return l
 
 
 func _person_card(p: String) -> Control:
@@ -1988,6 +1999,7 @@ func _phone_top() -> Control:
 	info.add_child(_label(_attention_text(), 13, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
 	if rules.endless():
 		info.add_child(_label(_money_text(), 13, _money_color()))
+		info.add_child(_race_label(13))
 	var word := rules.boss_word()
 	info.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 13, BOSS_COLORS[word]))
 	return bar
@@ -2826,6 +2838,9 @@ func _build_end() -> void:
 	v.add_child(_label(Loc.t("ending.%s.text" % rules.ending), 16, COL_TEXT, true))
 	if rules.endless():
 		v.add_child(_label(Loc.t("period.survived", [rules.period - (0 if rules.passed() else 1)]), 18, COL_TEXT, true, true))
+		if not rules.last_race.is_empty():
+			var race: Dictionary = rules.last_race
+			v.add_child(_label(Loc.t("race.summary", [race["mine"], race["taras"], _rub(race["budget"])]), 16, COL_GOOD if race["mine"] >= race["taras"] else COL_DANGER, true))
 	v.add_child(_label(Loc.t("summary.hours", [rules.hours]), 15, COL_GOOD if rules.hours == 0 else COL_DANGER, true))
 	var done := 0
 	var late := 0
