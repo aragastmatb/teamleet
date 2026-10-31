@@ -410,7 +410,8 @@ func _lit(c: Control, target: String) -> void:
 			c.add_theme_stylebox_override(name, box)
 
 
-# On a phone the chat is a tab away, so Gena's latest tip also shows above the board until closed.
+# On a phone the chat is a tab away, so the latest tip (Gena's, or Marina's in the endless run) also
+# shows above the board until closed.
 func _tip_banner() -> Control:
 	var id: String = rules.flags.get("tip_last", "")
 	if id == "" or id == tip_closed or tab == "chat" or rules.phase != "plan" or rules.flags.get("tip_day", 0) != rules.day:
@@ -420,8 +421,8 @@ func _tip_banner() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	card.add_child(row)
-	row.add_child(_avatar("gena", 28))
-	var text := _label(Loc.t("tip." + id), 13, COL_TEXT, true)
+	row.add_child(_avatar(rules.tip_who(), 28))
+	var text := _label(Loc.t(rules.tip_key(id)), 13, COL_TEXT, true)
 	text.custom_minimum_size.x = _view_width() - 120.0
 	row.add_child(text)
 	var close := _button("✕", func(): tip_closed = id; _render(), 36, "subtle")
@@ -1615,11 +1616,13 @@ func _upgrades_card() -> Control:
 		v.add_child(_label(Loc.t("up.none"), 13, COL_MUTED, true))
 	var b := _button(Loc.t("up.button"), _open_upgrades, 0, "subtle")
 	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_lit(b, "upgrades")
 	v.add_child(b)
 	return card
 
 
 func _open_upgrades() -> void:
+	rules._tip_used("upgrades")
 	upgrades_open = true
 	_render()
 

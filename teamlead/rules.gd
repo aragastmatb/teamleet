@@ -462,6 +462,7 @@ func start_work() -> void:
 	if not endless() or phase != "plan" or step != "triage" or not pending.is_empty():
 		return
 	step = "work"
+	flags.erase("tip_hl")
 	_narrate("log.midday")
 	scenes.queue(self, "midday")
 	_say_event_lines()
@@ -3960,7 +3961,8 @@ func answer_review(choice: String) -> void:
 
 # In the first chapter Gena, who has seen leads come and go, shows the new one around: one line in the chat
 # at the moment it's needed, and the board lights up where to look until you've used it. Each tip once a run.
-const TIP_TARGETS := {"assign": "inbox", "end_day": "end_day", "talk": "talk", "decline": "inbox", "intervene": "active", "backlog": "backlog"}
+const TIP_TARGETS := {"assign": "inbox", "end_day": "end_day", "talk": "talk", "decline": "inbox", "intervene": "active", "backlog": "backlog",
+	"start_work": "end_day", "upgrades": "upgrades"}
 
 
 func update_tips() -> void:
@@ -3973,11 +3975,22 @@ func update_tips() -> void:
 	flags["tip_last"] = id
 	flags["tip_day"] = day
 	flags["tip_hl"] = TIP_TARGETS.get(id, "")
-	# In the endless run there's no Gena: Marina from HR shows the new lead around instead.
-	_say("marina" if endless() else "gena", "tip." + id)
+	# In the endless run there's no Gena: Marina from HR shows the new lead around, in her own words
+	# and about that run's rules.
+	_say(tip_who(), tip_key(id))
+
+
+func tip_who() -> String:
+	return "marina" if endless() else "gena"
+
+
+func tip_key(id: String) -> String:
+	return ("tip.run." if endless() else "tip.") + id
 
 
 func _next_tip() -> String:
+	if endless():
+		return _next_run_tip()
 	var due: Array = []
 	match phase:
 		"plan":
@@ -3997,6 +4010,40 @@ func _next_tip() -> String:
 					due.append("intervene")
 				if team.any(func(p): return available(p) and late_hours(p) > 0):
 					due.append("overtime")
+		"evening":
+			due.append("evening")
+		"report":
+			due.append("friday")
+	for id in due:
+		if not flags.has("tip_" + id):
+			return id
+	return ""
+
+
+# The endless run's first month, as Marina walks the new lead through it.
+func _next_run_tip() -> String:
+	var due: Array = []
+	match phase:
+		"plan":
+			if not pending.is_empty():
+				due.append("pushback")
+			elif step == "triage":
+				if day == 1:
+					due.append("assign")
+					if team.any(func(p): return not queue_of(p).is_empty()):
+						due.append("start_work")
+				elif flags.get("tip_day", 0) != day:
+					if inbox().any(func(t): return not penalty_of(t).is_empty()):
+						due.append("penalty")
+					if day >= 3 and not inbox().is_empty():
+						due.append("decline")
+					if day >= 4 and C.UPGRADES.keys().any(func(id): return upgrade_state(id) == "open" and money >= C.UPGRADES[id]["price"]):
+						due.append("upgrades")
+			elif step == "work" and (flags.get("tip_day", 0) != day or day == 1):
+				due.append("midday")
+		"standup":
+			if standup.get("lines", []).any(func(l): return l["topic"] == "pulled"):
+				due.append("standup")
 		"evening":
 			due.append("evening")
 		"report":
