@@ -116,6 +116,11 @@ var after_events := "plan"
 var arriving_midday: Array = []
 # Cards missed deadlines have put into the deck for good (the endless run's curses).
 var curses: Array = []
+# The endless run's upgrade tree (C.UPGRADES): id -> {"state": "building"|"done", "done": [card ids]},
+# the effects you have from it, and the upkeep cards finished upgrades keep in the deck.
+var upgrades := {}
+var perks: Array = []
+var upkeep: Array = []
 var debt := 0
 var debt_days := 0
 var my_sick := 0
@@ -346,7 +351,11 @@ const PULL_ALONE := 1.5 # on a day without you everyone's keener
 
 
 func pull(p: String) -> float:
-	return people[p].get("pull", PULL_BASE.get(archetype(p), 0.3))
+	return people[p].get("pull", _pull_nature(p))
+
+
+func _pull_nature(p: String) -> float:
+	return PULL_BASE.get(archetype(p), 0.3) + perk_add("initiative")
 
 
 func _nudge_pull(p: String, by: float) -> void:
@@ -401,7 +410,7 @@ func _team_pulls() -> void:
 		return
 	for p in team:
 		if available(p):
-			_nudge_pull(p, (PULL_BASE.get(archetype(p), 0.3) - pull(p)) * PULL_SETTLE)
+			_nudge_pull(p, (_pull_nature(p) - pull(p)) * PULL_SETTLE)
 	for p in team:
 		if _will_pull(p, 1.0):
 			var t := _pull_choice(p)
@@ -497,7 +506,7 @@ func _arrivals() -> Array:
 			for id in out:
 				if C.TASKS[id]["cat"] == info["cat"]:
 					same += 1
-			if same < C.MAX_SAME_KIND and day + info["size"] - 1 <= last_day() and _can_come_again(deck[i]) and not out.has(deck[i]) and _improved_by("remove", deck[i]).is_empty() and _bank_here(deck[i]):
+			if same < C.MAX_SAME_KIND and (endless() or day + info["size"] - 1 <= last_day()) and _can_come_again(deck[i]) and _freq_ok(deck[i]) and not out.has(deck[i]) and _improved_by("remove", deck[i]).is_empty() and _bank_here(deck[i]):
 				picked = i
 				break
 		if picked < 0:
@@ -537,6 +546,7 @@ func _refill_deck() -> void:
 	if flags.has("tech_debt_done"):
 		fresh = fresh.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
 	fresh.append_array(curses)
+	fresh.append_array(upkeep)
 	fresh = fresh.filter(func(id): return _improved_by("remove", id).is_empty() and _bank_here(id))
 	for i in range(fresh.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
@@ -559,11 +569,21 @@ func add_task(id: String) -> void:
 		return
 	var size: float = info["size"] * flags.get("shrink:" + id, 1.0)
 	for imp in _improved_by("shrink", id):
+		if imp == "perk":
+			continue
 		for e in C.IMPROVEMENTS[imp]["effects"]:
 			if e["kind"] == "shrink":
 				size *= e["factor"]
+	for e in perks:
+		if e["kind"] == "shrink" and e["targets"].any(func(target): return C.covers(target, id)):
+			size *= e["value"]
 	# Near the end of the probation, deadlines squeeze into what's left of it.
-	add_task_raw(id, info["cat"], maxf(0.5, size), mini(day + info["due"] + ramp_now()["slack"], last_day()), info["public"], info["from"])
+	var due: int = day + info["due"] + ramp_now()["slack"]
+	if endless():
+		due += int(perk_add("due", info["cat"]))
+	else:
+		due = mini(due, last_day())
+	add_task_raw(id, info["cat"], maxf(0.5, size), due, info["public"], info["from"])
 	_say(info["from"], "task.%s.ask" % id)
 
 
@@ -1472,7 +1492,7 @@ func _maybe_sell() -> void:
 	for ch in range(1, (C.CHAPTERS.size() if endless() else chapter) + 1):
 		pool.append_array(C.BANK_POOL.get(ch, []))
 	pool = pool.filter(func(b): return not banks.has(b) and not flags.has("bank_lost_" + b))
-	if pool.is_empty() or rng.randf() > SALE_CHANCE + REPUTATION_SALE * maxf(0.0, reputation):
+	if pool.is_empty() or rng.randf() > SALE_CHANCE + REPUTATION_SALE * maxf(0.0, reputation) + perk_add("sales"):
 		return
 	var b: String = pool[0]
 	reputation = 0.0
@@ -1512,6 +1532,10 @@ const NO_DEADLINE := 100000 # improvements and initiatives: done when they're do
 # The improvements done that act on this card in this way ("remove", "shrink", "self").
 func _improved_by(kind: String, id: String) -> Array:
 	var out: Array = []
+	for e in perks:
+		if e["kind"] == kind and e["targets"].any(func(target): return C.covers(target, id)):
+			out.append("perk")
+			break
 	for imp in improved:
 		for e in C.IMPROVEMENTS[imp]["effects"]:
 			if e["kind"] == kind and e["targets"].any(func(target): return C.covers(target, id)):
@@ -1522,6 +1546,8 @@ func _improved_by(kind: String, id: String) -> Array:
 
 # Keep three improvements on offer, next in line first.
 func _fill_backlog() -> void:
+	if endless():
+		return
 	var open := tasks.filter(func(t): return t.get("backlog", false) and t["status"] == "inbox").size()
 	var ids: Array = []
 	for ch in range(1, (C.CHAPTERS.size() if endless() else chapter) + 1):
@@ -2475,7 +2501,7 @@ func spend_attention(n: int = 1) -> void:
 
 # What each action takes in the endless run. The story keeps its old prices: one point for managing,
 # and handing out work is free.
-const COSTS := {"assign": 1, "pair": 1, "decline": 1, "react": 1, "sit": 2, "talk": 2, "intervene": 1, "boss": 2, "people": 2, "interview": 2, "fire": 2}
+const COSTS := {"buy": 1, "assign": 1, "pair": 1, "decline": 1, "react": 1, "sit": 2, "talk": 2, "intervene": 1, "boss": 2, "people": 2, "interview": 2, "fire": 2}
 const FREE_IN_STORY := ["assign", "pair", "decline"]
 
 
@@ -2487,7 +2513,7 @@ func cost(kind: String) -> int:
 
 # How much you may borrow from tomorrow in one day.
 func borrow_cap() -> int:
-	return ceili(max_attention() / 2.0)
+	return ceili(C.PROFILES[profile]["attention"] * (2 if endless() else 1) / 2.0) + int(perk_add("borrow"))
 
 
 func can_afford(n: int) -> bool:
@@ -2720,6 +2746,7 @@ func end_day() -> void:
 	_end_of_my_day()
 	if endless():
 		_taras_day()
+		_upgrade_progress()
 	shares.clear()
 	for t in tasks:
 		if t["status"] == "taras" and t["due"] <= day:
@@ -2836,6 +2863,117 @@ func _late(t: Dictionary) -> void:
 	if flags["complaints_" + who] == 2:
 		boss -= 1
 		_narrate("late.escalated", [], {"who": "@name.%s.nom" % who, "who_gen": "@name.%s.gen" % who})
+
+
+# ---------- the upgrade tree ----------
+
+const UPGRADE_DECK_AHEAD := 6 # a bought upgrade's cards are shuffled into the next this many of the deck
+
+
+func upgrade_state(id: String) -> String:
+	if upgrades.has(id):
+		return upgrades[id]["state"]
+	for r in C.UPGRADES[id]["requires"]:
+		if upgrade_state(r) != "done":
+			return "locked"
+	return "open"
+
+
+func can_buy(id: String) -> bool:
+	return endless() and phase == "plan" and pending.is_empty() and upgrade_state(id) == "open" \
+		and money >= C.UPGRADES[id]["price"] and can_afford(cost("buy"))
+
+
+func buy_upgrade(id: String) -> void:
+	if not can_buy(id):
+		return
+	var up: Dictionary = C.UPGRADES[id]
+	spend_attention(cost("buy"))
+	money -= up["price"]
+	upgrades[id] = {"state": "building", "done": []}
+	_apply_effects(up["start"])
+	for card in up["cards"]:
+		deck.insert(rng.randi_range(0, mini(UPGRADE_DECK_AHEAD, deck.size())), card)
+	history.append({"who": "you", "key": "up.bought", "args": [up["price"]], "names": {"up": "@up.%s.name" % id}, "day": day})
+
+
+# How far its rollout has got: implementation cards done well enough, out of all of them.
+func upgrade_done_count(id: String) -> int:
+	return upgrades.get(id, {}).get("done", []).size()
+
+
+# Implementation cards finished today: done badly, one goes back in the deck; all done, the upgrade works.
+func _upgrade_progress() -> void:
+	for t in tasks:
+		if t["status"] != "done" or t.get("up_counted", false) or not t["id"].begins_with("up_"):
+			continue
+		t["up_counted"] = true
+		var id: String = t["id"].substr(3, t["id"].rfind("_") - 3)
+		if not upgrades.has(id):
+			continue
+		if t["quality"] == "bad":
+			deck.insert(rng.randi_range(0, mini(UPGRADE_DECK_AHEAD, deck.size())), t["id"])
+			_narrate("up.redo", [], {"task": "@taskname." + t["id"]})
+			continue
+		if not upgrades[id]["done"].has(t["id"]):
+			upgrades[id]["done"].append(t["id"])
+		if upgrades[id]["state"] == "building" and upgrades[id]["done"].size() >= C.UPGRADES[id]["cards"].size():
+			_complete_upgrade(id)
+
+
+func _complete_upgrade(id: String) -> void:
+	var up: Dictionary = C.UPGRADES[id]
+	upgrades[id]["state"] = "done"
+	_apply_effects(up["final"])
+	var old: String = up["replaces"]
+	if old != "" and C.UPGRADES.has(old):
+		for card in C.UPGRADES[old]["maint"]:
+			upkeep.erase(card)
+			deck.erase(card)
+	for card in up["maint"]:
+		upkeep.append(card)
+		deck.insert(rng.randi_range(0, deck.size()), card)
+	_narrate("up.done", [], {"up": "@up.%s.name" % id})
+
+
+func _apply_effects(effects: Array) -> void:
+	for e in effects:
+		match e["kind"]:
+			"money":
+				money += int(e["value"])
+			"clean":
+				# Only what missed deadlines added goes; the deck's own copies stay.
+				for target in e["targets"]:
+					var gone: Array = curses.filter(func(c): return C.covers(target, c))
+					curses = curses.filter(func(c): return not C.covers(target, c))
+					for c in gone:
+						deck.erase(c)
+				_narrate("up.cleaned")
+			_:
+				perks.append(e)
+
+
+# Multiplying effects (speed, freq, learn, newbie) for this kind of work, or all of it.
+func perk_mult(kind: String, cat: String = "") -> float:
+	var m := 1.0
+	for e in perks:
+		if e["kind"] == kind and (e["cat"] == "" or e["cat"] == cat):
+			m *= e["value"]
+	return m
+
+
+func perk_add(kind: String, cat: String = "") -> float:
+	var sum := 0.0
+	for e in perks:
+		if e["kind"] == kind and (e["cat"] == "" or e["cat"] == cat):
+			sum += e["value"]
+	return sum
+
+
+# Fewer cards of a kind come in: each draw of one is let through only so often.
+func _freq_ok(id: String) -> bool:
+	var m := perk_mult("freq", C.TASKS[id]["cat"])
+	return m >= 1.0 or rng.randf() < m
 
 
 # ---------- penalties ----------
@@ -2986,12 +3124,12 @@ func _speed(p: String, t: Dictionary) -> float:
 		s *= 1.05
 	# Told to hurry or to take care when you stepped in.
 	s *= t.get("pace", 1.0)
-	s *= tools_factor(p)
+	s *= tools_factor(p) * perk_mult("speed", t["cat"])
 	if archetype(p) == "plodder":
 		s *= PLODDER_PACE
 	var share: float = shares.get(t["uid"], 0.0)
 	# New people are slow at first, unless someone who knows the work sits with them.
-	if day - st["joined"] < NEWBIE_DAYS and not (share > 0.0 and people.has(t["helper"]) and people[t["helper"]]["skills"][t["cat"]] >= 2):
+	if day - st["joined"] < NEWBIE_DAYS * perk_mult("newbie") and not (share > 0.0 and people.has(t["helper"]) and people[t["helper"]]["skills"][t["cat"]] >= 2):
 		s *= 0.5
 	if share > 0.0 and people.has(t["helper"]):
 		var hs: int = people[t["helper"]]["skills"][t["cat"]]
@@ -3136,7 +3274,7 @@ func _work(p: String) -> void:
 			var spend := minf(time, (t["size"] - t["progress"]) / step)
 			time -= spend
 			t["progress"] += step * spend
-			var quality: float = skill + st["mood"] * 0.1 + rng.randf_range(-0.7, 0.7)
+			var quality: float = skill + st["mood"] * 0.1 + rng.randf_range(-0.7, 0.7) + perk_add("quality", t["cat"])
 			var h: String = t["helper"]
 			var share: float = shares.get(t["uid"], 0.0)
 			if share > 0.0:
@@ -3392,6 +3530,7 @@ func _learn(p: String, cat: String, amount: float) -> void:
 	var st: Dictionary = people[p]
 	if info(p).get("fast_learner", false):
 		amount *= 1.6
+	amount *= perk_mult("learn")
 	st["xp"][cat] += amount
 	var need: float = XP_BASE + XP_PER_SKILL * st["skills"][cat]
 	if st["xp"][cat] >= need and st["skills"][cat] < 4:
@@ -3466,7 +3605,9 @@ func my_skill(cat: String) -> int:
 
 # The endless run lives on attention: almost everything costs it, so the day holds twice as much.
 func max_attention() -> int:
-	return C.PROFILES[profile]["attention"] * (2 if endless() else 1)
+	if not endless():
+		return C.PROFILES[profile]["attention"]
+	return C.PROFILES[profile]["attention"] * 2 + int(perk_add("attention"))
 
 
 # Irina's letter for what she likes; the chaotic one likes what an E likes.
@@ -3811,7 +3952,7 @@ func _tip_used(target: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 7
+const SAVE_VERSION := 8
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.

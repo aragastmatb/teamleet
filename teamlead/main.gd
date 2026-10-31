@@ -91,6 +91,7 @@ var text_scale := "normal"
 # The menu: on the title screen, and over the game when opened from the top bar (or Esc).
 # menu_page is "" for the list itself, or "settings", "about", "confirm_new".
 var menu_open := false
+var upgrades_open := false
 var menu_page := ""
 var heard := 0
 var last_phase := "title"
@@ -730,6 +731,8 @@ func _render() -> void:
 				_build_report()
 			"end", "chapter_end":
 				_build_end()
+	if upgrades_open and rules.endless() and rules.phase in ["plan", "event", "standup"]:
+		_build_upgrades()
 	if menu_open:
 		_build_menu_overlay()
 	_let_touches_through(ui)
@@ -1405,6 +1408,10 @@ func _team_sidebar() -> Control:
 		v.add_child(_section(Loc.t("hire.section") + " · " + (Loc.t("money.fee", [_rub(rules.HIRE_FEE)]) if rules.endless() else Loc.t("hire.openings_left", [rules.openings]))))
 		for c in rules.candidates:
 			v.add_child(_candidate_card(c))
+	if rules.endless():
+		v.add_child(_spacer(4))
+		v.add_child(_section(Loc.t("up.section")))
+		v.add_child(_upgrades_card())
 	v.add_child(_spacer(4))
 	v.add_child(_section(Loc.t("boss_header")))
 	v.add_child(_boss_card())
@@ -1589,6 +1596,182 @@ func _hire(id: String) -> void:
 func _reject_candidate(id: String) -> void:
 	rules.reject_candidate(id)
 	_render()
+
+
+# ---------- the upgrade tree ----------
+
+# The sidebar's short view: what's being rolled out, and the way into the tree.
+func _upgrades_card() -> Control:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 10))
+	var v := _vbox(4)
+	card.add_child(v)
+	var building := 0
+	for id in C.UPGRADES:
+		if rules.upgrade_state(id) == "building":
+			building += 1
+			v.add_child(_label(Loc.t("up.building_line", [Loc.t("up.%s.name" % id), rules.upgrade_done_count(id), C.UPGRADES[id]["cards"].size()]), 13, COL_TEXT, true))
+	if building == 0:
+		v.add_child(_label(Loc.t("up.none"), 13, COL_MUTED, true))
+	var b := _button(Loc.t("up.button"), _open_upgrades, 0, "subtle")
+	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	v.add_child(b)
+	return card
+
+
+func _open_upgrades() -> void:
+	upgrades_open = true
+	_render()
+
+
+func _close_upgrades() -> void:
+	upgrades_open = false
+	_render()
+
+
+func _buy_upgrade(id: String) -> void:
+	rules.buy_upgrade(id)
+	_render()
+
+
+func _build_upgrades() -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(0.035, 0.118, 0.259, 0.7)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(dim)
+	var view := get_viewport().get_visible_rect().size
+	var w := view.x - (16.0 if mobile else 64.0)
+	var h := view.y - (16.0 if mobile else 64.0)
+	var panel := PanelContainer.new()
+	panel.anchor_left = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -w / 2.0
+	panel.offset_right = w / 2.0
+	panel.offset_top = -h / 2.0
+	panel.offset_bottom = h / 2.0
+	var style := _box(COL_SURFACE, COL_BORDER, 1, 0)
+	style.set_corner_radius_all(16)
+	panel.add_theme_stylebox_override("panel", style)
+	ui.add_child(panel)
+	var right := _vbox(0)
+	panel.add_child(right)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	var titles := _vbox(4)
+	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	titles.add_child(_label(Loc.t("up.title"), 22, COL_TEXT, false, true))
+	titles.add_child(_label(Loc.t("up.hint") + "   " + _money_text() + "   " + _attention_text(), 13, COL_MUTED, true))
+	head.add_child(titles)
+	var close := _button(Loc.t("up.close"), _close_upgrades, 0, "subtle")
+	close.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	head.add_child(close)
+	var head_box := _padded(head, 18 if mobile else 28, 16)
+	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	right.add_child(head_box)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# Five branches side by side when they fit, one under another on a phone.
+	var side_by_side := not mobile and w >= 1100.0
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED if side_by_side or mobile else ScrollContainer.SCROLL_MODE_AUTO
+	right.add_child(scroll)
+	scrolls["upgrades"] = scroll
+	var columns: Container = HBoxContainer.new() if not mobile else _vbox(16)
+	if not mobile:
+		columns.add_theme_constant_override("separation", 12)
+	var body := _padded(columns, 18 if mobile else 28, 4)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(body)
+	for branch in C.UPGRADE_BRANCHES:
+		var col := _vbox(10)
+		col.custom_minimum_size.x = 0.0 if mobile or side_by_side else 240.0
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.size_flags_stretch_ratio = 1.0
+		col.add_child(_section(Loc.t("up.branch." + branch)))
+		var ids: Array = C.UPGRADES.keys().filter(func(id): return C.UPGRADES[id]["branch"] == branch)
+		ids.sort_custom(func(a, b): return C.UPGRADES[a]["order"] < C.UPGRADES[b]["order"])
+		for id in ids:
+			col.add_child(_upgrade_tile(id))
+		columns.add_child(col)
+	right.add_child(_spacer(12))
+
+
+func _upgrade_tile(id: String) -> Control:
+	var up: Dictionary = C.UPGRADES[id]
+	var state := rules.upgrade_state(id)
+	var tile := PanelContainer.new()
+	var fill := COL_BG if state == "locked" else (COL_SELECTED if state == "building" else COL_SURFACE)
+	var style := _box(fill, COL_GOOD if state == "done" else (COL_FOCUS if state == "open" else COL_BORDER), 1, 12)
+	style.set_corner_radius_all(10)
+	tile.add_theme_stylebox_override("panel", style)
+	var v := _vbox(5)
+	tile.add_child(v)
+	v.add_child(_label(Loc.t("up.%s.name" % id), 15, COL_FAINT if state == "locked" else COL_TEXT, true, true))
+	if state == "building":
+		v.add_child(_label(Loc.t("up.progress", [rules.upgrade_done_count(id), up["cards"].size()]), 12, COL_PRIMARY, true, true))
+	elif state == "done":
+		v.add_child(_label(Loc.t("up.state.done"), 12, COL_GOOD, true, true))
+	v.add_child(_label(Loc.t("up.%s.about" % id), 12, COL_MUTED, true))
+	if not up["start"].is_empty():
+		v.add_child(_label(Loc.t("up.start", [_fx_list(up["start"])]), 12, COL_TEXT, true))
+	if not up["final"].is_empty():
+		v.add_child(_label(Loc.t("up.final", [_fx_list(up["final"])]), 12, COL_TEXT, true))
+	v.add_child(_label(Loc.t("up.cards", [up["cards"].size()]), 12, COL_MUTED, true))
+	if not up["maint"].is_empty():
+		v.add_child(_label(Loc.t("up.maint", [up["maint"].size()]), 12, COL_WARN, true))
+	if up["replaces"] != "":
+		v.add_child(_label(Loc.t("up.replaces", [Loc.t("up.%s.name" % up["replaces"])]), 12, COL_GOOD, true))
+	if state == "locked":
+		var names := PackedStringArray()
+		for r in up["requires"]:
+			if rules.upgrade_state(r) != "done":
+				names.append("«%s»" % Loc.t("up.%s.name" % r))
+		v.add_child(_label(Loc.t("up.needs", [", ".join(names)]), 12, COL_FAINT, true))
+	if state in ["open", "locked"]:
+		var b := _button(Loc.t("up.buy", [_rub(up["price"])]) + _cost_mark(rules.cost("buy")), _buy_upgrade.bind(id), 0, "primary" if rules.can_buy(id) else "")
+		b.disabled = not rules.can_buy(id)
+		v.add_child(b)
+	return tile
+
+
+func _fx_list(effects: Array) -> String:
+	var parts := PackedStringArray()
+	for e in effects:
+		parts.append(_fx_text(e))
+	return "; ".join(parts)
+
+
+func _fx_text(e: Dictionary) -> String:
+	var cat: String = Loc.t("cat." + e["cat"]) if e["cat"] != "" else ""
+	var pct := int(round(absf(e["value"] - 1.0) * 100.0))
+	match e["kind"]:
+		"speed", "learn":
+			return Loc.t("fx." + e["kind"], [cat, pct] if e["kind"] == "speed" else [pct])
+		"freq":
+			return Loc.t("fx.freq", [cat, pct])
+		"due":
+			return Loc.t("fx.due", [cat, int(e["value"])])
+		"quality":
+			return Loc.t("fx.quality", [cat])
+		"remove", "self":
+			return Loc.t("fx." + e["kind"], [_fx_targets(e)])
+		"shrink":
+			return Loc.t("fx.shrink", [pct, _fx_targets(e)])
+		"attention", "borrow", "money":
+			return Loc.t("fx." + e["kind"], [int(e["value"])])
+	return Loc.t("fx." + e["kind"])
+
+
+# The cards an effect names, as their titles (a template by one of its cards).
+func _fx_targets(e: Dictionary) -> String:
+	var names := PackedStringArray()
+	for target in e["targets"]:
+		for id in C.TASKS:
+			if id == target or C.TASKS[id]["tpl"] == target:
+				names.append("«%s»" % Loc.t("taskname." + id))
+				break
+	return ", ".join(names)
 
 
 # The platform as a business: which banks are with us and how they feel, and what's been improved.
@@ -1834,7 +2017,7 @@ func _on_card_input(event: InputEvent, uid: int) -> void:
 
 
 func _due_text(t: Dictionary) -> String:
-	if t.get("backlog", false) or t["id"].begins_with("init_"):
+	if t.get("backlog", false) or t["id"].begins_with("init_") or t["due"] >= rules.NO_DEADLINE:
 		return Loc.t("due.none")
 	if t["late"]:
 		return Loc.t("due.late")

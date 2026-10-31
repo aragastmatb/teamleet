@@ -249,6 +249,7 @@ static func _static_init() -> void:
 				_add_card(row, ch, v)
 	_load_improvements()
 	_build_endless_deck()
+	_load_upgrades()
 	for b in BANKS:
 		for lang in ["ru", "en"]:
 			TASK_TEXT[lang]["bankphrase." + b] = bank_phrase(b, lang)
@@ -256,6 +257,109 @@ static func _static_init() -> void:
 		for b in TASKS[id]["then"]:
 			if not TASKS.has(b["next"]):
 				push_error("%s leads to %s, which isn't in %s" % [id, b["next"], TASKS_PATH])
+
+
+# The endless run's upgrade tree lives in data/upgrades.tsv. Columns: id, branch, requires (ids, all of
+# them done first), price (thousands), cards, start, final, maint, replaces, name/about in both languages.
+# Buying one puts its implementation cards (`cards`: "cat:size;cat:size") into the deck and gives the
+# `start` effect at once; once every one of them is done it gives the `final` effect, and its maintenance
+# cards (`maint`, same form) join the deck for good, taking out those of the upgrade it `replaces`.
+# Implementation cards have no deadline; one done badly comes back to be redone.
+# Effects, ";"-separated (cat is pipelines, infra, portal or support):
+#   speed:cat*1.1   that work goes faster        freq:cat*0.8    fewer such cards come
+#   due:cat+1       their deadlines are further  quality:cat+0.3 better work on them
+#   remove:a,b / shrink:a,b*0.5 / self:a,b     as in improvements.tsv
+#   attention+1     a point more a day           borrow+1        borrow one more from tomorrow
+#   initiative+0.1  people grab work more        learn*1.3       everyone learns faster
+#   newbie*0.6      newcomers settle in sooner   sales+0.1       banks sign up more readily
+#   clean:#tag      the deck's cards with that tag that missed deadlines put there go away
+#   money+100       money at once
+const UPGRADES_PATH := "res://data/upgrades.tsv"
+const UPGRADE_BRANCHES := ["pipelines", "infra", "portal", "support", "team"]
+static var UPGRADES := {}
+
+
+static func _load_upgrades() -> void:
+	var f := FileAccess.open(UPGRADES_PATH, FileAccess.READ)
+	if f == null:
+		push_error("Can't read " + UPGRADES_PATH)
+		return
+	var header := f.get_csv_line("\t")
+	var order := 0
+	while not f.eof_reached():
+		var cells := f.get_csv_line("\t")
+		if cells.size() < header.size() or cells[0].strip_edges() == "":
+			continue
+		var row := {}
+		for i in header.size():
+			row[header[i]] = cells[i].strip_edges()
+		var id: String = row["id"]
+		var up := {"branch": row["branch"], "price": int(row["price"]), "order": order,
+			"requires": Array(row["requires"].split(",", false)).map(func(x): return x.strip_edges()),
+			"start": parse_effects(row["start"]), "final": parse_effects(row["final"]),
+			"replaces": row["replaces"], "cards": [], "maint": []}
+		order += 1
+		for lang in ["ru", "en"]:
+			TASK_TEXT[lang]["up.%s.name" % id] = row["name_" + lang]
+			TASK_TEXT[lang]["up.%s.about" % id] = row["about_" + lang]
+		var specs: Array = Array(row["cards"].split(";", false))
+		for i in specs.size():
+			var card := "up_%s_%d" % [id, i + 1]
+			_upgrade_card(card, specs[i], NO_DEADLINE_DAYS, "")
+			for lang in ["ru", "en"]:
+				TASK_TEXT[lang]["taskname." + card] = "%s (%d/%d)" % [row["name_" + lang], i + 1, specs.size()]
+				TASK_TEXT[lang]["task.%s.ask" % card] = ("Внедряем «%s», шаг %d из %d." if lang == "ru" else "Rolling out \"%s\", step %d of %d.") % [row["name_" + lang], i + 1, specs.size()]
+			up["cards"].append(card)
+		var maint: Array = Array(row["maint"].split(";", false))
+		for i in maint.size():
+			var card := "upm_%s_%d" % [id, i + 1]
+			_upgrade_card(card, maint[i], MAINT_DUE, "incident")
+			for lang in ["ru", "en"]:
+				TASK_TEXT[lang]["taskname." + card] = ("%s: обслуживание" if lang == "ru" else "%s: upkeep") % row["name_" + lang]
+				TASK_TEXT[lang]["task.%s.ask" % card] = ("Плановые работы по «%s»." if lang == "ru" else "Routine work on \"%s\".") % row["name_" + lang]
+			up["maint"].append(card)
+		UPGRADES[id] = up
+	for id in UPGRADES:
+		for r in UPGRADES[id]["requires"] + ([UPGRADES[id]["replaces"]] if UPGRADES[id]["replaces"] != "" else []):
+			if not UPGRADES.has(r):
+				push_error("%s needs %s, which isn't in %s" % [id, r, UPGRADES_PATH])
+
+
+const NO_DEADLINE_DAYS := 100000
+const MAINT_DUE := 3
+
+
+static func _upgrade_card(id: String, spec: String, due: int, penalty: String) -> void:
+	var parts := spec.strip_edges().split(":")
+	TASKS[id] = {"cat": parts[0], "size": float(parts[1]) if parts.size() > 1 else 1.0, "due": due, "public": false,
+		"from": "boss", "kind": "upgrade", "tags": ["upgrade"], "tpl": id, "then": [], "bank": "", "penalty": penalty}
+
+
+# "speed:infra*1.1; remove:a,b; attention+1" -> [{"kind", "cat", "targets", "value"}, ...]
+static func parse_effects(text: String) -> Array:
+	var out: Array = []
+	for part in text.split(";", false):
+		part = part.strip_edges()
+		var e := {"kind": "", "cat": "", "targets": [], "value": 0.0}
+		var body := part
+		var sign_at := -1
+		for op in ["*", "+"]:
+			var i := part.rfind(op)
+			if i > sign_at:
+				sign_at = i
+		if sign_at > 0:
+			e["value"] = float(part.substr(sign_at + 1))
+			body = part.substr(0, sign_at)
+		var kind_rest := body.split(":", false)
+		e["kind"] = kind_rest[0].strip_edges()
+		if kind_rest.size() > 1:
+			var rest: String = kind_rest[1].strip_edges()
+			if e["kind"] in ["speed", "freq", "due", "quality"]:
+				e["cat"] = rest
+			else:
+				e["targets"] = Array(rest.split(",", false)).map(func(x): return x.strip_edges())
+		out.append(e)
+	return out
 
 
 # The endless run's one deck: every chapter's dealt cards, each as many times as its row says, except
