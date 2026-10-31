@@ -688,6 +688,13 @@ func _render() -> void:
 			_build_title()
 		_let_touches_through(ui)
 		return
+	if rules.phase == "draft":
+		_build_draft()
+		if menu_open:
+			_build_menu_overlay()
+		_let_touches_through(ui)
+		_restore_scrolls()
+		return
 	if mobile:
 		_build_phone()
 	else:
@@ -1088,6 +1095,128 @@ func _build_setup() -> void:
 		v.add_child(buttons)
 
 
+# Thousands of roubles, grouped: 1 500.
+func _rub(n: int) -> String:
+	var digits := str(absi(n))
+	var out := ""
+	while digits.length() > 3:
+		out = " " + digits.substr(digits.length() - 3) + out
+		digits = digits.substr(0, digits.length() - 3)
+	return ("-" if n < 0 else "") + digits + out
+
+
+func _money_text() -> String:
+	return Loc.t("money.bar", [_rub(rules.money), _rub(rules.payroll())])
+
+
+func _money_color() -> Color:
+	return COL_ON_TOP_DANGER if rules.weeks_left() < 2 else COL_ON_TOP
+
+
+# Before the first day of an endless run: pick the team from the CVs Marina brought.
+func _build_draft() -> void:
+	var outer := _vbox(0)
+	outer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(outer)
+	var scroll := _scroll("draft")
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_child(scroll)
+	var center := CenterContainer.new()
+	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(center)
+	var width := mini(960, int(_view_width()) - 32)
+	var v := _vbox(14)
+	v.custom_minimum_size.x = width
+	center.add_child(_padded(v, 0, 24))
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	v.add_child(head)
+	head.add_child(_logo(32))
+	head.add_child(_label(Loc.t("draft.title"), 26, COL_TEXT, false, true))
+	v.add_child(_label(Loc.t("draft.hint", [_rub(rules.PERIOD_BUDGET)]), 15, COL_MUTED, true))
+	var cols := 3 if width >= 760 else (2 if width >= 500 else 1)
+	var grid := GridContainer.new()
+	grid.columns = cols
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 12)
+	v.add_child(grid)
+	for c in rules.candidates:
+		grid.add_child(_draft_card(c["id"], (width - 12 * (cols - 1)) / float(cols)))
+	var month := rules.draft_payroll()
+	var sum := Loc.t("draft.sum", [rules.draft_picked.size(), _rub(month), _rub(rules.money), _rub(rules.PERIOD_BUDGET)])
+	v.add_child(_label(sum, 16, COL_DANGER if month > rules.PERIOD_BUDGET else COL_TEXT, true, true))
+	var buttons := _flow(12, 12)
+	var go := _button(Loc.t("draft.start"), _draft_start, 160 if mobile else 260, "primary")
+	go.disabled = rules.draft_picked.is_empty()
+	buttons.add_child(go)
+	var again := _button(Loc.t("draft.reroll", [_rub(rules.DRAFT_REROLL)]), _draft_reroll, 0)
+	again.disabled = rules.money < rules.DRAFT_REROLL
+	buttons.add_child(again)
+	if mobile:
+		var bar := PanelContainer.new()
+		var style := _flat(COL_SURFACE)
+		style.border_color = COL_BORDER
+		style.border_width_top = 1
+		style.content_margin_left = 16
+		style.content_margin_right = 16
+		style.content_margin_top = 10
+		style.content_margin_bottom = 12
+		bar.add_theme_stylebox_override("panel", style)
+		bar.add_child(buttons)
+		outer.add_child(bar)
+	else:
+		v.add_child(buttons)
+
+
+func _draft_card(id: String, w: float) -> Control:
+	var on: bool = rules.draft_picked.has(id)
+	var card := PanelContainer.new()
+	card.custom_minimum_size.x = w
+	card.add_theme_stylebox_override("panel", _box(COL_SELECTED if on else COL_SURFACE, COL_PRIMARY if on else COL_BORDER, 2 if on else 1, 14))
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var v := _vbox(6)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(v)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(head)
+	head.add_child(_avatar(id, 32))
+	var names := _vbox(0)
+	names.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(names)
+	names.add_child(_label(Loc.person(id), 16, COL_PRIMARY if on else COL_TEXT, false, true))
+	names.add_child(_label(Loc.t("money.asks", [_rub(rules.salary(id))]), 13, COL_MUTED))
+	var skills := _flow(4, 4)
+	skills.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(skills)
+	for cat in C.CATEGORIES:
+		var colors: Array = CAT_COLORS[cat]
+		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % rules.cv_level(id, cat))], colors[0], colors[1], _cat_icon(cat)))
+	v.add_child(_label(Loc.t("draft.picked" if on else "draft.pick"), 13, COL_PRIMARY if on else COL_FAINT))
+	card.gui_input.connect(_on_draft_input.bind(id))
+	return card
+
+
+func _on_draft_input(event: InputEvent, id: String) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		_play("select")
+		rules.draft_toggle(id)
+		_render()
+
+
+func _draft_reroll() -> void:
+	rules.draft_reroll()
+	_render()
+
+
+func _draft_start() -> void:
+	rules.draft_start()
+	_clear_selection()
+	_render()
+
+
 func _option_grid(kind: String, values: Array, chosen: String, width: int) -> Control:
 	var cols := 3 if width >= 700 else 1
 	var grid := GridContainer.new()
@@ -1153,8 +1282,11 @@ func _top_bar() -> Control:
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(gap)
 	top.add_child(_label(_attention_text(), 15, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
-	var k := rules.key_status()
-	top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
+	if rules.endless():
+		top.add_child(_label(_money_text(), 15, _money_color()))
+	else:
+		var k := rules.key_status()
+		top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
 	var word := rules.boss_word()
 	top.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 15, BOSS_COLORS[word]))
 	top.add_child(_button(Loc.t("menu.button"), _open_menu, 0, "on_top"))
@@ -1240,7 +1372,8 @@ func _team_sidebar() -> Control:
 		v.add_child(_label(Loc.t("gone_list", [", ".join(gone)]), 12, COL_FAINT, true))
 	if rules.openings > 0 or not rules.candidates.is_empty():
 		v.add_child(_spacer(4))
-		v.add_child(_section(Loc.t("hire.section") + " · " + Loc.t("hire.openings_left", [rules.openings])))
+		# (in the endless run there are no openings: candidates come anyway, and a hire costs money)
+		v.add_child(_section(Loc.t("hire.section") + " · " + (Loc.t("money.fee", [_rub(rules.HIRE_FEE)]) if rules.endless() else Loc.t("hire.openings_left", [rules.openings]))))
 		for c in rules.candidates:
 			v.add_child(_candidate_card(c))
 	v.add_child(_spacer(4))
@@ -1295,6 +1428,8 @@ func _person_card(p: String) -> Control:
 	var trust := _trust_word(p)
 	if trust != "":
 		state.add_child(_label("· " + Loc.t("trust." + trust), 13, COL_GOOD if trust == "trusts" else COL_DANGER))
+	if rules.endless():
+		v.add_child(_label(Loc.t("money.salary", [_rub(rules.salary(p))]), 12, COL_MUTED, true))
 	var known: Dictionary = st["known"]
 	var drive_text: String = Loc.t("drive." + rules.info(p)["drive"]) if known.has("drive") else Loc.t("unknown")
 	v.add_child(_label(Loc.t("known.drive", [drive_text]), 12, COL_MUTED, true))
@@ -1367,6 +1502,8 @@ func _candidate_card(c: Dictionary) -> Control:
 	head.add_child(names)
 	names.add_child(_label(Loc.person(id), 15, COL_TEXT, false, true))
 	names.add_child(_label(Loc.t("hire.waits", [maxi(0, c["until"] - rules.day + 1)]), 12, COL_MUTED))
+	if rules.endless():
+		v.add_child(_label(Loc.t("money.asks", [_rub(rules.salary(id))]), 13, COL_TEXT))
 	var skills := _flow(4, 4)
 	v.add_child(skills)
 	for cat in C.CATEGORIES:
@@ -1841,13 +1978,16 @@ func _phone_top() -> Control:
 	day.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(day)
 	var k := rules.key_status()
-	row.add_child(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
+	if not rules.endless():
+		row.add_child(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
 	var menu := _button(Loc.t("menu.button"), _open_menu, 0, "on_top")
 	menu.custom_minimum_size.y = 28
 	row.add_child(menu)
 	var info := _flow(12, 0)
 	v.add_child(info)
 	info.add_child(_label(_attention_text(), 13, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
+	if rules.endless():
+		info.add_child(_label(_money_text(), 13, _money_color()))
 	var word := rules.boss_word()
 	info.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 13, BOSS_COLORS[word]))
 	return bar

@@ -53,6 +53,11 @@ var chapter := 1
 var mode := "story"
 var period := 1
 var period_start := 1
+# Endless run: the money you have, in thousands of roubles. Irina's budget comes in at the start of each
+# period, salaries go out every Friday; not enough for them, and the run is over.
+var money := 0
+# Before the first day: the CVs you're choosing the team from, and who you've picked.
+var draft_picked: Array = []
 var phase := "title" # plan, event, evening, report, review, end
 var people := {}
 # Everyone who has been on the team this run, the first four and those hired since; people[p]["gone"]
@@ -154,11 +159,10 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	L.STAND_IN = {}
 	if endless():
 		team = []
-		for i in START_TEAM:
-			var id := _roll_hire()
-			team.append(id)
-			_new_person(id, false)
-			people[id]["joined"] = -100 # the team you came to, not new hires
+		money = START_MONEY
+		draft_picked.clear()
+		for i in DRAFT_SIZE:
+			_draft_add()
 	else:
 		team = C.TEAM.duplicate()
 		for p in team:
@@ -205,10 +209,10 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	flags.clear()
 	history.clear()
 	ending = ""
-	if endless():
-		# No story trip to Irina first: you can ask her for people from day one.
-		flags["asked_people"] = true
 	_fill_backlog()
+	if endless():
+		phase = "draft"
+		return
 	_start_day()
 
 
@@ -525,6 +529,8 @@ func _hiring_morning() -> void:
 	if openings > 0 and candidates.size() < MAX_CANDIDATES and not flags.has("palych_sent") and not endless():
 		_new_palych()
 	elif openings > 0 and candidates.size() < MAX_CANDIDATES and (candidates.is_empty() or day % 2 == 0):
+		_new_candidate()
+	elif endless() and candidates.size() < MAX_CANDIDATES and day % CANDIDATE_EVERY == 0:
 		_new_candidate()
 
 
@@ -1023,6 +1029,8 @@ func _confide(p: String) -> void:
 
 
 func can_hire(id: String) -> bool:
+	if endless():
+		return phase == "plan" and pending.is_empty() and money >= HIRE_FEE and not candidate(id).is_empty()
 	return phase == "plan" and pending.is_empty() and openings > 0 and not candidate(id).is_empty()
 
 
@@ -1031,7 +1039,10 @@ func hire(id: String) -> void:
 		return
 	var c := candidate(id)
 	candidates.erase(c)
-	openings -= 1
+	if endless():
+		money -= HIRE_FEE
+	else:
+		openings -= 1
 	team.append(id)
 	_new_person(id, false)
 	# What the interview showed, you know about them from day one.
@@ -1096,6 +1107,10 @@ func let_go(p: String, with_warning: bool) -> void:
 	var st: Dictionary = people[p]
 	st["gone"] = true
 	st["fired"] = true
+	if endless():
+		var severance := weekly_pay(p) * SEVERANCE_WEEKS
+		money -= severance
+		_narrate("money.severance", [severance], {"who": "@name.%s.nom" % p})
 	taras_like(2.0)
 	_drop_tasks(p)
 	lead("P", 1.0)
@@ -2466,6 +2481,8 @@ func end_day() -> void:
 	if C.SURVEY_AT.has(chapter_day()):
 		_run_survey()
 	if day % 5 == 0:
+		if endless():
+			_payday()
 		_style_week()
 		_build_review()
 		if review.is_empty():
@@ -3539,6 +3556,8 @@ static func _read_save():
 func next() -> void:
 	if phase != "evening":
 		return
+	if _bankrupt():
+		return
 	if day >= last_day():
 		_finish_chapter()
 		return
@@ -3556,6 +3575,7 @@ func start_next_chapter() -> void:
 		period += 1
 		period_start = day
 		chapter = period_chapter(period)
+		_period_budget()
 		# The chapter's deck comes round again: its goals start from nothing.
 		for g in C.CHAPTERS[chapter - 1].get("goals", []):
 			for f in g.get("flags", []):
@@ -3581,9 +3601,120 @@ func endless() -> bool:
 	return mode == "endless"
 
 
-# The endless run: four made-up people to start with, and periods of a month.
-const START_TEAM := 4
+# The endless run: periods of a month.
 const PERIOD_DAYS := 20
+
+# Money, in thousands of roubles. A salary is what the CV asks for: SALARY_BASE plus SALARY_PER_LEVEL for
+# each level it claims, so a faker costs like the engineer they pretend to be. It's paid a quarter a week.
+const START_MONEY := 1500
+const PERIOD_BUDGET := 1000
+const SALARY_BASE := 60
+const SALARY_PER_LEVEL := 25
+const HIRE_FEE := 100 # the recruiter's cut
+const SEVERANCE_WEEKS := 2
+const DRAFT_SIZE := 6
+const DRAFT_REROLL := 50
+const DRAFT_MAX := 6
+const CANDIDATE_EVERY := 3 # days between CVs in the endless run, while there's room in the list
+
+
+func salary(p: String) -> int:
+	var cv: Dictionary = info(p).get("cv", info(p)["skills"])
+	var levels := 0
+	for cat in cv:
+		levels += cv[cat]
+	return SALARY_BASE + SALARY_PER_LEVEL * levels
+
+
+func weekly_pay(p: String) -> int:
+	return int(round(salary(p) / 4.0))
+
+
+func payroll() -> int:
+	var sum := 0
+	for p in team:
+		if available(p):
+			sum += weekly_pay(p)
+	return sum
+
+
+# Weeks the money lasts at this payroll, budgets aside.
+func weeks_left() -> int:
+	var pay := payroll()
+	return 99 if pay == 0 else money / pay
+
+
+func _draft_add() -> void:
+	var id := _roll_hire()
+	candidates.append({"id": id, "until": 9999, "asked": [], "known": {}})
+
+
+func draft_toggle(id: String) -> void:
+	if phase != "draft" or candidate(id).is_empty():
+		return
+	if draft_picked.has(id):
+		draft_picked.erase(id)
+	elif draft_picked.size() < DRAFT_MAX:
+		draft_picked.append(id)
+
+
+# New CVs in place of everyone not picked.
+func draft_reroll() -> void:
+	if phase != "draft" or money < DRAFT_REROLL:
+		return
+	money -= DRAFT_REROLL
+	for c in candidates.duplicate():
+		if not draft_picked.has(c["id"]):
+			candidates.erase(c)
+			hires.erase(c["id"])
+			_draft_add()
+
+
+func draft_payroll() -> int:
+	var sum := 0
+	for id in draft_picked:
+		sum += salary(id)
+	return sum
+
+
+func draft_start() -> void:
+	if phase != "draft" or draft_picked.is_empty():
+		return
+	for id in draft_picked:
+		team.append(id)
+		_new_person(id, false)
+		people[id]["joined"] = -100 # the team you start with, not new hires
+		if C.PROFILES[profile].get("knows_team", false):
+			for cat in C.CATEGORIES:
+				people[id]["known"]["skill." + cat] = true
+	for c in candidates:
+		if not draft_picked.has(c["id"]):
+			hires.erase(c["id"])
+	candidates.clear()
+	draft_picked.clear()
+	_period_budget()
+	_start_day()
+
+
+func _period_budget() -> void:
+	money += PERIOD_BUDGET
+	_say("boss", "money.budget", [PERIOD_BUDGET])
+
+
+func _payday() -> void:
+	var pay := payroll()
+	money -= pay
+	_narrate("money.payday", [pay, money])
+	if money < 0:
+		flags["bankrupt"] = true
+
+
+func _bankrupt() -> bool:
+	if not endless() or not flags.has("bankrupt"):
+		return false
+	ending = "bankrupt"
+	phase = "end"
+	return true
 
 
 # Which chapter's deck and goals a period plays: the four in order, then round the last three again.
@@ -3621,6 +3752,8 @@ func chapter_keys() -> Array:
 # The end of a chapter: results (the boss's view, mostly the key projects) against what the team says.
 # Passing it leads on to the next chapter; anything else ends the run.
 func _finish_chapter() -> void:
+	if _bankrupt():
+		return
 	if chapter > 1:
 		_chapter_verdict()
 		return
