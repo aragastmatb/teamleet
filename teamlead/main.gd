@@ -114,6 +114,9 @@ var lane := "inbox"
 var chat_read := 0
 # On a computer the endless chat is folded into a narrow rail; you open it when you want to read.
 var chat_open := false
+# Where in the history the talk over the open task began, while it's on screen; -1 when there's none.
+var deal_from := -1
+var deal_who := ""
 # Upgrades you could afford when you last looked at the tree; the counter only shows ones new since.
 var upgrades_seen := {}
 # Where the chat was left. Anything new in it (a message, a question, answer buttons) brings it to the
@@ -271,23 +274,42 @@ func _pick_lane(name: String) -> void:
 # ---------- actions ----------
 
 func _select(uid: int) -> void:
-	selected = -1 if selected == uid else uid
+	selected = uid
+	deal_from = -1
+	window = "task"
 	_render()
 
 
-# Clicking a person hands them the task right away; the task stays selected so you can add a helper.
+# Picking someone hands them the task. If they push back, the window turns into the talk about it;
+# if not, it closes, unless a helper can still be added right away (the story's mornings).
 func _pick(p: String) -> void:
+	var from := rules.history.size()
 	rules.assign(selected, p)
+	if not rules.pending.is_empty():
+		deal_from = from
+		deal_who = p
+	elif p == "me" or not rules.allowed("pair"):
+		selected = -1
+		window = ""
 	_render()
 
 
 func _direct(p: String) -> void:
-	rules.assign(selected, p)
-	_clear_selection()
+	_pick(p)
 
 
 func _persuade(intent: String) -> void:
 	rules.persuade(intent)
+	_render()
+
+
+# After the talk: back to the people if the task is still yours to hand out, otherwise done.
+func _deal_done() -> void:
+	deal_from = -1
+	var t := rules.task(selected)
+	if t.is_empty() or not rules.can_assign(t) or t["status"] != "inbox":
+		selected = -1
+		window = ""
 	_render()
 
 
@@ -763,6 +785,12 @@ func _render() -> void:
 				_build_report()
 			"end", "chapter_end":
 				_build_end()
+	# A pushback is answered in the task's window, a reloaded game included.
+	if not rules.pending.is_empty() and window != "task":
+		selected = rules.pending["uid"]
+		window = "task"
+		deal_from = maxi(0, rules.history.size() - 2)
+		deal_who = rules.pending["p"]
 	if window != "" and rules.phase in ["plan", "event", "standup", "evening"]:
 		_build_window()
 	if menu_open:
@@ -1903,7 +1931,12 @@ func _open_window(name: String) -> void:
 
 
 func _close_window() -> void:
+	if not rules.pending.is_empty():
+		return
 	window = ""
+	if selected >= 0:
+		selected = -1
+		deal_from = -1
 	_render()
 
 
@@ -1919,6 +1952,14 @@ func _build_window() -> void:
 			_build_upgrades()
 		return
 	var view := get_viewport().get_visible_rect().size
+	if window == "task":
+		var t := rules.task(selected)
+		if t.is_empty() or (t["status"] not in ["inbox", "active"] and deal_from < 0):
+			window = ""
+			selected = -1
+			return
+		_task_window(_modal(Loc.t("taskname." + t["id"]), "", minf(820.0, view.x - 16.0), true, true), t)
+		return
 	if window.begins_with("person:"):
 		var p := window.substr(7)
 		if not rules.people.has(p):
@@ -1995,6 +2036,7 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 	head.add_child(titles)
 	var close := _button(Loc.t("up.close"), _close_window, 0, "subtle")
 	close.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	close.visible = rules.pending.is_empty()
 	head.add_child(close)
 	var head_box := _padded(head, 18 if mobile else 28, 16)
 	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
@@ -2044,6 +2086,11 @@ func _nav_strip() -> Control:
 	if rules.endless() or rules.openings > 0 or waiting > 0:
 		row.add_child(_nav_button("hire", Loc.t("hire.section"), _badge(waiting), COL_DANGER))
 	if rules.endless():
+		# What you could already afford when the session began isn't news.
+		if upgrades_seen.is_empty():
+			for id in C.UPGRADES:
+				if _upgrade_affordable(id):
+					upgrades_seen[id] = true
 		var affordable := 0
 		for id in C.UPGRADES:
 			if _upgrade_affordable(id) and not upgrades_seen.has(id):
@@ -2461,15 +2508,11 @@ func _board_area() -> Control:
 	var done := _done_strip(lanes["done"])
 	_lit(done, "done")
 	v.add_child(done)
-	if selected >= 0 and _looking():
-		var t := rules.task(selected)
-		if not t.is_empty() and t["status"] in ["inbox", "active"]:
-			v.add_child(_task_detail(t))
 	return wrap
 
 
 const INBOX_W := 300
-const LANE_HEAD_W := 180
+const LANE_HEAD_W := 210
 const LANE_CARD_W := 220
 
 
@@ -2549,6 +2592,7 @@ func _me_head() -> Control:
 	row.add_child(_avatar("me", 32))
 	var v := _vbox(1)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(v)
 	v.add_child(_label(Loc.t("me_card"), 14, COL_TEXT, false, true))
 	v.add_child(_label(Loc.t("me_profile." + rules.profile), 12, COL_MUTED, true))
@@ -2750,25 +2794,12 @@ func _days(d: float) -> String:
 	return "%d%s5" % [int(x), "," if Loc.lang == "ru" else "."]
 
 
-# The open card, like an issue view: who asked, what it takes, who gets it.
-func _task_detail(t: Dictionary) -> Control:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_FOCUS, 1, 12))
-	var v := _vbox(8)
-	panel.add_child(v)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 8)
-	v.add_child(head)
-	var colors: Array = CAT_COLORS[t["cat"]]
-	head.add_child(_pill(Loc.t("cat." + t["cat"]), colors[0], colors[1], _cat_icon(t["cat"])))
-	var title := _label(("★ " if t["key"] else "") + Loc.t("taskname." + t["id"]), 17, COL_TEXT, true, true)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(title)
-	var close := _button("×", _clear_selection, 32, "subtle")
-	close.custom_minimum_size.y = 28
-	head.add_child(close)
+# The open card: who asked, what it takes, and who gets it, each person shown with how they'd do it.
+func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 	var facts := _flow(6, 4)
 	v.add_child(facts)
+	var colors: Array = CAT_COLORS[t["cat"]]
+	facts.add_child(_pill(Loc.t("cat." + t["cat"]), colors[0], colors[1], _cat_icon(t["cat"])))
 	var est: Dictionary = rules.estimate(t)
 	facts.add_child(_pill(Loc.t("est.chip" if est["sure"] else "est.chip_guess", [_days(est["days"])]), COL_TEXT, COL_COLUMN))
 	facts.add_child(_pill(_due_text(t), COL_DANGER if t["due"] - rules.day <= 1 else COL_TEXT, Color("ffebe6") if t["due"] - rules.day <= 1 else COL_COLUMN))
@@ -2778,32 +2809,32 @@ func _task_detail(t: Dictionary) -> Control:
 		facts.add_child(_pill(Loc.t("public"), COL_WARN, Color("fff7e6")))
 	var bare: String = t["id"].trim_prefix("init_")
 	if C.IMPROVEMENTS.has(bare):
-		v.add_child(_label(Loc.t("imp.%s.about" % bare), 13, COL_MUTED, true))
-		v.add_child(_label(Loc.t("imp.gives", [Loc.t("imp.%s.effect" % bare)]), 13, COL_GOOD, true, true))
+		v.add_child(_label(Loc.t("imp.%s.about" % bare), 14, COL_MUTED, true))
+		v.add_child(_label(Loc.t("imp.gives", [Loc.t("imp.%s.effect" % bare)]), 14, COL_GOOD, true, true))
 	else:
-		v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 13, COL_MUTED, true))
+		v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 14, COL_MUTED, true))
 	var pen: Dictionary = rules.penalty_of(t)
 	if not pen.is_empty() and t["status"] != "done" and not t["late"]:
-		v.add_child(_label(Loc.t("penalty.%s.card" % pen["kind"], [pen["amount"]] if pen["kind"] == "money" else []), 13, COL_DANGER, true))
-	var who := _flow(6, 6)
-	v.add_child(who)
-	who.visible = rules.can_assign(t)
-	who.add_child(_row_label(Loc.t("to_whom")))
-	for p in rules.team:
-		if not rules.available(p) or rules.only_me(t):
-			continue
-		var pe: Dictionary = rules.estimate(t, p)
-		var label := "%s  ~%s" % [Loc.person(p), _days(pe["days"])] if pe["sure"] else "%s  ?" % Loc.person(p)
-		var b := _button(label + _cost_mark(rules.cost("assign")), _pick.bind(p), 0, "chosen" if t["owner"] == p else "")
-		b.disabled = b.disabled or t["owner"] == p or not rules.can_assign(t) or not rules.can_afford(rules.cost("assign"))
-		who.add_child(b)
-	var mine := _button("%s  ~%s" % [Loc.t("myself"), _days(rules.estimate(t, "me")["days"])] + _cost_mark(rules.cost("assign")), _direct.bind("me"), 0)
-	mine.disabled = mine.disabled or not rules.can_assign(t) or not rules.can_afford(rules.cost("assign"))
-	who.add_child(mine)
-	if not t.get("backlog", false) and not rules.endless():
-		who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
-	if rules.can_decline(t):
-		who.add_child(_button(Loc.t("decline_button") + _cost_mark(rules.cost("decline")), _decline, 0, "subtle"))
+		v.add_child(_label(Loc.t("penalty.%s.card" % pen["kind"], [pen["amount"]] if pen["kind"] == "money" else []), 14, COL_DANGER, true))
+	if deal_from >= 0:
+		_deal_block(v, t)
+		return
+	if rules.can_assign(t):
+		v.add_child(_section(Loc.t("to_whom").trim_suffix(":")))
+		var grid := GridContainer.new()
+		grid.columns = 2 if mobile else 4
+		grid.add_theme_constant_override("h_separation", 8)
+		grid.add_theme_constant_override("v_separation", 8)
+		v.add_child(grid)
+		var best := _best_pick(t)
+		for p in _pick_order(t):
+			grid.add_child(_pick_tile(t, p, p == best))
+		if not t.get("backlog", false) and not rules.endless():
+			grid.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
+		if rules.can_decline(t):
+			var no := _button(Loc.t("decline_button") + _cost_mark(rules.cost("decline")), _decline, 0, "subtle")
+			no.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			v.add_child(no)
 	if t["status"] == "active":
 		var acts := _flow(6, 6)
 		v.add_child(acts)
@@ -2834,7 +2865,154 @@ func _task_detail(t: Dictionary) -> Control:
 				pair.add_child(hb)
 		pair.add_child(_button(Loc.t("no_helper"), _helper.bind(""), 0, "chosen" if t["helper"] == "" else ""))
 		v.add_child(_label(Loc.t("helper_hint"), 12, COL_MUTED, true))
-	return panel
+
+
+# Who can take it, best first: sooner done by them, then fewer things already on them; you last.
+func _pick_order(t: Dictionary) -> Array:
+	var people: Array = []
+	if not rules.only_me(t):
+		for p in rules.team:
+			if rules.available(p):
+				people.append(p)
+	people.sort_custom(func(a, b): return _pick_score(t, a) < _pick_score(t, b))
+	people.append("me")
+	return people
+
+
+func _pick_score(t: Dictionary, p: String) -> float:
+	var score: float = rules.estimate(t, p)["days"] + 0.6 * rules.queue_of(p).size()
+	if rules.people[p]["absent"]:
+		score += 100.0
+	return score
+
+
+# The one to point at: first in the order, if you actually know their level at this.
+func _best_pick(t: Dictionary) -> String:
+	var order := _pick_order(t)
+	if order.size() < 2:
+		return ""
+	var p: String = order[0]
+	return p if rules.people[p]["known"].has("skill." + t["cat"]) and rules.people[p]["skills"][t["cat"]] >= 2 else ""
+
+
+func _level_stars(level: int) -> String:
+	return "★".repeat(level) + "☆".repeat(4 - level)
+
+
+# One person as a choice: their level at this kind of work, what's on them, how they are, and how long.
+func _pick_tile(t: Dictionary, p: String, best: bool) -> Control:
+	var me: bool = p == "me"
+	var owner: bool = t["owner"] == p
+	var can: bool = rules.can_assign(t) and not owner and rules.can_afford(rules.cost("assign")) and (me or not rules.people[p]["absent"])
+	var tile := PanelContainer.new()
+	tile.custom_minimum_size.x = 170
+	tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var fill := COL_SELECTED if owner else (Color("f4f8ff") if best else COL_SURFACE)
+	tile.add_theme_stylebox_override("panel", _box(fill, COL_FOCUS if best or owner else COL_BORDER, 2 if best or owner else 1, 10))
+	if can:
+		tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		tile.gui_input.connect(func(event: InputEvent):
+			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+				if event.pressed:
+					press_pos = event.global_position
+				elif event.global_position.distance_to(press_pos) < 12.0:
+					cue = "assign"
+					_pick.call_deferred(p))
+		var hover := _box(Color("ebf2ff"), COL_FOCUS, 2, 10)
+		tile.mouse_entered.connect(func(): tile.add_theme_stylebox_override("panel", hover))
+		tile.mouse_exited.connect(func(): tile.add_theme_stylebox_override("panel", _box(fill, COL_FOCUS if best or owner else COL_BORDER, 2 if best or owner else 1, 10)))
+	else:
+		tile.modulate = Color(1, 1, 1, 0.5)
+	var v := _vbox(4)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tile.add_child(v)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(head)
+	head.add_child(_avatar(p, 32))
+	var name := _label(Loc.t("myself") if me else Loc.person(p), 15, COL_TEXT, true, true)
+	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(name)
+	if best:
+		v.add_child(_label(Loc.t("pick.best"), 12, COL_PRIMARY, true, true))
+	elif owner:
+		v.add_child(_label(Loc.t("pick.owner"), 12, COL_PRIMARY, true, true))
+	var colors: Array = CAT_COLORS[t["cat"]]
+	var known: bool = me or rules.people[p]["known"].has("skill." + t["cat"])
+	var level: int = rules.my_skill(t["cat"]) if me else rules.people[p]["skills"][t["cat"]]
+	var skill := _label(_level_stars(level) + "  " + Loc.t("level.%d" % level) if known else "?  " + Loc.t("pick.unknown"), 14, colors[0] if known else COL_FAINT, true, true)
+	v.add_child(skill)
+	if not me:
+		var st: Dictionary = rules.people[p]
+		if st["absent"]:
+			v.add_child(_label(Loc.t("absent.%s_label" % st["absent_reason"]), 12, COL_WARN, true))
+		else:
+			var line := _flow(4, 0)
+			line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			v.add_child(line)
+			var mood := rules.mood_word(p)
+			line.add_child(_label(Loc.t("mood." + mood), 12, MOOD_COLORS[mood]))
+			var energy := rules.energy_word(p)
+			line.add_child(_label("· " + Loc.t("energy." + energy), 12, ENERGY_COLORS[energy]))
+		var load := rules.queue_of(p).size()
+		v.add_child(_label(Loc.t("row.load", [load]) if load > 0 else Loc.t("row.free"), 12, COL_WARN if load >= rules.OVERLOAD_AT else COL_MUTED))
+	var pe: Dictionary = rules.estimate(t, p)
+	var foot := HBoxContainer.new()
+	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(foot)
+	var days := _label(Loc.t("pick.days", [_days(pe["days"])]) if pe["sure"] else Loc.t("pick.days_guess"), 13, COL_TEXT if pe["sure"] else COL_FAINT, false, pe["sure"])
+	days.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	foot.add_child(days)
+	if rules.cost("assign") > 0:
+		foot.add_child(_label(_cost_mark(rules.cost("assign")).strip_edges(), 13, COL_MUTED))
+	return tile
+
+
+# The talk over a task someone pushed back on: what was said, then how you answer, or what came of it.
+func _deal_block(v: VBoxContainer, t: Dictionary) -> void:
+	var box := PanelContainer.new()
+	box.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 12))
+	v.add_child(box)
+	var talk := _vbox(10)
+	box.add_child(talk)
+	for i in range(deal_from, rules.history.size()):
+		var e: Dictionary = rules.history[i]
+		# Just the two of you: tips and narration stay in the chat.
+		if e["key"].begins_with("log.") or e["who"] not in ["you", deal_who]:
+			continue
+		talk.add_child(_deal_line(e))
+	if not rules.pending.is_empty():
+		var p: String = rules.pending["p"]
+		v.add_child(_label(Loc.render("objection_title", [], {"who": Loc.person(p)}), 13, COL_PRIMARY, true, true))
+		var grid := GridContainer.new()
+		grid.columns = 1 if mobile else 2
+		grid.add_theme_constant_override("h_separation", 8)
+		grid.add_theme_constant_override("v_separation", 8)
+		v.add_child(grid)
+		for intent in C.INTENTS + ["back_off"]:
+			grid.add_child(_answer_button(Loc.t("intent." + intent), _persuade.bind(intent)))
+		v.add_child(_label(Loc.t("objection_hint"), 12, COL_MUTED, true))
+	else:
+		var ok := _button(Loc.t("deal.ok"), _deal_done, 200, "primary")
+		ok.size_flags_horizontal = Control.SIZE_SHRINK_END
+		v.add_child(ok)
+
+
+func _deal_line(e: Dictionary) -> Control:
+	var body := Loc.render(e["key"], e.get("args", []), e.get("names", {}))
+	if e["who"] == "":
+		return _label(body, 13, COL_MUTED, true)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var you: bool = e["who"] == "you"
+	row.add_child(_avatar("me" if you else e["who"], 32))
+	var col := _vbox(2)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(col)
+	col.add_child(_label(Loc.t("you") if you else Loc.person(e["who"]), 13, COL_MUTED, false, true))
+	col.add_child(_label(body, 16, COL_TEXT, true))
+	return row
 
 
 func _row_label(text_value: String) -> Control:
@@ -2897,10 +3075,6 @@ func _build_phone() -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(body)
 	v.add_child(_phone_tabs())
-	if tab == "board" and selected >= 0 and _looking():
-		var t := rules.task(selected)
-		if not t.is_empty() and t["status"] in ["inbox", "active"]:
-			_task_sheet(t)
 	if _teach_chat() and tab != "chat":
 		_phone_block()
 
@@ -2998,33 +3172,6 @@ func _phone_board() -> Control:
 	_fill_lane(list, lane, lanes[lane])
 	v.add_child(_day_button(0))
 	return _padded(v, 10, 10)
-
-
-# The open card slides up from the bottom; tapping outside closes it.
-func _task_sheet(t: Dictionary) -> void:
-	var dim := ColorRect.new()
-	dim.color = Color(0.035, 0.118, 0.259, 0.45)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	dim.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and not event.pressed:
-			_clear_selection.call_deferred())
-	ui.add_child(dim)
-	# Pinned to the bottom and as tall as what's in it.
-	var panel := PanelContainer.new()
-	panel.anchor_right = 1.0
-	panel.anchor_top = 1.0
-	panel.anchor_bottom = 1.0
-	panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	var style := _flat(COL_SURFACE)
-	style.corner_radius_top_left = 14
-	style.corner_radius_top_right = 14
-	style.content_margin_left = 8
-	style.content_margin_right = 8
-	style.content_margin_top = 8
-	style.content_margin_bottom = 12
-	panel.add_theme_stylebox_override("panel", style)
-	ui.add_child(panel)
-	panel.add_child(_task_detail(t))
 
 
 # While the chat waits for an answer, the other screens point you there.
@@ -3232,8 +3379,6 @@ func _indented(c: Control) -> Control:
 func _chat_prompt(list: VBoxContainer) -> void:
 	if rules.phase == "event" and not rules.events.is_empty():
 		_event_prompt(list, rules.events[0])
-	elif not rules.pending.is_empty():
-		_objection_prompt(list)
 	elif rules.phase == "review" and not rules.review.is_empty():
 		_review_prompt(list)
 	elif rules.phase == "evening":
@@ -3283,15 +3428,6 @@ func _event_prompt(list: VBoxContainer, ev: Dictionary) -> void:
 		if ev["id"] == "boss_visit" and (parts[0] == "delay" or parts[0] == "contractor") and not rules.has_weight():
 			text += " " + Loc.t("needs_weight")
 		v.add_child(_answer_button(text, _event.bind(choice)))
-
-
-func _objection_prompt(list: VBoxContainer) -> void:
-	var p: String = rules.pending["p"]
-	var t := rules.task(rules.pending["uid"])
-	var v := _prompt_box(list, Loc.render("objection_title", [], {"who": Loc.person(p)}) + " · " + Loc.t("taskname." + t["id"]))
-	for intent in C.INTENTS + ["back_off"]:
-		v.add_child(_answer_button(Loc.t("intent." + intent), _persuade.bind(intent)))
-	v.add_child(_label(Loc.t("objection_hint"), 12, COL_MUTED, true))
 
 
 func _review_prompt(list: VBoxContainer) -> void:
