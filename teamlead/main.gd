@@ -866,7 +866,8 @@ func _juice(was: Dictionary, now: Dictionary) -> void:
 	# A new day refills the points: that's not something you spent.
 	if was["day"] == now["day"]:
 		_float_change("points", now["points"] - was["points"], "", true)
-	_float_change("money", now["money"] - was["money"], " " + Loc.t("money.k"), false)
+	var dc := Rules.cash(now["money"]) - Rules.cash(was["money"])
+	_float_change("money", dc, " " + Loc.cash_word(dc), false)
 	_float_change("race", now["race"] - was["race"], "", false)
 
 
@@ -1285,17 +1286,13 @@ func _build_setup() -> void:
 
 
 # Thousands of roubles, grouped: 1 500.
+# Money as the player sees it: coonics, a tenth of the thousands the rules count in ("250 куников").
 func _rub(n: int) -> String:
-	var digits := str(absi(n))
-	var out := ""
-	while digits.length() > 3:
-		out = " " + digits.substr(digits.length() - 3) + out
-		digits = digits.substr(0, digits.length() - 3)
-	return ("-" if n < 0 else "") + digits + out
+	return Loc.cash(Rules.cash(n))
 
 
 func _money_text() -> String:
-	return Loc.t("money.bar", [_rub(rules.money), _rub(rules.payroll())])
+	return Loc.t("money.bar", [_rub(rules.money), Rules.cash(rules.payroll())])
 
 
 func _money_color() -> Color:
@@ -2258,8 +2255,10 @@ func _fx_text(e: Dictionary) -> String:
 			return Loc.t("fx." + e["kind"], [_fx_targets(e)])
 		"shrink":
 			return Loc.t("fx.shrink", [pct, _fx_targets(e)])
-		"attention", "borrow", "money":
+		"attention", "borrow":
 			return Loc.t("fx." + e["kind"], [int(e["value"])])
+		"money":
+			return Loc.t("fx.money", [_rub(int(e["value"]))])
 	return Loc.t("fx." + e["kind"])
 
 
@@ -2689,7 +2688,7 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 		v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 14, COL_MUTED, true))
 	var pen: Dictionary = rules.penalty_of(t)
 	if not pen.is_empty() and t["status"] != "done" and not t["late"]:
-		v.add_child(_label(Loc.t("penalty.%s.card" % pen["kind"], [pen["amount"]] if pen["kind"] == "money" else []), 14, COL_DANGER, true))
+		v.add_child(_label(Loc.t("penalty.%s.card" % pen["kind"], [_rub(pen["amount"])] if pen["kind"] == "money" else []), 14, COL_DANGER, true))
 	if deal_from >= 0:
 		_deal_block(v, t)
 		return

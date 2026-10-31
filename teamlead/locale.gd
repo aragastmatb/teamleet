@@ -795,7 +795,7 @@ const S := {
 		"period_short": "Период %s · ",
 		"period.results": "Период %s - итоги",
 		"period.title": "Период %s",
-		"period.next": "Тот же поток задач и те же банки. Бюджет на период: %s тыс. ₽.",
+		"period.next": "Тот же поток задач и те же банки. Бюджет на период: %s.",
 		"ending.team_gone_run.title": "КОМАНДА РАЗБЕЖАЛАСЬ",
 		"ending.team_gone_run.text": "Утром на стендап никто не пришёл. Работать стало некому, и Ирина закрывает вашу команду.",
 		"period.start": "НАЧАТЬ ПЕРИОД %s",
@@ -815,8 +815,8 @@ const S := {
 		"up.maint": "Потом в колоде: обслуживание, %s карт.",
 		"up.replaces": "Заменит «%s» вместе с его обслуживанием.",
 		"up.needs": "Сначала нужно: %s.",
-		"up.buy": "Купить за %s тыс. ₽",
-		"up.bought": "Берём «{up}» в работу, %s тыс. ₽.",
+		"up.buy": "Купить за %s",
+		"up.bought": "Берём «{up}» в работу, %s.",
 		"up.redo": "«{task}» сделали плохо, придётся переделывать.",
 		"up.done": "«{up}» внедрено и работает.",
 		"up.cleaned": "Пожары техдолга, которые мы сами себе устроили, ушли из колоды.",
@@ -881,7 +881,7 @@ const S := {
 		"fx.shrink": "на %s%% меньше работы в %s",
 		"fx.attention": "+%s очко в день",
 		"fx.borrow": "занять у завтра можно на %s больше",
-		"fx.money": "+%s тыс. ₽",
+		"fx.money": "+%s",
 		"fx.initiative": "команда охотнее берёт задачи сама",
 		"fx.newbie": "новички быстрее входят в работу",
 		"fx.sales": "банки охотнее подписываются",
@@ -889,8 +889,7 @@ const S := {
 		"ending.period_pass.title": "ПЕРИОД ЗАКРЫТ",
 		"ending.period_pass.text": "Месяц закрыт. Ирина делит бюджет и уже листает план на следующий.",
 		"menu.story_dev": "Сюжет (dev)",
-		"money.bar": "%s тыс. ₽ (−%s/нед)",
-		"money.k": "тыс.",
+		"money.bar": "%s (−%s/нед)",
 		"ach.got": "Достижение: %s",
 		"ach.first_period.name": "Первый месяц",
 		"ach.first_period.text": "Пережить первый период.",
@@ -930,25 +929,25 @@ const S := {
 		"moment.morning": "Утро",
 		"moment.midday": "Середина дня",
 		"moment.evening": "Вечер",
-		"money.salary": "Зарплата: %s тыс. в месяц",
-		"money.asks": "Просит %s тыс. в месяц",
-		"money.fee": "рекрутёру %s тыс. за найм",
-		"money.budget": "Бюджет на месяц: %s тыс. Распоряжайтесь.",
-		"money.payday": "Зарплаты за неделю: %s тыс. На счету осталось %s тыс.",
-		"money.severance": "{who} уходит с выходным пособием: %s тыс.",
+		"money.salary": "Зарплата: %s в месяц",
+		"money.asks": "Просит %s в месяц",
+		"money.fee": "рекрутёру %s за найм",
+		"money.budget": "Бюджет на месяц: %s. Распоряжайтесь.",
+		"money.payday": "Зарплаты за неделю: %s. На счету осталось %s.",
+		"money.severance": "{who} уходит с выходным пособием: %s.",
 		"draft.title": "Соберите команду",
-		"draft.hint": "Марина принесла резюме. Резюме пишут сами кандидаты, а зарплату они просят под то, что в нём написано. Бюджет от Ирины: %s тыс. в месяц.",
-		"draft.sum": "Выбрано: %s · зарплаты %s тыс. в месяц · на счету %s тыс. · бюджет %s тыс. в месяц",
+		"draft.hint": "Марина принесла резюме. Резюме пишут сами кандидаты, а зарплату они просят под то, что в нём написано. Бюджет от Ирины: %s в месяц.",
+		"draft.sum": "Выбрано: %s · зарплаты %s в месяц · на счету %s · бюджет %s в месяц",
 		"draft.start": "НАЧАТЬ",
-		"draft.reroll": "Другие резюме (%s тыс.)",
+		"draft.reroll": "Другие резюме (%s)",
 		"draft.pick": "Нажмите, чтобы взять",
 		"draft.picked": "✓ Берём",
 		"ending.bankrupt.title": "ДЕНЬГИ КОНЧИЛИСЬ",
 		"ending.bankrupt.text": "В пятницу платить людям нечем. Ирина забирает у вас команду, а вас - у команды.",
-		"money.split": "Итоги месяца: у вас %s, у Тараса %s. Бюджет на следующий месяц: %s тыс.",
+		"money.split": "Итоги месяца: у вас %s, у Тараса %s. Бюджет на следующий месяц: %s.",
 		"race.label": "Вы %s · Тарас %s",
 		"race.hint": "Кто сделает больше за месяц, тому больше денег на следующий. Просрочки отнимают очки.",
-		"race.summary": "Результат месяца: у вас %s, у Тараса %s. Бюджет на следующий месяц: %s тыс.",
+		"race.summary": "Результат месяца: у вас %s, у Тараса %s. Бюджет на следующий месяц: %s.",
 		"chapter.soon": "Продолжение следует: эта глава ещё в работе.",
 		"chapter.probation.name": "Испытательный срок",
 		"chapter.probation.goal": "Сдать три ключевых проекта и не потерять команду.",
@@ -1121,12 +1120,12 @@ const S := {
 		"penalty.call.card": "Просрочите - будет разбор с заказчиком, лично с вами.",
 		"penalty.incident.card": "Просрочите - назавтра это рванёт инцидентом.",
 		"penalty.debt.card": "Просрочите - сделают костыль, и в колоде навсегда прибавится пожар.",
-		"penalty.money.card": "Просрочите - штраф %s тыс. ₽.",
+		"penalty.money.card": "Просрочите - штраф %s.",
 		"penalty.boss.hit": "Ирина Викторовна отметила, что «{task}» сорвали. В гонке с Тарасом это минус.",
 		"penalty.call.hit": "По «{task}» нам нужно созвониться. Лично с вами.",
 		"penalty.incident.hit": "«{task}» так и не сделали, и завтра это аукнется.",
 		"penalty.debt.hit": "«{task}» закрыли костылём. Теперь «{fire}» будет приходить снова и снова.",
-		"penalty.money.hit": "За «{task}» выставили штраф: %s тыс. ₽.",
+		"penalty.money.hit": "За «{task}» выставили штраф: %s.",
 		"report_title": "Итоги недели %d",
 		"report_hint": "Рабочая неделя — 40 часов. Сколько из них каждый работал по задачам, сколько переработал сверх нормы.",
 		"report.row": "{who} — по задачам {hours} из {norm} ч, закрыто задач: {done}",
@@ -2472,7 +2471,7 @@ const S := {
 		"period_short": "Period %s · ",
 		"period.results": "Period %s - results",
 		"period.title": "Period %s",
-		"period.next": "The same stream of work and the same banks. Budget for the period: %s thousand.",
+		"period.next": "The same stream of work and the same banks. Budget for the period: %s.",
 		"ending.team_gone_run.title": "THE TEAM FELL APART",
 		"ending.team_gone_run.text": "Nobody turned up to the stand-up this morning. There's no one left to do the work, and Irina closes your team down.",
 		"period.start": "START PERIOD %s",
@@ -2492,8 +2491,8 @@ const S := {
 		"up.maint": "Then in the deck: upkeep, %s cards.",
 		"up.replaces": "Replaces \"%s\" and its upkeep.",
 		"up.needs": "First you need: %s.",
-		"up.buy": "Buy for %s thousand",
-		"up.bought": "Let's take on \"{up}\", %s thousand.",
+		"up.buy": "Buy for %s",
+		"up.bought": "Let's take on \"{up}\", %s.",
 		"up.redo": "\"{task}\" was done badly and has to be redone.",
 		"up.done": "\"{up}\" is rolled out and working.",
 		"up.cleaned": "The tech-debt fires we brought on ourselves are out of the deck.",
@@ -2558,7 +2557,7 @@ const S := {
 		"fx.shrink": "%s%% less work in %s",
 		"fx.attention": "+%s point a day",
 		"fx.borrow": "you can borrow %s more from tomorrow",
-		"fx.money": "+%s thousand",
+		"fx.money": "+%s",
 		"fx.initiative": "the team grabs work more readily",
 		"fx.newbie": "newcomers settle in sooner",
 		"fx.sales": "banks sign up more readily",
@@ -2566,8 +2565,7 @@ const S := {
 		"ending.period_pass.title": "PERIOD CLOSED",
 		"ending.period_pass.text": "The month is closed. Irina splits the budget and is already leafing through next month's plan.",
 		"menu.story_dev": "Story (dev)",
-		"money.bar": "%sk ₽ (−%sk/wk)",
-		"money.k": "k",
+		"money.bar": "%s (−%s/wk)",
 		"ach.got": "Achievement: %s",
 		"ach.first_period.name": "First month",
 		"ach.first_period.text": "Survive the first period.",
@@ -2607,25 +2605,25 @@ const S := {
 		"moment.morning": "Morning",
 		"moment.midday": "Midday",
 		"moment.evening": "Evening",
-		"money.salary": "Salary: %sk a month",
-		"money.asks": "Asks %sk a month",
-		"money.fee": "%sk to the recruiter per hire",
-		"money.budget": "This month's budget: %sk. It's yours to spend.",
-		"money.payday": "This week's salaries: %sk. %sk left in the account.",
-		"money.severance": "{who} leaves with severance pay: %sk.",
+		"money.salary": "Salary: %s a month",
+		"money.asks": "Asks %s a month",
+		"money.fee": "%s to the recruiter per hire",
+		"money.budget": "This month's budget: %s. It's yours to spend.",
+		"money.payday": "This week's salaries: %s. %s left in the account.",
+		"money.severance": "{who} leaves with severance pay: %s.",
 		"draft.title": "Build your team",
-		"draft.hint": "Marina brought the CVs. Candidates write their CVs themselves and ask for a salary to match what's in them. Irina's budget: %sk a month.",
-		"draft.sum": "Picked: %s · salaries %sk a month · %sk in the account · budget %sk a month",
+		"draft.hint": "Marina brought the CVs. Candidates write their CVs themselves and ask for a salary to match what's in them. Irina's budget: %s a month.",
+		"draft.sum": "Picked: %s · salaries %s a month · %s in the account · budget %s a month",
 		"draft.start": "START",
-		"draft.reroll": "Other CVs (%sk)",
+		"draft.reroll": "Other CVs (%s)",
 		"draft.pick": "Click to take",
 		"draft.picked": "✓ Taking",
 		"ending.bankrupt.title": "OUT OF MONEY",
 		"ending.bankrupt.text": "Friday comes and there's nothing to pay people with. Irina takes the team away from you, and you away from the team.",
-		"money.split": "The month's results: you %s, Taras %s. Next month's budget: %sk.",
+		"money.split": "The month's results: you %s, Taras %s. Next month's budget: %s.",
 		"race.label": "You %s · Taras %s",
 		"race.hint": "Whoever delivers more this month gets more money next month. Missed deadlines cost points.",
-		"race.summary": "The month's results: you %s, Taras %s. Next month's budget: %sk.",
+		"race.summary": "The month's results: you %s, Taras %s. Next month's budget: %s.",
 		"chapter.soon": "To be continued: this chapter is still being made.",
 		"chapter.probation.name": "Probation",
 		"chapter.probation.goal": "Deliver three key projects without losing the team.",
@@ -2798,12 +2796,12 @@ const S := {
 		"penalty.call.card": "Miss it and the client wants a call, with you in person.",
 		"penalty.incident.card": "Miss it and it blows up as an incident tomorrow.",
 		"penalty.debt.card": "Miss it and someone hacks around it: one more fire in the deck for good.",
-		"penalty.money.card": "Miss it and there's a fine of %s thousand.",
+		"penalty.money.card": "Miss it and there's a fine of %s.",
 		"penalty.boss.hit": "Irina noted that \"{task}\" slipped. That's points off in the race with Taras.",
 		"penalty.call.hit": "We need a call about \"{task}\". With you, in person.",
 		"penalty.incident.hit": "\"{task}\" never got done, and tomorrow it'll come back to bite.",
 		"penalty.debt.hit": "\"{task}\" got a workaround. Now \"{fire}\" will keep coming back.",
-		"penalty.money.hit": "\"{task}\" cost a fine: %s thousand.",
+		"penalty.money.hit": "\"{task}\" cost a fine: %s.",
 		"report_title": "Week %d report",
 		"report_hint": "A working week is 40 hours. How much of it each person spent on tasks, and how much overtime on top.",
 		"report.row": "{who} — {hours} of {norm} h on tasks, tasks closed: {done}",
@@ -3425,6 +3423,23 @@ static func fill(ru: String, en: String, names: Dictionary = {}) -> String:
 	return s.format(resolved)
 
 
+# The game's money: "250 куников", "1 coonic". A history line keeps "$cash:250" so it reads right in
+# whichever language is on when it's shown.
+static func cash(n: int) -> String:
+	return "%d %s" % [n, cash_word(n)]
+
+
+static func cash_word(n: int) -> String:
+	var a := absi(n)
+	if lang == "en":
+		return "coonic" if a == 1 else "coonics"
+	if a % 10 == 1 and a % 100 != 11:
+		return "куник"
+	if a % 10 in [2, 3, 4] and not (a % 100 in [12, 13, 14]):
+		return "куника"
+	return "куников"
+
+
 static func person(id: String) -> String:
 	return t("name.%s.nom" % id)
 
@@ -3434,6 +3449,8 @@ static func _resolve(args: Array) -> Array:
 	for a in args:
 		if a is String and a.begins_with("@"):
 			out.append(t(a.substr(1)))
+		elif a is String and a.begins_with("$cash:"):
+			out.append(cash(int(a.substr(6))))
 		else:
 			out.append(a)
 	return out

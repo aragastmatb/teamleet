@@ -1378,7 +1378,7 @@ func let_go(p: String, with_warning: bool) -> void:
 	if endless():
 		var severance := weekly_pay(p) * SEVERANCE_WEEKS
 		money -= severance
-		_narrate("money.severance", [severance], {"who": "@name.%s.nom" % p})
+		_narrate("money.severance", [cash_arg(severance)], {"who": "@name.%s.nom" % p})
 	taras_like(2.0)
 	_drop_tasks(p)
 	lead("P", 1.0)
@@ -3088,7 +3088,7 @@ func buy_upgrade(id: String) -> void:
 	_apply_effects(up["start"])
 	for card in up["cards"]:
 		deck.insert(rng.randi_range(0, mini(UPGRADE_DECK_AHEAD, deck.size())), card)
-	history.append({"who": "you", "key": "up.bought", "args": [upgrade_price(id)], "names": {"up": "@up.%s.name" % id}, "day": day})
+	history.append({"who": "you", "key": "up.bought", "args": [cash_arg(upgrade_price(id))], "names": {"up": "@up.%s.name" % id}, "day": day})
 
 
 # How far its rollout has got: implementation cards done well enough, out of all of them.
@@ -3278,7 +3278,7 @@ func _penalty(t: Dictionary) -> void:
 			_narrate("penalty.debt.hit", [], names)
 		"money":
 			money -= pen["amount"]
-			_narrate("penalty.money.hit", [pen["amount"]], names)
+			_narrate("penalty.money.hit", [cash_arg(pen["amount"])], names)
 
 
 func only_me(t: Dictionary) -> bool:
@@ -4378,6 +4378,16 @@ func endless() -> bool:
 # The endless run: periods of a month.
 const PERIOD_DAYS := 20
 
+# The player sees money in the game's own currency, coonics (куники), a tenth of the thousands it's
+# counted in here; salaries stay exact underneath. cash_arg() is that amount for a history line.
+static func cash(n: int) -> int:
+	return roundi(n / 10.0)
+
+
+static func cash_arg(n: int) -> String:
+	return "$cash:%d" % cash(n)
+
+
 # Money, in thousands of roubles. A salary is what the CV asks for: SALARY_BASE plus SALARY_PER_LEVEL for
 # each level it claims, so a faker costs like the engineer they pretend to be. It's paid a quarter a week.
 const START_MONEY := 1500
@@ -4532,10 +4542,10 @@ func _period_budget() -> void:
 	_taras_period()
 	if last_race.is_empty():
 		money += PERIOD_BUDGET
-		_say("boss", "money.budget", [PERIOD_BUDGET])
+		_say("boss", "money.budget", [cash_arg(PERIOD_BUDGET)])
 		return
 	money += last_race["budget"]
-	_say("boss", "money.split", [last_race["mine"], last_race["taras"], last_race["budget"]])
+	_say("boss", "money.split", [last_race["mine"], last_race["taras"], cash_arg(last_race["budget"])])
 
 
 func _payday() -> void:
@@ -4545,7 +4555,7 @@ func _payday() -> void:
 		flags["clean_week"] = true
 	var pay := payroll()
 	money -= pay
-	_narrate("money.payday", [pay, money])
+	_narrate("money.payday", [cash_arg(pay), cash_arg(money)])
 	if money < 0:
 		flags["bankrupt"] = true
 
