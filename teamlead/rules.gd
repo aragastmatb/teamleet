@@ -327,6 +327,9 @@ func _deliver_arrivals() -> void:
 	_maybe_sell()
 	_layoff_rush()
 	_hiring_morning()
+	if flags.get("auto_today", 0) > 0:
+		_narrate("up.auto", [flags["auto_today"]])
+		flags["auto_today"] = 0
 	for id in arriving:
 		if endless() and C.TASKS[id]["tags"].has("incident"):
 			arriving_midday.append(id)
@@ -500,15 +503,25 @@ func _arrivals() -> Array:
 		if deck.size() < 4:
 			_refill_deck()
 		var picked := -1
-		for i in deck.size():
+		var i := 0
+		while i < deck.size():
+			# What the upgrades now take care of goes by without reaching anyone, and counts as done.
+			if endless() and _bank_here(deck[i]) and _automated(deck[i]):
+				var gone: String = deck.pop_at(i)
+				_automation_credit(gone)
+				load += C.TASKS[gone]["size"]
+				if load >= target:
+					break
+				continue
 			var info: Dictionary = C.TASKS[deck[i]]
 			var same := 0
 			for id in out:
 				if C.TASKS[id]["cat"] == info["cat"]:
 					same += 1
-			if same < C.MAX_SAME_KIND and (endless() or day + info["size"] - 1 <= last_day()) and _can_come_again(deck[i]) and _freq_ok(deck[i]) and not out.has(deck[i]) and _improved_by("remove", deck[i]).is_empty() and _bank_here(deck[i]):
+			if same < C.MAX_SAME_KIND and (endless() or day + info["size"] - 1 <= last_day()) and _can_come_again(deck[i]) and not out.has(deck[i]) and _improved_by("remove", deck[i]).is_empty() and _bank_here(deck[i]):
 				picked = i
 				break
+			i += 1
 		if picked < 0:
 			break
 		var id: String = deck.pop_at(picked)
@@ -519,8 +532,9 @@ func _arrivals() -> Array:
 
 # How hard this week of the chapter pushes (C.RAMP): past the listed weeks, full load.
 func ramp_now() -> Dictionary:
-	# The endless run eases in over its first month, then stays the same.
-	var weeks: Array = (C.RAMP[1] if period == 1 else C.RAMP[0]) if endless() else C.RAMP.get(chapter, C.RAMP[0])
+	if endless():
+		return endless_ramp()
+	var weeks: Array = C.RAMP.get(chapter, C.RAMP[0])
 	var w := (chapter_day() - 1) / 5
 	return weeks[w] if w < weeks.size() else {"load": 1.0, "cards": C.MAX_CARDS_A_DAY, "slack": 0}
 
@@ -546,6 +560,23 @@ func shuffle(list: Array) -> void:
 		list[j] = tmp
 
 
+# The endless run's load: a made-up team is weaker than the story's, so it starts lighter, eases in over
+# the first week and then grows a little every period, so that sooner or later something gives.
+const ENDLESS_LOAD := 0.65
+const ENDLESS_LOAD_GROWTH := 0.15 # a period
+const ENDLESS_LOAD_MAX := 3.0
+const ENDLESS_CARDS := 3 # a day at first, one more every ENDLESS_CARDS_EVERY periods, up to ENDLESS_CARDS_MAX
+const ENDLESS_CARDS_EVERY := 1
+const ENDLESS_CARDS_MAX := 9
+
+
+func endless_ramp() -> Dictionary:
+	if period == 1 and chapter_day() <= 5:
+		return {"load": ENDLESS_LOAD * 0.8, "cards": 3, "slack": 2}
+	var load := minf(ENDLESS_LOAD_MAX, ENDLESS_LOAD * (1.0 + ENDLESS_LOAD_GROWTH * (period - 1)))
+	return {"load": load, "cards": mini(ENDLESS_CARDS_MAX, ENDLESS_CARDS + (period - 1) / ENDLESS_CARDS_EVERY), "slack": 1}
+
+
 func deck_source() -> Array:
 	return C.ENDLESS_DECK if endless() else C.DECK.get(chapter, [])
 
@@ -556,7 +587,8 @@ func _refill_deck() -> void:
 		fresh = fresh.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
 	fresh.append_array(curses)
 	fresh.append_array(upkeep)
-	fresh = fresh.filter(func(id): return _improved_by("remove", id).is_empty() and _bank_here(id))
+	# (in the endless run removed cards stay in: drawn, they count as done by the upgrades)
+	fresh = fresh.filter(func(id): return (endless() or _improved_by("remove", id).is_empty()) and _bank_here(id))
 	for i in range(fresh.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
 		var tmp = fresh[i]
@@ -575,6 +607,8 @@ func add_task(id: String) -> void:
 		seen_day[id] = day
 		seen_day[info["tpl"]] = day
 		_narrate("imp.self", [], {"who": "@name.%s.gen" % info["from"], "task": "@taskname." + id})
+		if endless():
+			_automation_credit(id)
 		return
 	var size: float = info["size"] * flags.get("shrink:" + id, 1.0)
 	for imp in _improved_by("shrink", id):
@@ -2985,6 +3019,17 @@ func _freq_ok(id: String) -> bool:
 	return m >= 1.0 or rng.randf() < m
 
 
+func _automated(id: String) -> bool:
+	return not _improved_by("remove", id).is_empty() or not _freq_ok(id)
+
+
+# Work the platform did for you counts in the race as if the team had done it decently.
+func _automation_credit(id: String) -> void:
+	var key := "auto_points_%d" % period
+	flags[key] = flags.get(key, 0.0) + C.TASKS[id]["size"] * QUALITY_POINTS["ok"]
+	flags["auto_today"] = flags.get("auto_today", 0) + 1
+
+
 # ---------- penalties ----------
 
 const PENALTY_RACE := 2.0 # points off per day of work in a card Irina was waiting for
@@ -4107,7 +4152,7 @@ func salary(p: String) -> int:
 const QUALITY_POINTS := {"good": 1.0, "ok": 0.7, "bad": 0.3}
 const LATE_PENALTY := 0.5
 const TARAS_BASE := 80.0
-const TARAS_GROWTH := 0.06 # a period
+const TARAS_GROWTH := 0.1 # a period
 const BUDGET_POT := 2000 # both departments' budget together
 const SHARE_MIN := 0.3
 const SHARE_MAX := 0.7
@@ -4125,6 +4170,7 @@ func my_points() -> float:
 		if t["late"] and t.get("late_day", 0) >= first_day():
 			sum -= t["size"] * LATE_PENALTY
 	sum -= flags.get("race_penalty_%d" % period, 0.0)
+	sum += flags.get("auto_points_%d" % period, 0.0)
 	return snappedf(sum, 0.1)
 
 
