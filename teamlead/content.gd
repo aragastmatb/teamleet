@@ -137,12 +137,19 @@ const INTENT_TASTE := {
 
 
 # The task deck lives in data/tasks.tsv, a table anyone can edit (Excel, Google Sheets, a text editor).
-# Columns: id, kind, chapter, category, from, size, due, public, copies, key_day, tags, name_ru, ask_ru, name_en, ask_en.
+# Columns: id, kind, chapter, category, from, size, due, public, copies, key_day, tags, name_ru, ask_ru, name_en, ask_en, penalty.
 # chapter: which chapter's deck it's in (empty = 1). key_day: the day of that chapter a key project arrives.
 # size: days of work for someone decent at it. due: days after arrival (0 = today). public: the boss will look.
 # kind: key (key project, arrives on key_day), weekly (Monday report), deck (shuffled, `copies` of it),
-# followup (a client coming back for more), dump (Irina drops it on you). tags: debt (fires that cleaning up
-# tech debt removes and neglect brings back), client (good work here brings the client back for more).
+# followup (a client coming back for more), dump (Irina drops it on you), penalty (brought by a missed
+# deadline, never dealt). tags: debt (fires that cleaning up tech debt removes and neglect brings back),
+# client (good work here brings the client back for more), only_me (nobody but you can take it).
+# penalty (the endless run only): what missing the deadline costs, on top of the complaints:
+#   boss       Irina is displeased: points off in the race with Taras
+#   call       an escalation call goes into your inbox, and only you can take it
+#   incident   an incident breaks out the next day
+#   debt       a tech-debt fire goes into the deck for good
+#   money:N    a fine of N thousand
 #
 # Chains: a card of kind start arrives on its key_day; its `then` column says what comes next, by how it
 # went: "good:kyc_pipelines+2; bad:kyc_rollback+1; declined:kyc_escalation+3" — done well (or ok), done
@@ -320,7 +327,8 @@ static func _add_card(row: Dictionary, ch: int, v: Dictionary) -> void:
 	var id: String = v["id"]
 	var tags: Array = Array(row["tags"].split(",", false)).map(func(x): return x.strip_edges())
 	TASKS[id] = {"cat": row["category"], "size": float(row["size"]), "due": int(row["due"]), "public": row["public"] == "1",
-		"from": v["from"], "kind": row["kind"], "tags": tags, "tpl": row["id"], "then": _branches(row.get("then", "")), "bank": v.get("bank", "")}
+		"from": v["from"], "kind": row["kind"], "tags": tags, "tpl": row["id"], "then": _branches(row.get("then", "")), "bank": v.get("bank", ""),
+		"penalty": row.get("penalty", "")}
 	for tag in tags:
 		if tag.begins_with("bank:"):
 			TASKS[id]["bank"] = tag.substr(5)

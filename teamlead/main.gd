@@ -1885,12 +1885,15 @@ func _task_detail(t: Dictionary) -> Control:
 		v.add_child(_label(Loc.t("imp.gives", [Loc.t("imp.%s.effect" % bare)]), 13, COL_GOOD, true, true))
 	else:
 		v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 13, COL_MUTED, true))
+	var pen: Dictionary = rules.penalty_of(t)
+	if not pen.is_empty() and t["status"] != "done" and not t["late"]:
+		v.add_child(_label(Loc.t("penalty.%s.card" % pen["kind"], [pen["amount"]] if pen["kind"] == "money" else []), 13, COL_DANGER, true))
 	var who := _flow(6, 6)
 	v.add_child(who)
 	who.visible = rules.can_assign(t)
 	who.add_child(_row_label(Loc.t("to_whom")))
 	for p in rules.team:
-		if not rules.available(p):
+		if not rules.available(p) or rules.only_me(t):
 			continue
 		var pe: Dictionary = rules.estimate(t, p)
 		var label := "%s  ~%s" % [Loc.person(p), _days(pe["days"])] if pe["sure"] else "%s  ?" % Loc.person(p)

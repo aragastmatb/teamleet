@@ -113,6 +113,8 @@ var step := "triage"
 var after_events := "plan"
 # Incidents that break out in the middle of the day.
 var arriving_midday: Array = []
+# Cards missed deadlines have put into the deck for good (the endless run's curses).
+var curses: Array = []
 var debt := 0
 var debt_days := 0
 var my_sick := 0
@@ -356,7 +358,7 @@ func _pull_choice(p: String) -> Dictionary:
 	var best: Dictionary = {}
 	var best_score := -INF
 	for t in inbox():
-		if t.get("midday", -1) == day:
+		if t.get("midday", -1) == day or only_me(t):
 			continue
 		var skill: int = people[p]["skills"][t["cat"]]
 		var score: float
@@ -527,6 +529,7 @@ func _refill_deck() -> void:
 	var fresh: Array = C.DECK.get(chapter, []).duplicate()
 	if flags.has("tech_debt_done"):
 		fresh = fresh.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
+	fresh.append_array(curses)
 	fresh = fresh.filter(func(id): return _improved_by("remove", id).is_empty() and _bank_here(id))
 	for i in range(fresh.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
@@ -2125,6 +2128,8 @@ func assign(uid: int, p: String) -> void:
 		return
 	if p != "me" and not available(p):
 		return
+	if p != "me" and only_me(t):
+		return
 	if not can_afford(cost("assign")):
 		return
 	spend_attention(cost("assign"))
@@ -2725,6 +2730,8 @@ func end_day() -> void:
 			t["late"] = true
 			t["late_day"] = day
 			_late(t)
+			if endless():
+				_penalty(t)
 			if t["vouched"]:
 				boss -= 1
 				_say("boss", "boss.vouched_late", [], {"task": "@taskname." + t["id"]})
@@ -2822,6 +2829,56 @@ func _late(t: Dictionary) -> void:
 	if flags["complaints_" + who] == 2:
 		boss -= 1
 		_narrate("late.escalated", [], {"who": "@name.%s.nom" % who, "who_gen": "@name.%s.gen" % who})
+
+
+# ---------- penalties ----------
+
+const PENALTY_RACE := 2.0 # points off per day of work in a card Irina was waiting for
+const CALL_SIZE := 0.5
+
+
+# What missing this card's deadline costs, as written on it: {"kind", "amount"}, or {} for nothing.
+func penalty_of(t: Dictionary) -> Dictionary:
+	var text: String = C.TASKS.get(t["id"], {}).get("penalty", "")
+	if text == "" or not endless():
+		return {}
+	var parts := text.split(":")
+	return {"kind": parts[0], "amount": int(parts[1]) if parts.size() > 1 else 0}
+
+
+func _penalty(t: Dictionary) -> void:
+	var pen := penalty_of(t)
+	if pen.is_empty():
+		return
+	var names := {"task": "@taskname." + t["id"], "who": "@name.%s.nom" % t["from"]}
+	match pen["kind"]:
+		"boss":
+			flags["race_penalty_%d" % period] = flags.get("race_penalty_%d" % period, 0.0) + PENALTY_RACE * t["size"]
+			boss -= 0.5
+			_narrate("penalty.boss.hit", [], names)
+		"call":
+			add_task_raw("escalation_call", "support", CALL_SIZE, day + 1, false, t["from"])
+			_say(t["from"] if t["from"] != "product" else "boss", "penalty.call.hit", [], names)
+		"incident":
+			var fires := C.tasks_with("tag", "incident")
+			if not fires.is_empty():
+				chain_due.append({"id": fires[rng.randi() % fires.size()], "day": day + 1})
+			_narrate("penalty.incident.hit", [], names)
+		"debt":
+			var debts := C.tasks_with("tag", "debt").filter(func(id): return _improved_by("remove", id).is_empty())
+			if not debts.is_empty():
+				var id: String = debts[rng.randi() % debts.size()]
+				curses.append(id)
+				deck.insert(rng.randi_range(0, deck.size()), id)
+				names["fire"] = "@taskname." + id
+			_narrate("penalty.debt.hit", [], names)
+		"money":
+			money -= pen["amount"]
+			_narrate("penalty.money.hit", [pen["amount"]], names)
+
+
+func only_me(t: Dictionary) -> bool:
+	return C.TASKS.get(t["id"], {}).get("tags", []).has("only_me")
 
 
 # After the Friday report: the review if there's anything to discuss, otherwise the evening.
@@ -3134,7 +3191,7 @@ func _work(p: String) -> void:
 # Saying no to a request in the inbox: a conversation with whoever brought it (see scenes.gd decline).
 # Key projects can't be turned down.
 func can_decline(t: Dictionary) -> bool:
-	return phase == "plan" and pending.is_empty() and allowed("decline") and can_afford(cost("decline")) and t.get("status", "") == "inbox" and not t["key"] and not t.get("backlog", false)
+	return phase == "plan" and pending.is_empty() and allowed("decline") and can_afford(cost("decline")) and t.get("status", "") == "inbox" and not t["key"] and not t.get("backlog", false) and not only_me(t)
 
 
 func decline(uid: int) -> void:
@@ -3747,7 +3804,7 @@ func _tip_used(target: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 5
+const SAVE_VERSION := 6
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.
@@ -3915,6 +3972,7 @@ func my_points() -> float:
 			sum += _task_points(t)
 		if t["late"] and t.get("late_day", 0) >= first_day():
 			sum -= t["size"] * LATE_PENALTY
+	sum -= flags.get("race_penalty_%d" % period, 0.0)
 	return snappedf(sum, 0.1)
 
 
