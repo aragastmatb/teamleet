@@ -335,6 +335,21 @@ func _end_day() -> void:
 	_render()
 
 
+func _start_work() -> void:
+	_clear_selection()
+	rules.start_work()
+	_render()
+
+
+# The board's main button: "get to work" on an endless morning, "end the day" otherwise.
+func _day_button(width: int) -> Button:
+	var morning := rules.endless() and rules.step == "triage"
+	var b := _button(Loc.t("start_work" if morning else "end_day"), _start_work if morning else _end_day, width, "primary")
+	b.disabled = rules.phase != "plan" or not rules.pending.is_empty()
+	_lit(b, "end_day")
+	return b
+
+
 func _next() -> void:
 	rules.next()
 	_render()
@@ -1656,16 +1671,15 @@ func _board_area() -> Control:
 	head.add_child(titles)
 	titles.add_child(_label(Loc.t("board_title"), 20, COL_TEXT, false, true))
 	var hint := Loc.t("pick_task")
+	if rules.endless():
+		hint = Loc.t("step.%s.hint" % rules.step)
 	if not rules.queue_of("me").is_empty():
 		hint = Loc.t("you.busy")
 	titles.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
 	if rules.phase == "evening":
 		head.add_child(_button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 200, "primary"))
 	else:
-		var end := _button(Loc.t("end_day"), _end_day, 200, "primary")
-		end.disabled = rules.phase != "plan" or not rules.pending.is_empty()
-		_lit(end, "end_day")
-		head.add_child(end)
+		head.add_child(_day_button(200))
 	var columns := HBoxContainer.new()
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	columns.add_theme_constant_override("separation", 8)
@@ -1873,6 +1887,7 @@ func _task_detail(t: Dictionary) -> Control:
 		v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 13, COL_MUTED, true))
 	var who := _flow(6, 6)
 	v.add_child(who)
+	who.visible = rules.can_assign(t)
 	who.add_child(_row_label(Loc.t("to_whom")))
 	for p in rules.team:
 		if not rules.available(p):
@@ -1880,10 +1895,10 @@ func _task_detail(t: Dictionary) -> Control:
 		var pe: Dictionary = rules.estimate(t, p)
 		var label := "%s  ~%s" % [Loc.person(p), _days(pe["days"])] if pe["sure"] else "%s  ?" % Loc.person(p)
 		var b := _button(label + _cost_mark(rules.cost("assign")), _pick.bind(p), 0, "chosen" if t["owner"] == p else "")
-		b.disabled = b.disabled or t["owner"] == p or not rules.can_afford(rules.cost("assign"))
+		b.disabled = b.disabled or t["owner"] == p or not rules.can_assign(t) or not rules.can_afford(rules.cost("assign"))
 		who.add_child(b)
 	var mine := _button("%s  ~%s" % [Loc.t("myself"), _days(rules.estimate(t, "me")["days"])] + _cost_mark(rules.cost("assign")), _direct.bind("me"), 0)
-	mine.disabled = mine.disabled or not rules.can_afford(rules.cost("assign"))
+	mine.disabled = mine.disabled or not rules.can_assign(t) or not rules.can_afford(rules.cost("assign"))
 	who.add_child(mine)
 	if not t.get("backlog", false) and not rules.endless():
 		who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
@@ -1892,28 +1907,30 @@ func _task_detail(t: Dictionary) -> Control:
 	if t["status"] == "active":
 		var acts := _flow(6, 6)
 		v.add_child(acts)
-		acts.add_child(_button(Loc.t("unassign"), _unassign, 0, "subtle"))
-		if rules.team.has(t["owner"]) and rules.queue_of(t["owner"])[0]["uid"] != t["uid"]:
+		# The endless morning is for handing out, the middle of the day for stepping in.
+		if rules.can_assign(t):
+			acts.add_child(_button(Loc.t("unassign"), _unassign, 0, "subtle"))
+		if rules.team.has(t["owner"]) and rules.queue_of(t["owner"])[0]["uid"] != t["uid"] and rules.allowed("prioritize"):
 			acts.add_child(_button(Loc.t("prioritize"), _prioritize, 0, "subtle"))
-		if rules.team.has(t["owner"]) and not t["sit_today"]:
+		if rules.team.has(t["owner"]) and not t["sit_today"] and rules.allowed("sit"):
 			var sit := _button(Loc.t("sit.button") + _cost_mark(rules.cost("sit")), _sit, 0, "subtle")
 			sit.disabled = sit.disabled or not rules.can_afford(rules.cost("sit"))
 			acts.add_child(sit)
-		if rules.team.has(t["owner"]):
+		if rules.team.has(t["owner"]) and rules.allowed("stay"):
 			var stay := _button(Loc.t("stay_button"), _ask_stay, 0, "subtle")
 			stay.disabled = stay.disabled or t.get("stay_asked", -1) == rules.day
 			acts.add_child(stay)
 			var step := _button(Loc.t("intervene_button") + _cost_mark(rules.cost("intervene")), _intervene, 0, "subtle")
 			step.disabled = step.disabled or not rules.can_intervene(t)
 			acts.add_child(step)
-	if t["status"] == "active" and rules.team.has(t["owner"]):
+	if t["status"] == "active" and rules.team.has(t["owner"]) and rules.allowed("pair"):
 		var pair := _flow(6, 6)
 		v.add_child(pair)
 		pair.add_child(_row_label(Loc.t("helper_optional")))
 		for p in rules.team:
 			if p != t["owner"] and rules.available(p):
 				var hb := _button(Loc.person(p) + _cost_mark(rules.cost("pair")), _helper.bind(p), 0, "chosen" if t["helper"] == p else "")
-				hb.disabled = hb.disabled or t["helper"] == p or not rules.can_afford(rules.cost("pair"))
+				hb.disabled = hb.disabled or t["helper"] == p or not rules.allowed("pair") or not rules.can_afford(rules.cost("pair"))
 				pair.add_child(hb)
 		pair.add_child(_button(Loc.t("no_helper"), _helper.bind(""), 0, "chosen" if t["helper"] == "" else ""))
 		v.add_child(_label(Loc.t("helper_hint"), 12, COL_MUTED, true))
@@ -2083,10 +2100,7 @@ func _phone_board() -> Control:
 	if rules.phase == "evening":
 		v.add_child(_button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 0, "primary"))
 	else:
-		var end := _button(Loc.t("end_day"), _end_day, 0, "primary")
-		end.disabled = rules.phase != "plan" or not rules.pending.is_empty()
-		_lit(end, "end_day")
-		v.add_child(end)
+		v.add_child(_day_button(0))
 	return _padded(v, 10, 10)
 
 

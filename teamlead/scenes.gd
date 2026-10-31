@@ -54,10 +54,20 @@ const ORDER := [
 ]
 
 
-func queue(r) -> void:
+# When in the endless run's day each scene comes up; anything not listed is a morning one.
+# The story keeps them all in the morning.
+const WHEN := {
+	"chaos_meeting": "midday", "boss_deadline": "midday", "boss_details": "midday", "complication": "midday", "boris_drunk": "midday",
+	"friday_deploy": "evening", "marina_warns": "evening",
+}
+
+
+func queue(r, at: String = "morning") -> void:
 	for id in ORDER:
 		if r.events.size() >= MAX_PER_MORNING:
 			break
+		if (WHEN.get(id, "morning") if r.endless() else "morning") != at:
+			continue
 		# A scene about one of the four (alex_tired, vika_raise...) only while they're on the team.
 		var about: String = id.get_slice("_", 0)
 		if C.PEOPLE.has(about) and not r.available(about):

@@ -106,6 +106,13 @@ var comp_off := {}
 # The weekend clears the debt; start too many days in a row in debt and you burn out.
 var attention := 0
 var overtime_today := 0
+# The endless run's day comes in steps: "triage" (the morning: hand out and turn down work), "work"
+# (the middle of the day: step in where it's needed), then the evening after end_day.
+var step := "triage"
+# Where the game goes once the open events are answered: back to the board, or on to the evening.
+var after_events := "plan"
+# Incidents that break out in the middle of the day.
+var arriving_midday: Array = []
 var debt := 0
 var debt_days := 0
 var my_sick := 0
@@ -266,6 +273,8 @@ func _start_day() -> void:
 			offer_today[p] = true
 	visited_today = false
 	overtime_today = 0
+	step = "triage"
+	after_events = "plan"
 	attention = 0 if my_sick > 0 else maxi(0, max_attention() - debt)
 	debt = 0
 	sick_today = my_sick > 0
@@ -294,12 +303,55 @@ func _open_morning() -> void:
 
 
 func _deliver_arrivals() -> void:
+	if step == "work":
+		for id in arriving_midday:
+			add_task(id)
+			tasks[-1]["midday"] = day
+		arriving_midday = []
+		return
 	_maybe_sell()
 	_layoff_rush()
 	_hiring_morning()
 	for id in arriving:
-		add_task(id)
+		if endless() and C.TASKS[id]["tags"].has("incident"):
+			arriving_midday.append(id)
+		else:
+			add_task(id)
 	arriving = []
+
+
+# The endless run's actions belong to steps of the day; the story lets you do anything on the board.
+const TRIAGE_ACTIONS := ["assign", "decline", "prioritize", "unassign", "react", "initiative"]
+const WORK_ACTIONS := ["sit", "intervene", "pair", "talk", "stay"]
+
+
+func allowed(kind: String) -> bool:
+	if not endless():
+		return true
+	if kind in TRIAGE_ACTIONS:
+		return step == "triage"
+	if kind in WORK_ACTIONS:
+		return step == "work"
+	return true
+
+
+# Can this card be handed out now? In the middle of the day only what broke out since the morning.
+func can_assign(t: Dictionary) -> bool:
+	return allowed("assign") or (step == "work" and t.get("midday", -1) == day)
+
+
+# The morning's done: half the day goes by, and what came up in it shows.
+func start_work() -> void:
+	if not endless() or phase != "plan" or step != "triage" or not pending.is_empty():
+		return
+	step = "work"
+	_narrate("log.midday")
+	scenes.queue(self, "midday")
+	_say_event_lines()
+	if events.is_empty():
+		_deliver_arrivals()
+	else:
+		phase = "event"
 
 
 # This morning's work: the weekly report on Mondays (unless automated), key projects on their days,
@@ -1427,8 +1479,9 @@ func resolve_event(choice: String) -> void:
 	scenes.resolve(self, events.pop_front(), choice)
 	_weight_check()
 	if events.is_empty():
-		_deliver_arrivals()
-		phase = "plan"
+		phase = after_events
+		if phase == "plan":
+			_deliver_arrivals()
 	else:
 		_say_event_lines()
 
@@ -1925,7 +1978,7 @@ func available(p: String) -> bool:
 
 func assign(uid: int, p: String) -> void:
 	var t := task(uid)
-	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] == "done" or t["status"] == "taras" or p == t["owner"]:
+	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] == "done" or t["status"] == "taras" or p == t["owner"] or not can_assign(t):
 		return
 	_tip_used("inbox")
 	var previous: String = t["owner"]
@@ -2151,7 +2204,7 @@ func _hand_to_taras(t: Dictionary) -> void:
 # Move a task to the front of its owner's queue. Dropping something half-done costs a little mood.
 func prioritize(uid: int) -> void:
 	var t := task(uid)
-	if phase != "plan" or t.is_empty() or t["status"] != "active" or not team.has(t["owner"]):
+	if phase != "plan" or t.is_empty() or t["status"] != "active" or not team.has(t["owner"]) or not allowed("prioritize"):
 		return
 	var p: String = t["owner"]
 	var head: Dictionary = queue_of(p)[0]
@@ -2170,7 +2223,7 @@ func prioritize(uid: int) -> void:
 
 func set_helper(uid: int, p: String) -> void:
 	var t := task(uid)
-	if phase != "plan" or t.is_empty() or t["status"] != "active" or p == t["owner"] or (p != "" and not available(p)):
+	if phase != "plan" or t.is_empty() or t["status"] != "active" or p == t["owner"] or (p != "" and not available(p)) or not allowed("pair"):
 		return
 	if flags.has("no_pair_alex_vika") and [p, t["owner"]].has("alex") and [p, t["owner"]].has("vika"):
 		_say("alex", "helper.no_vika")
@@ -2190,7 +2243,7 @@ func set_helper(uid: int, p: String) -> void:
 
 func unassign(uid: int) -> void:
 	var t := task(uid)
-	if phase != "plan" or t.is_empty() or t["status"] != "active":
+	if phase != "plan" or t.is_empty() or t["status"] != "active" or not can_assign(t):
 		return
 	unassign_now(t)
 
@@ -2259,7 +2312,7 @@ func choice_costs(ev: Dictionary, choice: String) -> bool:
 
 
 func can_talk(p: String) -> bool:
-	return phase == "plan" and pending.is_empty() and can_afford(cost("talk")) and convo.is_empty() and not talked.has(p) and available(p) and not people[p]["absent"]
+	return phase == "plan" and pending.is_empty() and allowed("talk") and can_afford(cost("talk")) and convo.is_empty() and not talked.has(p) and available(p) and not people[p]["absent"]
 
 
 # Every bit of managing costs attention; past the day's points you're borrowing from tomorrow.
@@ -2314,7 +2367,7 @@ func own_task_cost() -> int:
 # personally involved (which makes "under my personal control" true at the review).
 func sit_with(uid: int) -> void:
 	var t := task(uid)
-	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("sit_today", false):
+	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("sit_today", false) or not allowed("sit"):
 		return
 	var p: String = t["owner"]
 	if not team.has(p) or not available(p) or people[p]["absent"] or not can_afford(cost("sit")):
@@ -2337,7 +2390,7 @@ func sit_with(uid: int) -> void:
 # Step into someone's task: ask how it's going and steer it (see scenes.gd intervene). Once a day per task.
 func intervene(uid: int) -> void:
 	var t := task(uid)
-	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("checked_day", 0) == day:
+	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("checked_day", 0) == day or not allowed("intervene"):
 		return
 	_tip_used("active")
 	var p: String = t["owner"]
@@ -2352,7 +2405,7 @@ func intervene(uid: int) -> void:
 
 
 func can_intervene(t: Dictionary) -> bool:
-	return phase == "plan" and pending.is_empty() and can_afford(cost("intervene")) and t["status"] == "active" and team.has(t["owner"]) and available(t["owner"]) \
+	return phase == "plan" and pending.is_empty() and allowed("intervene") and can_afford(cost("intervene")) and t["status"] == "active" and team.has(t["owner"]) and available(t["owner"]) \
 		and not people[t["owner"]]["absent"] and t.get("checked_day", 0) != day
 
 
@@ -2369,7 +2422,7 @@ func take_over(t: Dictionary) -> void:
 
 # What a free person offers to do on their own, or "" if nothing (or they're busy).
 func initiative_offer(p: String) -> String:
-	if phase != "plan" or not offer_today.has(p) or not available(p) or people[p]["absent"] or not queue_of(p).is_empty():
+	if phase != "plan" or not allowed("initiative") or not offer_today.has(p) or not available(p) or people[p]["absent"] or not queue_of(p).is_empty():
 		return ""
 	for t in tasks:
 		if t["status"] == "active" and t["helper"] == p:
@@ -2494,6 +2547,10 @@ func end_day() -> void:
 	if phase != "plan" or not pending.is_empty():
 		return
 	flags.erase("tip_hl")
+	# Skipped straight past the morning: whatever broke out today came in all the same.
+	if endless() and step == "triage":
+		step = "work"
+		_deliver_arrivals()
 	evening_from = history.size()
 	_narrate("log.evening")
 	_alex_nights()
@@ -2554,6 +2611,13 @@ func end_day() -> void:
 		phase = "report"
 	else:
 		phase = "evening"
+	if endless():
+		step = "evening"
+		scenes.queue(self, "evening")
+		if not events.is_empty():
+			after_events = phase
+			_say_event_lines()
+			phase = "event"
 	# An evening conversation comes before the day's summary.
 	_queue_story("evening")
 
@@ -2931,7 +2995,7 @@ func _work(p: String) -> void:
 # Saying no to a request in the inbox: a conversation with whoever brought it (see scenes.gd decline).
 # Key projects can't be turned down.
 func can_decline(t: Dictionary) -> bool:
-	return phase == "plan" and pending.is_empty() and can_afford(cost("decline")) and t.get("status", "") == "inbox" and not t["key"] and not t.get("backlog", false)
+	return phase == "plan" and pending.is_empty() and allowed("decline") and can_afford(cost("decline")) and t.get("status", "") == "inbox" and not t["key"] and not t.get("backlog", false)
 
 
 func decline(uid: int) -> void:
@@ -3057,7 +3121,7 @@ func late_hours(p: String) -> int:
 # they are, and how often you've asked this week.
 func ask_stay(uid: int) -> void:
 	var t := task(uid)
-	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("stay_asked", -1) == day:
+	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("stay_asked", -1) == day or not allowed("stay"):
 		return
 	var p: String = t["owner"]
 	if not team.has(p) or not available(p) or people[p]["absent"]:
@@ -3544,7 +3608,7 @@ func _tip_used(target: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 3
+const SAVE_VERSION := 4
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.
