@@ -660,6 +660,8 @@ func _unhandled_input(event: InputEvent) -> void:
 # ---------- screens ----------
 
 func _render() -> void:
+	if rules.auto_end_day():
+		selected = -1
 	if rules.phase != "title":
 		rules.update_tips()
 		_play(_sound_for_changes())
@@ -1343,15 +1345,18 @@ func _attention_text() -> String:
 	var dots := ""
 	for i in rules.max_attention():
 		dots += "●" if i < rules.attention else "○"
-	var week := "%d/%d" % [maxi(0, rules.week_pool), rules.week_max()]
-	var text := Loc.render("attention_label", [], {"dots": dots, "week": week, "state": "@me." + rules.my_state()})
+	var text := Loc.render("attention_label", [], {"dots": dots, "state": "@me." + rules.my_state()})
 	if rules.overtime_today > 0:
-		text += " " + Loc.render("overtime_label", [], {"n": rules.overtime_today})
+		text += " " + Loc.render("overtime_label", [], {"n": rules.overtime_today, "cap": rules.borrow_cap()})
 	return text
 
 
-func _cost_mark() -> String:
-	return " ●" if rules.attention > 0 else " " + Loc.t("cost_overtime")
+func _cost_mark(n: int = 1) -> String:
+	if n <= 0:
+		return ""
+	if rules.attention >= n:
+		return " " + "●".repeat(n)
+	return " " + Loc.t("cost_overtime")
 
 
 # ---------- the team ----------
@@ -1464,7 +1469,7 @@ func _person_card(p: String) -> Control:
 			v.add_child(_label(Loc.t("helper_badge", ["«%s»" % Loc.t("taskname." + t["id"])]), 12, COL_MUTED, true))
 	if rules.warned(p):
 		state.add_child(_pill(Loc.t("fire.decide_label" if rules.fire_ready(p) else "fire.warned_label"), COL_DANGER, Color("ffebe6")))
-	var talk := _button(Loc.t("talk_button") + _cost_mark(), _talk_to.bind(p), 0, "subtle")
+	var talk := _button(Loc.t("talk_button") + _cost_mark(rules.cost("talk")), _talk_to.bind(p), 0, "subtle")
 	talk.disabled = talk.disabled or not rules.can_talk(p)
 	talk.custom_minimum_size.y = 30
 	if talk.disabled == false:
@@ -1539,7 +1544,7 @@ func _candidate_card(c: Dictionary) -> Control:
 		v.add_child(_label(Loc.t("hire.hates", [Loc.t("cat." + rules.info(id)["hates"][0])]), 12, COL_MUTED, true))
 	if c.get("sittings", 0) < rules.INTERVIEW_SITTINGS and not rules.interview_topics(id).is_empty():
 		var again: bool = c.get("sittings", 0) > 0
-		var ask := _button(Loc.t("hire.again_btn" if again else "hire.interview_btn") + _cost_mark(), _interview.bind(id), 0, "subtle")
+		var ask := _button(Loc.t("hire.again_btn" if again else "hire.interview_btn") + _cost_mark(rules.cost("interview")), _interview.bind(id), 0, "subtle")
 		ask.disabled = ask.disabled or not rules.can_interview(id)
 		row.add_child(ask)
 	else:
@@ -1618,13 +1623,13 @@ func _boss_card() -> Control:
 	head.add_child(names)
 	names.add_child(_label(Loc.person("boss"), 15, COL_TEXT, true, true))
 	names.add_child(_label(Loc.t("boss_role"), 12, COL_MUTED))
-	var visit := _button(Loc.t("visit_short") + _cost_mark(), _visit_boss, 0, "subtle")
-	visit.disabled = rules.phase != "plan" or rules.visited_today or not rules.pending.is_empty()
+	var visit := _button(Loc.t("visit_short") + _cost_mark(rules.cost("boss")), _visit_boss, 0, "subtle")
+	visit.disabled = rules.phase != "plan" or rules.visited_today or not rules.pending.is_empty() or not rules.can_afford(rules.cost("boss"))
 	visit.custom_minimum_size.y = 30
 	v.add_child(visit)
 	# After the first time (a story scene in chapter three), you can go and ask for people yourself.
 	if rules.flags.has("asked_people") and rules.openings == 0:
-		var ask := _button(Loc.t("people.button") + _cost_mark(), _ask_people, 0, "subtle")
+		var ask := _button(Loc.t("people.button") + _cost_mark(rules.cost("people")), _ask_people, 0, "subtle")
 		ask.disabled = ask.disabled or not rules.can_ask_people()
 		ask.custom_minimum_size.y = 30
 		v.add_child(ask)
@@ -1874,14 +1879,16 @@ func _task_detail(t: Dictionary) -> Control:
 			continue
 		var pe: Dictionary = rules.estimate(t, p)
 		var label := "%s  ~%s" % [Loc.person(p), _days(pe["days"])] if pe["sure"] else "%s  ?" % Loc.person(p)
-		var b := _button(label, _pick.bind(p), 0, "chosen" if t["owner"] == p else "")
-		b.disabled = b.disabled or t["owner"] == p
+		var b := _button(label + _cost_mark(rules.cost("assign")), _pick.bind(p), 0, "chosen" if t["owner"] == p else "")
+		b.disabled = b.disabled or t["owner"] == p or not rules.can_afford(rules.cost("assign"))
 		who.add_child(b)
-	who.add_child(_button("%s  ~%s" % [Loc.t("myself"), _days(rules.estimate(t, "me")["days"])], _direct.bind("me"), 0))
+	var mine := _button("%s  ~%s" % [Loc.t("myself"), _days(rules.estimate(t, "me")["days"])] + _cost_mark(rules.cost("assign")), _direct.bind("me"), 0)
+	mine.disabled = mine.disabled or not rules.can_afford(rules.cost("assign"))
+	who.add_child(mine)
 	if not t.get("backlog", false) and not rules.endless():
 		who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
 	if rules.can_decline(t):
-		who.add_child(_button(Loc.t("decline_button"), _decline, 0, "subtle"))
+		who.add_child(_button(Loc.t("decline_button") + _cost_mark(rules.cost("decline")), _decline, 0, "subtle"))
 	if t["status"] == "active":
 		var acts := _flow(6, 6)
 		v.add_child(acts)
@@ -1889,12 +1896,14 @@ func _task_detail(t: Dictionary) -> Control:
 		if rules.team.has(t["owner"]) and rules.queue_of(t["owner"])[0]["uid"] != t["uid"]:
 			acts.add_child(_button(Loc.t("prioritize"), _prioritize, 0, "subtle"))
 		if rules.team.has(t["owner"]) and not t["sit_today"]:
-			acts.add_child(_button(Loc.t("sit.button") + _cost_mark(), _sit, 0, "subtle"))
+			var sit := _button(Loc.t("sit.button") + _cost_mark(rules.cost("sit")), _sit, 0, "subtle")
+			sit.disabled = sit.disabled or not rules.can_afford(rules.cost("sit"))
+			acts.add_child(sit)
 		if rules.team.has(t["owner"]):
 			var stay := _button(Loc.t("stay_button"), _ask_stay, 0, "subtle")
 			stay.disabled = stay.disabled or t.get("stay_asked", -1) == rules.day
 			acts.add_child(stay)
-			var step := _button(Loc.t("intervene_button") + _cost_mark(), _intervene, 0, "subtle")
+			var step := _button(Loc.t("intervene_button") + _cost_mark(rules.cost("intervene")), _intervene, 0, "subtle")
 			step.disabled = step.disabled or not rules.can_intervene(t)
 			acts.add_child(step)
 	if t["status"] == "active" and rules.team.has(t["owner"]):
@@ -1903,7 +1912,9 @@ func _task_detail(t: Dictionary) -> Control:
 		pair.add_child(_row_label(Loc.t("helper_optional")))
 		for p in rules.team:
 			if p != t["owner"] and rules.available(p):
-				pair.add_child(_button(Loc.person(p), _helper.bind(p), 0, "chosen" if t["helper"] == p else ""))
+				var hb := _button(Loc.person(p) + _cost_mark(rules.cost("pair")), _helper.bind(p), 0, "chosen" if t["helper"] == p else "")
+				hb.disabled = hb.disabled or t["helper"] == p or not rules.can_afford(rules.cost("pair"))
+				pair.add_child(hb)
 		pair.add_child(_button(Loc.t("no_helper"), _helper.bind(""), 0, "chosen" if t["helper"] == "" else ""))
 		v.add_child(_label(Loc.t("helper_hint"), 12, COL_MUTED, true))
 	return panel
@@ -2616,7 +2627,7 @@ func _standup_tile(line: Dictionary, i: int) -> Control:
 		v.add_child(_label(Loc.t(line["key"] + ".aside"), 13, COL_FAINT, true))
 	var r := rules.standup_reaction(i)
 	if r != "":
-		v.add_child(_answer_button(Loc.render("standup.say." + r, [], line["names"]) + (_cost_mark() if rules.standup_cost() else ""), _standup_react.bind(i)))
+		v.add_child(_answer_button(Loc.render("standup.say." + r, [], line["names"]) + (_cost_mark(rules.cost("react")) if rules.standup_cost() else ""), _standup_react.bind(i)))
 	elif line["reacted"]:
 		v.add_child(_label(Loc.render("standup.say." + rules.STANDUP_REACTIONS[line["topic"]], [], line["names"]), 13, COL_PRIMARY, true))
 		v.add_child(_label(Loc.render(line["reply"], [], line["names"]), 14, COL_TEXT, true))

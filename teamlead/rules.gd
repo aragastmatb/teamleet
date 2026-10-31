@@ -101,12 +101,13 @@ var improved := {}
 var banks := {}
 var reputation := 0.0
 var comp_off := {}
-# Your attention: a few tokens a day for managing, all drawn from the week's stock (week_pool, a day's
-# worth times five, full again each Monday). Spend more in a day than the day has and you're staying
-# late, and that comes out of the rest of the week. Run the week below zero and you burn out.
+# Your attention: the day's points for managing. Spend past them and you're borrowing from tomorrow
+# (overtime_today, up to borrow_cap()); in the endless run hitting the cap ends the day for you.
+# The weekend clears the debt; start too many days in a row in debt and you burn out.
 var attention := 0
 var overtime_today := 0
-var week_pool := 0
+var debt := 0
+var debt_days := 0
 var my_sick := 0
 # A late night (a scene says so): tomorrow you have this much less attention.
 var my_hangover := 0
@@ -187,7 +188,8 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 		banks[b] = {"mood": 0.0, "since": 1}
 	reputation = 0.0
 	_refill_deck()
-	week_pool = week_max()
+	debt = 0
+	debt_days = 0
 	my_sick = 0
 	my_hangover = 0
 	init_next.clear()
@@ -228,7 +230,8 @@ func _start_day() -> void:
 	_narrate("log.morning", [day_key()])
 	var monday := day % 5 == 1 and day > 1
 	if monday:
-		week_pool = week_max()
+		debt = 0
+		debt_days = 0
 	for p in team:
 		var st: Dictionary = people[p]
 		if st["gone"]:
@@ -263,14 +266,14 @@ func _start_day() -> void:
 			offer_today[p] = true
 	visited_today = false
 	overtime_today = 0
-	attention = 0 if my_sick > 0 else mini(max_attention(), maxi(0, week_pool))
+	attention = 0 if my_sick > 0 else maxi(0, max_attention() - debt)
+	debt = 0
 	sick_today = my_sick > 0
 	if my_sick > 0:
 		my_sick -= 1
 	elif not queue_of("me").is_empty():
-		# Doing a task yourself takes most of your day.
-		attention = maxi(0, attention - OWN_TASK_COST)
-		week_pool -= OWN_TASK_COST
+		# Doing a task yourself takes a good part of your day.
+		attention = maxi(0, attention - own_task_cost())
 	attention = maxi(0, attention - my_hangover)
 	my_hangover = 0
 	# A story conversation comes first, on its own screen; the morning's chat waits for it.
@@ -626,7 +629,7 @@ func interview(id: String, free: bool = false) -> void:
 	if c.is_empty() or (not free and not can_interview(id)):
 		return
 	if not free:
-		spend_attention()
+		spend_attention(cost("interview"))
 	lead("I", 0.2)
 	c["sittings"] = c.get("sittings", 0) + 1
 	convo = {"who": id, "kind": "interview", "left": INTERVIEW_QUESTIONS, "log": []}
@@ -1092,9 +1095,9 @@ func fire_ready(p: String) -> bool:
 
 
 func start_fire(p: String) -> void:
-	if not can_fire(p):
+	if not can_fire(p) or not can_afford(cost("fire")):
 		return
-	spend_attention()
+	spend_attention(cost("fire"))
 	history.append({"who": "you", "key": "fire.open", "args": [], "names": {}, "to": p, "day": day})
 	_open_conversation(scenes.fire_event(self, p))
 
@@ -1284,7 +1287,7 @@ func can_ask_people() -> bool:
 func ask_people() -> void:
 	if not can_ask_people():
 		return
-	spend_attention()
+	spend_attention(cost("people"))
 	flags["people_asked_day"] = day
 	history.append({"who": "you", "key": "people.ask", "args": [], "names": {}, "day": day})
 	if workload() < PEOPLE_OVERLOAD:
@@ -1834,7 +1837,7 @@ func standup_reaction(i: int) -> String:
 
 
 func standup_cost() -> bool:
-	return standup.get("reacted", 0) > 0
+	return endless() or standup.get("reacted", 0) > 0
 
 
 func standup_react(i: int) -> void:
@@ -1844,7 +1847,9 @@ func standup_react(i: int) -> void:
 	var line: Dictionary = standup["lines"][i]
 	var p: String = line["who"]
 	if standup_cost():
-		spend_attention()
+		if not can_afford(cost("react")):
+			return
+		spend_attention(cost("react"))
 	standup["reacted"] += 1
 	line["reacted"] = true
 	history.append({"who": "you", "key": "standup.say." + r, "args": [], "names": line["names"], "to": p, "day": day})
@@ -1930,6 +1935,9 @@ func assign(uid: int, p: String) -> void:
 		return
 	if p != "me" and not available(p):
 		return
+	if not can_afford(cost("assign")):
+		return
+	spend_attention(cost("assign"))
 	var names := {"task": "@taskname." + t["id"]}
 	if p != "me":
 		history.append({"who": "you", "key": "assign.say", "args": [], "names": names, "to": p, "day": day})
@@ -2170,6 +2178,10 @@ func set_helper(uid: int, p: String) -> void:
 	if p != "" and t["owner"] == "alex" and flags.has("alex_alone"):
 		_say("alex", "helper.alex_alone")
 		return
+	if p != "":
+		if not can_afford(cost("pair")):
+			return
+		spend_attention(cost("pair"))
 	t["helper"] = p
 	if p != "":
 		lead("I", 0.2)
@@ -2198,17 +2210,17 @@ func start_talk(p: String) -> void:
 	flags["talks_w%d" % week()] = flags.get("talks_w%d" % week(), 0) + 1
 	_tip_used("talk")
 	lead("I", 0.3)
-	spend_attention()
+	spend_attention(cost("talk"))
 	history.append({"who": "you", "key": "talk.open", "args": [], "names": {}, "to": p, "day": day})
 	_open_talk(p)
 
 
 # Going to Irina: one visit a day, one topic per visit.
 func visit_boss() -> void:
-	if phase != "plan" or not pending.is_empty() or visited_today:
+	if phase != "plan" or not pending.is_empty() or visited_today or not can_afford(cost("boss")):
 		return
 	visited_today = true
-	spend_attention()
+	spend_attention(cost("boss"))
 	history.append({"who": "you", "key": "visit.open", "args": [], "names": {}, "day": day})
 	_open_conversation(scenes.boss_visit(self))
 
@@ -2247,16 +2259,55 @@ func choice_costs(ev: Dictionary, choice: String) -> bool:
 
 
 func can_talk(p: String) -> bool:
-	return phase == "plan" and pending.is_empty() and convo.is_empty() and not talked.has(p) and available(p) and not people[p]["absent"]
+	return phase == "plan" and pending.is_empty() and can_afford(cost("talk")) and convo.is_empty() and not talked.has(p) and available(p) and not people[p]["absent"]
 
 
-# Every bit of managing costs a token of attention; past them you're staying late.
-func spend_attention() -> void:
-	week_pool -= 1
-	if attention > 0:
-		attention -= 1
-	else:
-		overtime_today += 1
+# Every bit of managing costs attention; past the day's points you're borrowing from tomorrow.
+func spend_attention(n: int = 1) -> void:
+	for i in n:
+		if attention > 0:
+			attention -= 1
+		else:
+			overtime_today += 1
+
+
+# What each action takes in the endless run. The story keeps its old prices: one point for managing,
+# and handing out work is free.
+const COSTS := {"assign": 1, "pair": 1, "decline": 1, "react": 1, "sit": 2, "talk": 2, "intervene": 1, "boss": 2, "people": 2, "interview": 2, "fire": 2}
+const FREE_IN_STORY := ["assign", "pair", "decline"]
+
+
+func cost(kind: String) -> int:
+	if not endless():
+		return 0 if kind in FREE_IN_STORY else 1
+	return COSTS[kind]
+
+
+# How much you may borrow from tomorrow in one day.
+func borrow_cap() -> int:
+	return ceili(max_attention() / 2.0)
+
+
+func can_afford(n: int) -> bool:
+	return n <= attention + borrow_cap() - overtime_today
+
+
+# Nothing left to give today, borrowing included: in the endless run the day goes on without you.
+func spent_out() -> bool:
+	return endless() and attention <= 0 and overtime_today >= borrow_cap()
+
+
+# Called after every action: once you're spent out and nothing is waiting on you, the day ends.
+func auto_end_day() -> bool:
+	if phase != "plan" or not spent_out() or not pending.is_empty() or not convo.is_empty():
+		return false
+	_narrate("you.spent_out")
+	end_day()
+	return true
+
+
+func own_task_cost() -> int:
+	return ceili(max_attention() / 2.0) if endless() else OWN_TASK_COST
 
 
 # Sit down with someone over their task today: it goes faster and better, they learn, and you were
@@ -2266,9 +2317,9 @@ func sit_with(uid: int) -> void:
 	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("sit_today", false):
 		return
 	var p: String = t["owner"]
-	if not team.has(p) or not available(p) or people[p]["absent"]:
+	if not team.has(p) or not available(p) or people[p]["absent"] or not can_afford(cost("sit")):
 		return
-	spend_attention()
+	spend_attention(cost("sit"))
 	lead("P", 0.5)
 	lead("I", 0.5)
 	my_week_mgmt[week()] += 2
@@ -2295,13 +2346,13 @@ func intervene(uid: int) -> void:
 	# Looking closely at a faker's task shows how far it really got.
 	_expose_faker(t)
 	t["checked_day"] = day
-	spend_attention()
+	spend_attention(cost("intervene"))
 	history.append({"who": "you", "key": "intervene.open", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": p, "day": day})
 	_open_conversation(scenes.intervene_event(self, t))
 
 
 func can_intervene(t: Dictionary) -> bool:
-	return phase == "plan" and pending.is_empty() and t["status"] == "active" and team.has(t["owner"]) and available(t["owner"]) \
+	return phase == "plan" and pending.is_empty() and can_afford(cost("intervene")) and t["status"] == "active" and team.has(t["owner"]) and available(t["owner"]) \
 		and not people[t["owner"]]["absent"] and t.get("checked_day", 0) != day
 
 
@@ -2510,9 +2561,12 @@ func end_day() -> void:
 # Staying late wears you down; rest days bring you back. Run yourself into the ground and you're
 # off sick tomorrow, and the team works without you.
 func _end_of_my_day() -> void:
-	if week_pool < 0:
+	debt = overtime_today
+	debt_days = debt_days + 1 if debt > 0 else 0
+	if debt_days >= BURNOUT_DEBT_DAYS:
 		my_sick = 1
-		week_pool = 0
+		debt = 0
+		debt_days = 0
 		_narrate("you.burnout")
 		flags[burnout_key()] = flags.get(burnout_key(), 0) + 1
 		# One short of quitting: the body says so first.
@@ -2527,23 +2581,13 @@ func _end_of_my_day() -> void:
 
 
 const OWN_TASK_COST := 2
+const BURNOUT_DEBT_DAYS := 3 # start this many days in a row in debt and you're off sick
 
 
-func week_max() -> int:
-	return max_attention() * 5
-
-
-# How you're holding up: what's left of the week against what the days left would normally take.
+# How you're holding up: days in a row you've run on tomorrow's points, today included.
 func my_state() -> String:
-	var ahead := max_attention() * (5 - (day - 1) % 5)
-	var ratio := float(week_pool) / maxf(1.0, ahead)
-	if ratio >= 1.0:
-		return "fresh"
-	if ratio >= 0.7:
-		return "ok"
-	if ratio > 0.3:
-		return "tired"
-	return "drained"
+	var strain := debt_days + (1 if overtime_today > 0 else 0)
+	return ["fresh", "ok", "tired", "drained"][mini(strain, 3)]
 
 
 # Half the time, whoever you told "the boss asked" goes and mentions it to her.
@@ -2887,7 +2931,7 @@ func _work(p: String) -> void:
 # Saying no to a request in the inbox: a conversation with whoever brought it (see scenes.gd decline).
 # Key projects can't be turned down.
 func can_decline(t: Dictionary) -> bool:
-	return phase == "plan" and pending.is_empty() and t.get("status", "") == "inbox" and not t["key"] and not t.get("backlog", false)
+	return phase == "plan" and pending.is_empty() and can_afford(cost("decline")) and t.get("status", "") == "inbox" and not t["key"] and not t.get("backlog", false)
 
 
 func decline(uid: int) -> void:
@@ -2895,6 +2939,7 @@ func decline(uid: int) -> void:
 	if t.is_empty() or not can_decline(t):
 		return
 	_tip_used("inbox")
+	spend_attention(cost("decline"))
 	history.append({"who": "you", "key": "decline.open", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": t["from"], "day": day})
 	_open_conversation(scenes.decline_event(self, t))
 
@@ -3152,8 +3197,9 @@ func my_skill(cat: String) -> int:
 	return C.PROFILES[profile]["skills"][cat]
 
 
+# The endless run lives on attention: almost everything costs it, so the day holds twice as much.
 func max_attention() -> int:
-	return C.PROFILES[profile]["attention"]
+	return C.PROFILES[profile]["attention"] * (2 if endless() else 1)
 
 
 # Irina's letter for what she likes; the chaotic one likes what an E likes.
@@ -3498,7 +3544,7 @@ func _tip_used(target: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.
