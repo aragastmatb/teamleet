@@ -119,8 +119,7 @@ var pick_profile: String = C.DEFAULT_PROFILE
 var pick_tips := true
 # "endless" for everyone; the story runs only in a dev build (the editor, tools/test.sh).
 var pick_mode := "endless"
-# The short reference behind "?", and the last of Gena's tips the phone banner was closed on.
-var help_open := false
+# The last of Gena's tips the phone banner was closed on.
 var tip_closed := ""
 # The chat plays out like a messenger: entries of rules.history up to `shown` are on screen, the rest come
 # one by one, with "… is typing" before each. A click on the chat shows everything at once.
@@ -380,29 +379,6 @@ func _open_setup(open: bool) -> void:
 func _toggle_tips() -> void:
 	pick_tips = not pick_tips
 	_render()
-
-
-func _toggle_help() -> void:
-	help_open = not help_open
-	_render()
-
-
-# The short reference: what the first week teaches, in one place.
-func _build_help() -> void:
-	var v := _document(780)
-	var text := RichTextLabel.new()
-	text.bbcode_enabled = true
-	text.fit_content = true
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text.text = Loc.t("rules")
-	text.add_theme_font_override("bold_font", font_bold)
-	text.add_theme_font_size_override("normal_font_size", _fs(16))
-	text.add_theme_font_size_override("bold_font_size", _fs(18))
-	text.add_theme_color_override("default_color", COL_TEXT)
-	v.add_child(text)
-	var b := _button(Loc.t("help_close"), _toggle_help, 200, "primary")
-	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	v.add_child(b)
 
 
 # Gena's tip lights up what it's about: a thicker orange edge on the panel or button.
@@ -730,8 +706,6 @@ func _render() -> void:
 				_build_report()
 			"end", "chapter_end":
 				_build_end()
-	if help_open:
-		_build_help()
 	if menu_open:
 		_build_menu_overlay()
 	_let_touches_through(ui)
@@ -1183,7 +1157,6 @@ func _top_bar() -> Control:
 	top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
 	var word := rules.boss_word()
 	top.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 15, BOSS_COLORS[word]))
-	top.add_child(_button("?", _toggle_help, 36, "on_top"))
 	top.add_child(_button(Loc.t("menu.button"), _open_menu, 0, "on_top"))
 	return bar
 
@@ -1869,9 +1842,6 @@ func _phone_top() -> Control:
 	row.add_child(day)
 	var k := rules.key_status()
 	row.add_child(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
-	var help := _button("?", _toggle_help, 32, "on_top")
-	help.custom_minimum_size.y = 28
-	row.add_child(help)
 	var menu := _button(Loc.t("menu.button"), _open_menu, 0, "on_top")
 	menu.custom_minimum_size.y = 28
 	row.add_child(menu)

@@ -11,7 +11,6 @@ const S := {
 	"ru": {
 		"title": "Team1337",
 		"tagline": "2Leet продаёт софт банкам, а вы — новый тимлид платформы Chainer. Испытательный срок — четыре недели. Задачи сыплются. Решите сами, каким руководителем быть.",
-		"rules": "[b]Краткая справка[/b]\n• Каждый день приходят задачи. Нажмите на задачу и на человека — задача у него. Если у человека есть повод отказаться (завал, усталость, не любит такое, не умеет), он возразит, и придётся уговаривать. Задачи встают в очередь: человек делает их по одной, ближайший срок первым.\n• Вы не знаете, кто в чём силён и что кого мотивирует. Это выясняется по результатам работы и в разговорах один на один.\n• Кружки сверху — ваше внимание на день: разговор, «посидеть вместе» над задачей, помощь с осложнением. Больше — значит задерживаться, и вы устаёте.\n• Задаче можно дать помощника: он отдаёт ей полдня (или весь день, если своих задач нет). Сильный ускоряет, слабый учится.\n• Задач больше, чем успеет команда. Ненужное можно отклонить («Отказать»), но тот, кто принёс задачу, может пожаловаться Ирине Викторовне. Просрочку по её задачам она заметит сразу.\n• Обычный рабочий день почти не утомляет. Силы уходят на переработки («задержится сегодня»), задачи не по силам и давление. За выходные люди восстанавливаются.\n• Если человек долго сидит над задачей, «Вмешайтесь»: иногда он просто смотрит не туда.\n• По пятницам — итоги недели и разбор у Ирины Викторовны: вы решаете, кому заслуга, а кому вина.\n• Игра — четыре главы по месяцу. Первая — испытательный срок: в конце Ирина Викторовна смотрит на ключевые проекты, а Марина опрашивает команду.",
 		"start": "ПОЕХАЛИ",
 		"continue": "ПРОДОЛЖИТЬ",
 		"new_game": "Новая игра",
@@ -731,7 +730,6 @@ const S := {
 		"summary.promises": "Невыполненные обещания: %s",
 		"again": "НОВАЯ ИГРА",
 		"to_menu": "В ГЛАВНОЕ МЕНЮ",
-		"help_close": "ПОНЯТНО",
 		"taskname.init_showcase": "демо Chainer для руководства",
 		"taskname.init_self_study": "учёба",
 		"setup.tips_on": "Подсказки Гены: вкл",
@@ -1486,7 +1484,6 @@ const S := {
 	"en": {
 		"title": "Team1337",
 		"tagline": "2Leet sells software to banks, and you're the new lead of the Chainer platform team. Four weeks of probation. Tasks keep coming. You decide what kind of lead to be.",
-		"rules": "[b]Quick reference[/b]\n• Tasks arrive every day. Click a task, then a person — it's theirs. If they have a reason to refuse (swamped, exhausted, hate this kind of work, not good at it), they'll push back and you'll have to talk them round. Tasks queue up: each person does one at a time, nearest deadline first.\n• You don't know who's good at what or what drives them. You learn it from their results and in one-on-ones.\n• The dots at the top are your attention for the day: a talk, sitting with someone over a task, helping with a complication. More means staying late, and you get tired.\n• A task can get a helper: they give it half a day (a whole day if they have nothing of their own). A stronger one speeds it up, a weaker one learns.\n• There's more work than the team can handle. You can turn a task down, but whoever brought it may complain to Irina. She notices her own overdue tasks at once.\n• A normal working day barely tires anyone. Overtime (\"staying late today\"), work beyond them and pressure do. People recover over the weekend.\n• If someone has been stuck on a task for a while, Step in: sometimes they're just looking in the wrong place.\n• Every Friday: the week's report and Irina's review, where you decide who gets the credit and who takes the blame.\n• The game is four month-long chapters. The first is your probation: at the end Irina looks at the key projects and Marina surveys the team.",
 		"start": "LET'S GO",
 		"continue": "CONTINUE",
 		"new_game": "New game",
@@ -2206,7 +2203,6 @@ const S := {
 		"summary.promises": "Broken promises: %s",
 		"again": "NEW GAME",
 		"to_menu": "MAIN MENU",
-		"help_close": "GOT IT",
 		"taskname.init_showcase": "Chainer demo for management",
 		"taskname.init_self_study": "studying",
 		"setup.tips_on": "Gena's tips: on",
