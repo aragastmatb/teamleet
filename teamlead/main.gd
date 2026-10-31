@@ -1656,7 +1656,7 @@ func _build_window() -> void:
 	elif window == "boss":
 		_modal(Loc.person("boss"), _attention_text(), minf(460.0, view.x - 16.0), false, true).add_child(_boss_card())
 	elif window == "company":
-		_modal(Loc.t("chainer_header"), "", minf(560.0, view.x - 16.0), false, true).add_child(_chainer_card())
+		_modal(Loc.t("nav.clients_title"), "", minf(560.0, view.x - 16.0), false, true).add_child(_chainer_card())
 
 
 # A dimmed screen and a panel with a title, a line under it and a close button; returns where the content goes.
@@ -1725,7 +1725,7 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 	return body
 
 
-# Under the top bar: the way into hiring, upgrades, Irina and the company, each saying if something waits.
+# Under the top bar: the way into hiring, upgrades, the clients and Irina, with a counter when something waits.
 func _nav_strip() -> Control:
 	var bar := PanelContainer.new()
 	var style := _box(COL_SURFACE, COL_BORDER, 0, 0)
@@ -1741,7 +1741,7 @@ func _nav_strip() -> Control:
 	bar.add_child(row)
 	var waiting := rules.candidates.size()
 	if rules.endless() or rules.openings > 0 or waiting > 0:
-		row.add_child(_nav_button(Loc.t("hire.section") + (" · %d" % waiting if waiting > 0 else ""), "hire", waiting > 0))
+		row.add_child(_nav_button("hire", Loc.t("hire.section"), str(waiting) if waiting > 0 else "", COL_DANGER))
 	if rules.endless():
 		var building := 0
 		var affordable := false
@@ -1750,21 +1750,91 @@ func _nav_strip() -> Control:
 				building += 1
 			elif rules.upgrade_state(id) == "open" and rules.money >= rules.upgrade_price(id):
 				affordable = true
-		var b := _nav_button(Loc.t("up.section") + (" · " + Loc.t("win.building", [building]) if building > 0 else ""), "upgrades", affordable and building == 0)
+		# A number for what's rolling out; a star when nothing is and you could afford something.
+		var badge := str(building) if building > 0 else ("★" if affordable else "")
+		var b := _nav_button("upgrades", Loc.t("up.section"), badge, COL_PRIMARY if building > 0 else COL_STAR)
 		_lit(b, "upgrades")
 		row.add_child(b)
-	var boss_button := _nav_button(Loc.t("boss_label", ["@weight." + rules.boss_word()]), "boss", false)
-	boss_button.add_theme_color_override("font_color", {"w3": COL_GOOD, "w2": COL_GOOD, "w1": COL_TEXT, "w0": COL_DANGER}[rules.boss_word()])
-	row.add_child(boss_button)
-	row.add_child(_nav_button(Loc.t("chainer_header"), "company", false))
+	row.add_child(_nav_button("clients", Loc.t("nav.clients"), str(rules.banks.size()), COL_GOOD))
+	row.add_child(_boss_button())
 	return bar
 
 
-func _nav_button(text_value: String, name: String, hot: bool) -> Button:
-	var b := _button(text_value, _open_upgrades if name == "upgrades" else _open_window.bind(name), 0, "chosen" if hot else "subtle")
-	b.add_theme_font_size_override("font_size", _fs(13))
-	b.custom_minimum_size.y = 30
+func _nav_button(name: String, text_value: String, badge: String, badge_color: Color) -> Control:
+	var b := _button(text_value, _open_upgrades if name == "upgrades" else _open_window.bind("company" if name == "clients" else name), 0, "subtle")
+	b.add_theme_font_size_override("font_size", _fs(14))
+	b.custom_minimum_size.y = 34
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	var path := ICON_DIR + "nav_" + name + ".svg"
+	if ResourceLoader.exists(path):
+		b.icon = load(path)
+		b.expand_icon = false
+		b.add_theme_constant_override("icon_max_width", 18)
+		for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_focus_color"]:
+			b.add_theme_color_override(state, COL_MUTED)
+		b.add_theme_constant_override("h_separation", 8)
+	if badge == "":
+		return b
+	# A round counter hanging off the button's top right corner, as in games.
+	var dot := PanelContainer.new()
+	var ds := _flat(badge_color)
+	ds.set_corner_radius_all(10)
+	ds.content_margin_left = 6
+	ds.content_margin_right = 6
+	ds.content_margin_top = 0
+	ds.content_margin_bottom = 0
+	dot.add_theme_stylebox_override("panel", ds)
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dot.add_child(_label(badge, 11, COL_ON_TOP, false, true))
+	dot.anchor_left = 1.0
+	dot.anchor_right = 1.0
+	dot.offset_left = -14
+	dot.offset_top = -8
+	dot.grow_horizontal = Control.GROW_DIRECTION_END
+	b.add_child(dot)
 	return b
+
+
+# Irina's door: her face and how she sees you; point at it and it says you can go in, and a click does.
+func _boss_button() -> Control:
+	var can_go: bool = rules.phase == "plan" and rules.pending.is_empty() and not rules.visited_today and rules.can_afford(rules.cost("boss"))
+	var word := rules.boss_word()
+	var resting := Loc.t("boss_label", ["@weight." + word])
+	var hover := Loc.t("visit_short") + _cost_mark(rules.cost("boss")) if can_go else Loc.t("nav.boss_seen" if rules.visited_today else "nav.boss_later")
+	var card := PanelContainer.new()
+	var normal := _box(COL_BG, COL_BORDER, 1, 0)
+	normal.content_margin_left = 6
+	normal.content_margin_right = 12
+	normal.content_margin_top = 2
+	normal.content_margin_bottom = 2
+	var lit := normal.duplicate()
+	lit.bg_color = COL_SELECTED
+	lit.border_color = COL_FOCUS
+	card.add_theme_stylebox_override("panel", normal)
+	card.custom_minimum_size.y = 34
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(row)
+	row.add_child(_avatar("boss", 26))
+	var text := _label(resting, 14, {"w3": COL_GOOD, "w2": COL_GOOD, "w1": COL_TEXT, "w0": COL_DANGER}[word])
+	text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(text)
+	card.mouse_entered.connect(func():
+		text.text = hover
+		card.add_theme_stylebox_override("panel", lit))
+	card.mouse_exited.connect(func():
+		text.text = resting
+		card.add_theme_stylebox_override("panel", normal))
+	card.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			# In the story, once you may ask her for people, her card has two things to do: open it.
+			if rules.flags.has("asked_people") and rules.openings == 0:
+				_open_window.call_deferred("boss")
+			elif can_go:
+				_visit_boss.call_deferred())
+	return card
 
 
 # The left column on a desktop: you, then the team, one line each; a click opens the whole card.
@@ -2000,15 +2070,10 @@ func _chainer_card() -> Control:
 		row.add_child(_label("· " + Loc.t("bank_mood." + word), 13, BANK_COLORS[word]))
 		v.add_child(row)
 	v.add_child(_spacer(4))
-	v.add_child(_label(Loc.t("chainer.improved"), 13, COL_MUTED, false, true))
-	# The endless run improves through its upgrade tree, not the story's backlog.
+	# The endless run's improvements are in the upgrade tree's own window.
 	if rules.endless():
-		var done: Array = C.UPGRADES.keys().filter(func(id): return rules.upgrade_state(id) == "done")
-		if done.is_empty():
-			v.add_child(_label(Loc.t("win.nothing_upgraded"), 13, COL_FAINT, true))
-		for id in done:
-			v.add_child(_label("✓ " + Loc.t("up.%s.name" % id), 13, COL_GOOD, true))
 		return card
+	v.add_child(_label(Loc.t("chainer.improved"), 13, COL_MUTED, false, true))
 	if rules.improved.is_empty():
 		v.add_child(_label(Loc.t("chainer.nothing_yet"), 13, COL_FAINT, true))
 	for id in rules.improved:

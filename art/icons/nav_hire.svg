@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- A person with a plus: someone to hire -->
+  <circle cx="9" cy="8" r="4"/>
+  <path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1"/>
+  <path d="M19 8v6M16 11h6"/>
+</svg>
