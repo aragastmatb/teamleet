@@ -370,7 +370,8 @@ static func parse_effects(text: String) -> Array:
 
 
 # The endless run's one deck: every chapter's dealt cards, each as many times as its row says, except
-# any that names one of the story's own people.
+# the story line's own (tagged story in data/tasks.tsv: the round, the investors, the sale) and any that
+# names one of the story's own people. The story's cards are like an expansion's deck, mixed in only there.
 static var ENDLESS_DECK: Array = []
 static var _TEAM_NAMES := RegEx.create_from_string("\\b(Alex|Vika|Dima|Gena|Palych)\\b|Алекс|Палыч|Ген[аыеуо]й?\\b|Вик[аиеуо]й?\\b|Дим[аыеуо]й?\\b")
 
@@ -387,7 +388,7 @@ static func _build_endless_deck() -> void:
 		var text := ""
 		for lang in ["ru", "en"]:
 			text += TASK_TEXT[lang].get("taskname." + id, "") + " " + TASK_TEXT[lang].get("task.%s.ask" % id, "")
-		if _TEAM_NAMES.search(text) != null:
+		if _TEAM_NAMES.search(text) != null or TASKS[id]["tags"].has("story"):
 			continue
 		for i in copies[id]:
 			ENDLESS_DECK.append(id)

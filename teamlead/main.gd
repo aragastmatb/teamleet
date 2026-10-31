@@ -652,9 +652,6 @@ func _render() -> void:
 		selected = -1
 	var before := juice_before
 	juice_before = _juice_state()
-	# The evening opens on the day's summary; it doesn't come back once closed.
-	if not before.is_empty() and not juice_before.is_empty() and juice_before["phase"] == "evening" and before["phase"] != "evening":
-		window = "summary"
 	juice_nodes.clear()
 	flash_cards = _cards_to_flash(before, juice_before)
 	if rules.phase != "title":
@@ -826,62 +823,6 @@ func _splash(text_value: String) -> void:
 	t.tween_callback(box.queue_free)
 
 
-func _day_summary_rows() -> Array:
-	var done := 0
-	var good := 0
-	var late := 0
-	for t in rules.tasks:
-		if t["status"] == "done" and t.get("done_day", 0) == rules.day:
-			done += 1
-			if t["quality"] == "good":
-				good += 1
-		if t["late"] and t.get("late_day", 0) == rules.day:
-			late += 1
-	var rows := [[Loc.t("sum.done"), str(done), COL_GOOD if done > 0 else COL_MUTED, Loc.t("sum.good", [good]) if good > 0 else ""],
-		[Loc.t("sum.late"), str(late), COL_DANGER if late > 0 else COL_MUTED, ""]]
-	var spent := rules.max_attention() - rules.attention + rules.overtime_today
-	rows.append([Loc.t("sum.points"), str(spent), COL_TEXT, Loc.t("sum.debt", [rules.overtime_today]) if rules.overtime_today > 0 else ""])
-	if rules.endless() and not rules.day_start.is_empty():
-		var dm: int = rules.money - int(rules.day_start["money"])
-		if dm != 0:
-			rows.append([Loc.t("sum.money"), ("+%s" if dm > 0 else "−%s") % _rub(absi(dm)), COL_GOOD if dm > 0 else COL_DANGER, ""])
-		var mine := int(round(rules.my_points() - rules.day_start["race"]))
-		var his := int(round(rules.taras_total() - rules.day_start["taras"]))
-		rows.append([Loc.t("sum.race"), "%+d" % mine, COL_GOOD if mine >= his else COL_DANGER, Loc.t("sum.taras", ["%+d" % his])])
-	return rows
-
-
-func _build_summary() -> void:
-	var view := get_viewport().get_visible_rect().size
-	var body := _modal(Loc.t("sum.title", [Loc.t(rules.day_key().substr(1))]), "", minf(520.0, view.x - 16.0), false, true)
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grid.add_theme_constant_override("h_separation", 18)
-	grid.add_theme_constant_override("v_separation", 10)
-	body.add_child(grid)
-	for row in _day_summary_rows():
-		var big := _label(row[1], 30, row[2], false, true)
-		big.custom_minimum_size.x = 90
-		big.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		grid.add_child(big)
-		var words := _vbox(0)
-		words.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		words.add_child(_label(row[0], 15, COL_TEXT))
-		if row[3] != "":
-			words.add_child(_label(row[3], 12, COL_MUTED))
-		grid.add_child(words)
-	var buttons := HBoxContainer.new()
-	buttons.add_theme_constant_override("separation", 10)
-	body.add_child(_spacer(4))
-	body.add_child(buttons)
-	buttons.add_child(_button(Loc.t("sum.read"), _close_window, 0, "subtle"))
-	var go := _day_button(0)
-	buttons.add_child(go)
-	go.pressed.connect(func(): window = "")
-
-
 # ---------- feedback ----------
 
 # What the player should see change: points left (borrowing counted), money, the race, who has which card.
@@ -917,8 +858,8 @@ func _cards_to_flash(was: Dictionary, now: Dictionary) -> Dictionary:
 func _juice(was: Dictionary, now: Dictionary) -> void:
 	if was.is_empty() or now.is_empty():
 		return
-	# (the evening has its own summary window, which says the same)
-	if (was["moment"] != now["moment"] or was["day"] != now["day"]) and window != "summary":
+	# (the Friday report says which day it is itself)
+	if (was["moment"] != now["moment"] or was["day"] != now["day"]) and now["phase"] != "report":
 		_splash(Loc.t(rules.day_key().substr(1)) + " · " + Loc.t("moment." + now["moment"]))
 	# Layout settles a frame after the screen is built.
 	await get_tree().process_frame
@@ -1852,12 +1793,6 @@ func _close_window() -> void:
 
 
 func _build_window() -> void:
-	if window == "summary":
-		if rules.phase == "evening":
-			_build_summary()
-		else:
-			window = ""
-		return
 	if window == "upgrades":
 		if rules.endless():
 			_build_upgrades()
@@ -4029,8 +3964,9 @@ func _build_report() -> void:
 			late += 1
 	v.add_child(_spacer(4))
 	v.add_child(_label(Loc.render("report.late", [], {"count": late}), 15, COL_DANGER if late > 0 else COL_MUTED, true))
-	v.add_child(_label(_keys_text(), 15, COL_WARN, true))
-	if rules.survey.get("day", -1) == rules.day:
+	if not rules.endless():
+		v.add_child(_label(_keys_text(), 15, COL_WARN, true))
+	if rules.survey.get("day", -1) == rules.day and not rules.endless():
 		_survey_block(v)
 	v.add_child(_spacer(6))
 	var b := _button(Loc.t("report.to_review" if not rules.review.is_empty() else "report.next"), _continue_report, 260, "primary")
@@ -4134,7 +4070,8 @@ func _build_end() -> void:
 	if rules.ending in ["leader", "puppeteer"]:
 		v.add_child(_label(Loc.t("promoted.yes" if rules.promoted else "promoted.no"), 15, COL_GOOD if rules.promoted else COL_MUTED, true))
 	_adizes_block(v)
-	if not rules.survey.is_empty():
+	# Marina's survey is the story's probation verdict; an endless run has its record instead.
+	if not rules.survey.is_empty() and not rules.endless():
 		_survey_block(v)
 	v.add_child(_spacer(4))
 	v.add_child(_section(Loc.t("summary.team")))

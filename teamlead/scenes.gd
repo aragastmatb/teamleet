@@ -169,8 +169,9 @@ func _check_boss_dump(r) -> Dictionary:
 		return {}
 	r.flags["dump_w%d" % r.week()] = true
 	var used: Array = r.flags.get("dumps_used", [])
-	var id: String = C.DUMPS[0]
-	for d in C.DUMPS:
+	var dumps: Array = C.DUMPS.filter(func(d): return not (r.endless() and C.TASKS[d]["tags"].has("story")))
+	var id: String = dumps[0]
+	for d in dumps:
 		if not used.has(d):
 			id = d
 			break
