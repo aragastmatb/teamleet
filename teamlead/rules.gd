@@ -537,6 +537,15 @@ func _can_come_again(id: String) -> bool:
 
 
 # A fresh shuffle of the base deck goes under what's left. Improvements keep their cards out.
+# Array.shuffle() draws from the global generator; this one keeps a seeded run repeatable.
+func shuffle(list: Array) -> void:
+	for i in range(list.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = list[i]
+		list[i] = list[j]
+		list[j] = tmp
+
+
 func deck_source() -> Array:
 	return C.ENDLESS_DECK if endless() else C.DECK.get(chapter, [])
 
@@ -4444,7 +4453,7 @@ func _run_survey() -> void:
 					q = variant
 					break
 			quotes.append(q)
-	quotes.shuffle()
+	shuffle(quotes)
 	var team := team_score()
 	survey = {"day": day, "quotes": quotes, "verdict": "for" if team >= TEAM_OK else ("wary" if team >= 0.0 else "against")}
 

@@ -262,7 +262,7 @@ func _check_complication(r) -> Dictionary:
 		if t["progress"] < 0.2 * t["size"] or t["size"] - t["progress"] < 0.6:
 			continue
 		candidates.append(t)
-	candidates.shuffle()
+	r.shuffle(candidates)
 	for t in candidates:
 		# A lead who keeps order sees fewer surprises.
 		if r.rng.randf() > (0.25 if r.leans("A") else 0.35):
