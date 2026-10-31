@@ -120,7 +120,7 @@ var pick_profile: String = C.DEFAULT_PROFILE
 var pick_tips := true
 # "endless" for everyone; the story runs only in a dev build (the editor, tools/test.sh).
 var pick_mode := "endless"
-# The last of Gena's tips the phone banner was closed on.
+# The last of Marina's tips the phone banner was closed on.
 var tip_closed := ""
 # The chat plays out like a messenger: entries of rules.history up to `shown` are on screen, the rest come
 # one by one, with "… is typing" before each. A click on the chat shows everything at once.
@@ -397,7 +397,7 @@ func _toggle_tips() -> void:
 	_render()
 
 
-# Gena's tip lights up what it's about: a thicker orange edge on the panel or button.
+# Marina's tip lights up what it's about: a thicker orange edge on the panel or button.
 func _lit(c: Control, target: String) -> void:
 	if rules.tip_target() != target or rules.phase != "plan":
 		return
@@ -410,8 +410,7 @@ func _lit(c: Control, target: String) -> void:
 			c.add_theme_stylebox_override(name, box)
 
 
-# On a phone the chat is a tab away, so the latest tip (Gena's, or Marina's in the endless run) also
-# shows above the board until closed.
+# On a phone the chat is a tab away, so Marina's latest tip also shows above the board until closed.
 func _tip_banner() -> Control:
 	var id: String = rules.flags.get("tip_last", "")
 	if id == "" or id == tip_closed or tab == "chat" or rules.phase != "plan" or rules.flags.get("tip_day", 0) != rules.day:
@@ -1092,7 +1091,7 @@ func _build_setup() -> void:
 	var tips_row := HBoxContainer.new()
 	tips_row.add_theme_constant_override("separation", 12)
 	v.add_child(tips_row)
-	# The endless run's tips are Marina's, the story's are Gena's.
+	# Marina shows the new lead around for a month in the endless run, for the first week in the story.
 	var tips_key := "setup.run_tips" if pick_mode == "endless" else "setup.tips"
 	tips_row.add_child(_button(Loc.t(tips_key + ("_on" if pick_tips else "_off")), _toggle_tips, 0, "chosen" if pick_tips else ""))
 	tips_row.add_child(_label(Loc.t(tips_key + "_hint"), 13, COL_MUTED, true))

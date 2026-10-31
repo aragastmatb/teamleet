@@ -157,7 +157,7 @@ var shares := {}
 # Chat entries: {"who": speaker id, "you" or "" for narration; "key"; "args": [] for %s; "names": {} for {placeholders}; "day"}.
 # Values starting with "@" are locale keys.
 var history: Array = []
-# Gena's first-steps tips in the chat (see update_tips).
+# Marina's first-steps tips in the chat (see update_tips).
 var tips := true
 
 
@@ -3959,8 +3959,8 @@ func answer_review(choice: String) -> void:
 
 # ---------- first steps ----------
 
-# In the first chapter Gena, who has seen leads come and go, shows the new one around: one line in the chat
-# at the moment it's needed, and the board lights up where to look until you've used it. Each tip once a run.
+# In the first month Marina from HR shows the new lead around: one line in the chat at the moment it's
+# needed, and the board lights up where to look until you've used it. Each tip once a run.
 const TIP_TARGETS := {"assign": "inbox", "end_day": "end_day", "talk": "talk", "decline": "inbox", "intervene": "active", "backlog": "backlog",
 	"start_work": "end_day", "upgrades": "upgrades"}
 
@@ -3975,13 +3975,12 @@ func update_tips() -> void:
 	flags["tip_last"] = id
 	flags["tip_day"] = day
 	flags["tip_hl"] = TIP_TARGETS.get(id, "")
-	# In the endless run there's no Gena: Marina from HR shows the new lead around, in her own words
-	# and about that run's rules.
+	# The endless run has its own set, about its own rules.
 	_say(tip_who(), tip_key(id))
 
 
 func tip_who() -> String:
-	return "marina" if endless() else "gena"
+	return "marina"
 
 
 func tip_key(id: String) -> String:
