@@ -117,6 +117,8 @@ var setup_open := false
 var pick_boss := "random"
 var pick_profile: String = C.DEFAULT_PROFILE
 var pick_tips := true
+# "endless" for everyone; the story runs only in a dev build (the editor, tools/test.sh).
+var pick_mode := "endless"
 # The short reference behind "?", and the last of Gena's tips the phone banner was closed on.
 var help_open := false
 var tip_closed := ""
@@ -362,7 +364,7 @@ func _start_run() -> void:
 	settings.set_value("setup", "profile", pick_profile)
 	settings.set_value("setup", "tips", pick_tips)
 	settings.save(SETTINGS_PATH)
-	rules.start_run(-1, C.BOSS_KINDS.pick_random() if pick_boss == "random" else pick_boss, pick_profile)
+	rules.start_run(-1, C.BOSS_KINDS.pick_random() if pick_boss == "random" else pick_boss, pick_profile, pick_mode)
 	rules.tips = pick_tips
 	tip_closed = ""
 	shown = 0
@@ -630,11 +632,22 @@ func _menu_go(page: String) -> void:
 	_render()
 
 
-func _menu_new_game() -> void:
+func _menu_new_game(run_mode: String) -> void:
+	pick_mode = run_mode
 	if Rules.has_save():
 		_menu_go("confirm_new")
 	else:
 		_open_setup(true)
+
+
+func _new_endless() -> void:
+	pick_mode = "endless"
+	_open_setup(true)
+
+
+func _new_story() -> void:
+	pick_mode = "story"
+	_open_setup(true)
 
 
 func _menu_new_confirmed() -> void:
@@ -883,7 +896,9 @@ func _menu_page(v: VBoxContainer, in_game: bool) -> void:
 			elif Rules.has_save():
 				v.add_child(_menu_item(Loc.t("menu.continue"), _continue_run))
 			if not in_game:
-				v.add_child(_menu_item(Loc.t("menu.new"), _menu_new_game))
+				v.add_child(_menu_item(Loc.t("menu.new"), _menu_new_game.bind("endless")))
+				if OS.is_debug_build():
+					v.add_child(_menu_item(Loc.t("menu.story_dev"), _menu_new_game.bind("story")))
 			v.add_child(_menu_item(Loc.t("menu.settings"), _menu_go.bind("settings")))
 			v.add_child(_menu_item(Loc.t("menu.about"), _menu_go.bind("about")))
 			if in_game:
@@ -1039,7 +1054,9 @@ func _build_title_plain() -> void:
 	v.add_child(buttons)
 	if Rules.has_save():
 		buttons.add_child(_button(Loc.t("continue"), _continue_run, 260, "primary"))
-	buttons.add_child(_button(Loc.t("new_game"), _open_setup.bind(true), 0))
+	buttons.add_child(_button(Loc.t("new_game"), _new_endless, 0))
+	if OS.is_debug_build():
+		buttons.add_child(_button(Loc.t("menu.story_dev"), _new_story, 0))
 
 
 # Before a run: which Irina you get and who you were. Portraits, not letters: the letters come out at the end.
@@ -1174,6 +1191,8 @@ func _top_bar() -> Control:
 # "Понедельник, неделя 2", and from chapter two on, which chapter.
 func _day_label() -> String:
 	var text := Loc.t(rules.day_key().substr(1))
+	if rules.endless():
+		return Loc.t("period_short", [rules.period]) + text
 	return text if rules.chapter == 1 else Loc.t("chapter_short", [rules.chapter]) + text
 
 
@@ -1323,7 +1342,7 @@ func _person_card(p: String) -> Control:
 	talk.custom_minimum_size.y = 30
 	if talk.disabled == false:
 		_lit(talk, "talk")
-	if rules.chapter >= 2:
+	if rules.chapter >= 2 or rules.endless():
 		var fire := _button(Loc.t("fire.button"), _fire.bind(p), 0, "subtle")
 		fire.disabled = fire.disabled or not rules.can_fire(p)
 		fire.custom_minimum_size.y = 26
@@ -2622,7 +2641,7 @@ func _story_choose(i: int) -> void:
 func _build_report() -> void:
 	var w := rules.week()
 	var v := _document(780)
-	v.add_child(_label(Loc.t("report_title", [w + 1 - (C.chapter_first_day(rules.chapter) - 1) / 5]), 24, COL_TEXT, true, true))
+	v.add_child(_label(Loc.t("report_title", [w + 1 - (rules.first_day() - 1) / 5]), 24, COL_TEXT, true, true))
 	v.add_child(_label(Loc.t("report_hint"), 14, COL_MUTED, true))
 	v.add_child(_spacer(4))
 	for p in rules.team:
@@ -2688,10 +2707,15 @@ func _survey_block(v: VBoxContainer) -> void:
 func _build_end() -> void:
 	var v := _document(780)
 	var info: Dictionary = C.CHAPTERS[rules.chapter - 1]
-	v.add_child(_section(Loc.t("chapter.results", [rules.chapter, Loc.t("chapter.%s.name" % info["id"])])))
+	if rules.endless():
+		v.add_child(_section(Loc.t("period.results", [rules.period, Loc.t("chapter.%s.name" % info["id"])])))
+	else:
+		v.add_child(_section(Loc.t("chapter.results", [rules.chapter, Loc.t("chapter.%s.name" % info["id"])])))
 	var good := rules.ending == "beloved" or rules.passed()
 	v.add_child(_label(Loc.t("ending.%s.title" % rules.ending), 28, COL_GOOD if good else COL_DANGER, true, true))
 	v.add_child(_label(Loc.t("ending.%s.text" % rules.ending), 16, COL_TEXT, true))
+	if rules.endless():
+		v.add_child(_label(Loc.t("period.survived", [rules.period - (0 if rules.passed() else 1)]), 18, COL_TEXT, true, true))
 	v.add_child(_label(Loc.t("summary.hours", [rules.hours]), 15, COL_GOOD if rules.hours == 0 else COL_DANGER, true))
 	var done := 0
 	var late := 0
@@ -2741,7 +2765,7 @@ func _build_end() -> void:
 	if rules.phase == "chapter_end":
 		_next_chapter_block(v)
 		if rules.next_chapter_ready():
-			buttons.add_child(_button(Loc.t("chapter.start", [rules.chapter + 1]), _start_next_chapter, 260, "primary"))
+			buttons.add_child(_button(Loc.t("period.start" if rules.endless() else "chapter.start", [(rules.period if rules.endless() else rules.chapter) + 1]), _start_next_chapter, 260, "primary"))
 		else:
 			buttons.add_child(_button(Loc.t("to_menu"), _to_title.bind(false), 260, "primary"))
 	else:
@@ -2751,13 +2775,16 @@ func _build_end() -> void:
 
 # What the next chapter is about, or that it's still being made.
 func _next_chapter_block(v: VBoxContainer) -> void:
-	var id: String = C.CHAPTERS[rules.chapter]["id"]
+	var id: String = C.CHAPTERS[(Rules.period_chapter(rules.period + 1) if rules.endless() else rules.chapter + 1) - 1]["id"]
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 16))
 	var box := _vbox(6)
 	card.add_child(box)
 	box.add_child(_section(Loc.t("chapter.next")))
-	box.add_child(_label(Loc.t("chapter.title", [rules.chapter + 1, Loc.t("chapter.%s.name" % id)]), 20, COL_TEXT, true, true))
+	if rules.endless():
+		box.add_child(_label(Loc.t("period.title", [rules.period + 1, Loc.t("chapter.%s.name" % id)]), 20, COL_TEXT, true, true))
+	else:
+		box.add_child(_label(Loc.t("chapter.title", [rules.chapter + 1, Loc.t("chapter.%s.name" % id)]), 20, COL_TEXT, true, true))
 	box.add_child(_label(Loc.t("chapter.%s.goal" % id), 15, COL_TEXT, true))
 	if not rules.next_chapter_ready():
 		box.add_child(_label(Loc.t("chapter.soon"), 14, COL_MUTED, true))

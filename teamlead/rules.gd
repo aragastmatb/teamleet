@@ -47,6 +47,12 @@ var scenes := Scenes.new()
 var day := 1
 # Which chapter (1..4) of C.CHAPTERS; days run on through the chapters.
 var chapter := 1
+# "story": the four chapters with the team and the scenes. "endless": the tycoon, a made-up team and
+# period after period of PERIOD_DAYS; each period plays one chapter's deck and goals (see period_chapter),
+# and missing any goal ends the run. No named teammates and no story scenes there.
+var mode := "story"
+var period := 1
+var period_start := 1
 var phase := "title" # plan, event, evening, report, review, end
 var people := {}
 # Everyone who has been on the team this run, the first four and those hired since; people[p]["gone"]
@@ -129,23 +135,34 @@ var tips := true
 
 # ---------- run and day flow ----------
 
-func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile_kind: String = C.DEFAULT_PROFILE) -> void:
+func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile_kind: String = C.DEFAULT_PROFILE, run_mode: String = "story") -> void:
 	if seed_value >= 0:
 		rng.seed = seed_value
 	else:
 		rng.randomize()
+	mode = run_mode
 	day = 1
 	chapter = 1
+	period = 1
+	period_start = 1
 	people.clear()
-	team = C.TEAM.duplicate()
 	hires.clear()
 	candidates.clear()
 	openings = 0
 	next_hire = 1
 	L.EXTRA = {"ru": {}, "en": {}}
 	L.STAND_IN = {}
-	for p in team:
-		_new_person(p, true)
+	if endless():
+		team = []
+		for i in START_TEAM:
+			var id := _roll_hire()
+			team.append(id)
+			_new_person(id, false)
+			people[id]["joined"] = -100 # the team you came to, not new hires
+	else:
+		team = C.TEAM.duplicate()
+		for p in team:
+			_new_person(p, true)
 	tasks.clear()
 	comp_off.clear()
 	flags.clear()
@@ -188,6 +205,9 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	flags.clear()
 	history.clear()
 	ending = ""
+	if endless():
+		# No story trip to Irina first: you can ask her for people from day one.
+		flags["asked_people"] = true
 	_fill_backlog()
 	_start_day()
 
@@ -413,6 +433,12 @@ var next_hire := 1
 
 # A made-up person: a name nobody on the team has yet, an archetype, and what that makes them.
 func _new_candidate() -> void:
+	var id := _roll_hire()
+	candidates.append({"id": id, "until": day + CANDIDATE_DAYS, "asked": [], "known": {}})
+	_say("marina", "hire.cv", [], {"who": "@name.%s.nom" % id})
+
+
+func _roll_hire() -> String:
 	var id := "hire%d" % next_hire
 	next_hire += 1
 	var used := hires.values().map(func(h): return h["name"])
@@ -453,8 +479,7 @@ func _new_candidate() -> void:
 		"fast_learner": arch == "junior", "touchy": arch == "genius",
 	}
 	_register_hire(id)
-	candidates.append({"id": id, "until": day + CANDIDATE_DAYS, "asked": [], "known": {}})
-	_say("marina", "hire.cv", [], {"who": "@name.%s.nom" % id})
+	return id
 
 
 # Palych: the one candidate who isn't made up. Kind, keen, slow, and without a check halfway through he
@@ -497,7 +522,7 @@ func _hiring_morning() -> void:
 		if c["until"] < day:
 			candidates.erase(c)
 			_narrate("hire.gone", [], {"who": "@name.%s.nom" % c["id"]})
-	if openings > 0 and candidates.size() < MAX_CANDIDATES and not flags.has("palych_sent"):
+	if openings > 0 and candidates.size() < MAX_CANDIDATES and not flags.has("palych_sent") and not endless():
 		_new_palych()
 	elif openings > 0 and candidates.size() < MAX_CANDIDATES and (candidates.is_empty() or day % 2 == 0):
 		_new_candidate()
@@ -1035,7 +1060,7 @@ const WARNING_DAYS := 5 # after a warning, this long before you can decide
 # From chapter two: a serious talk first (a warning), a decision a week later. Doing it without the
 # warning is possible, and Marina will make sure everyone hears about it.
 func can_fire(p: String) -> bool:
-	return chapter >= 2 and phase == "plan" and pending.is_empty() and available(p)
+	return (chapter >= 2 or endless()) and phase == "plan" and pending.is_empty() and available(p)
 
 
 func warned(p: String) -> bool:
@@ -1202,7 +1227,7 @@ const RUSH_LOAD := 1.15
 
 
 func _layoff_rush() -> void:
-	var at: int = C.CHAPTERS[chapter - 1].get("layoff_day", 0)
+	var at := layoff_day()
 	if at == 0 or flags.has("rush") or chapter_day() < at + RUSH_AFTER:
 		return
 	flags["rush"] = true
@@ -1250,7 +1275,7 @@ func ask_people() -> void:
 
 # On a Monday sales may close a deal with the next bank of the chapter; good deliveries make it likelier.
 func _maybe_sell() -> void:
-	if day % 5 != 1 or day == C.chapter_first_day(chapter):
+	if day % 5 != 1 or day == first_day():
 		return
 	var pool: Array = []
 	for ch in range(1, chapter + 1):
@@ -1404,6 +1429,8 @@ func taras_score() -> float:
 # An evening scene remembers where the day was going (the summary or the Friday report) and goes there after.
 func _queue_story(at: String = "morning") -> void:
 	story = {}
+	if endless():
+		return
 	for id in Dialogue.ORDER:
 		var sc: Dictionary = Dialogue.SCENES[id]
 		if sc["topic"] == "" and sc["at"] == at and not flags.has("story_" + id) and story_true(sc["when"]):
@@ -2463,9 +2490,9 @@ func _end_of_my_day() -> void:
 		my_sick = 1
 		my_energy = 6.0
 		_narrate("you.burnout")
-		flags["burnouts_%d" % chapter] = flags.get("burnouts_%d" % chapter, 0) + 1
+		flags["burnouts_%d" % stage()] = flags.get("burnouts_%d" % stage(), 0) + 1
 		# One short of quitting: the body says so first.
-		if flags["burnouts_%d" % chapter] == BURNOUTS_TO_QUIT - 1:
+		if flags["burnouts_%d" % stage()] == BURNOUTS_TO_QUIT - 1:
 			_narrate("you.burnout_warning")
 	# Untouched tech debt makes itself felt: each Friday another outage goes into the deck.
 	if day % 5 == 0 and day < last_day() and not flags.has("tech_debt_done"):
@@ -2861,7 +2888,7 @@ func _advance_chains() -> void:
 			if outcome != "":
 				t["incident_settled"] = true
 				if outcome != "good":
-					flags["incidents_%d" % chapter] = flags.get("incidents_%d" % chapter, 0) + 1
+					flags["incidents_%d" % stage()] = flags.get("incidents_%d" % stage(), 0) + 1
 					_narrate("incident.counted", [], {"task": "@taskname." + t["id"]})
 	for t in tasks:
 		if not t.get("flagged", false) and C.TASKS.get(t["id"], {}).get("tags", []).any(func(tag): return tag.begins_with("sets:")):
@@ -3380,7 +3407,7 @@ const TIP_TARGETS := {"assign": "inbox", "end_day": "end_day", "talk": "talk", "
 
 
 func update_tips() -> void:
-	if not tips or chapter != 1:
+	if not tips or (period if endless() else chapter) != 1:
 		return
 	var id := _next_tip()
 	if id == "":
@@ -3389,7 +3416,8 @@ func update_tips() -> void:
 	flags["tip_last"] = id
 	flags["tip_day"] = day
 	flags["tip_hl"] = TIP_TARGETS.get(id, "")
-	_say("gena", "tip." + id)
+	# In the endless run there's no Gena: Marina from HR shows the new lead around instead.
+	_say("marina" if endless() else "gena", "tip." + id)
 
 
 func _next_tip() -> String:
@@ -3488,7 +3516,7 @@ static func _read_save():
 	if f == null:
 		return null
 	var state = f.get_var()
-	if not state is Dictionary or state.get("version") != SAVE_VERSION or state.get("phase", "end") in ["title", "end"] or (state.get("phase") == "chapter_end" and not C.CHAPTERS[state.get("chapter", 1)]["ready"]):
+	if not state is Dictionary or state.get("version") != SAVE_VERSION or state.get("phase", "end") in ["title", "end"] or (state.get("phase") == "chapter_end" and state.get("mode") != "endless" and not C.CHAPTERS[state.get("chapter", 1)]["ready"]):
 		return null
 	if not C.BOSSES.has(state.get("boss_type", "")) or not C.PROFILES.has(state.get("profile", "")):
 		return null
@@ -3523,8 +3551,17 @@ func next() -> void:
 func start_next_chapter() -> void:
 	if phase != "chapter_end" or not next_chapter_ready():
 		return
-	chapter += 1
 	day += 1
+	if endless():
+		period += 1
+		period_start = day
+		chapter = period_chapter(period)
+		# The chapter's deck comes round again: its goals start from nothing.
+		for g in C.CHAPTERS[chapter - 1].get("goals", []):
+			for f in g.get("flags", []):
+				flags.erase(f)
+	else:
+		chapter += 1
 	ending = ""
 	hours = 0
 	events.clear()
@@ -3537,16 +3574,44 @@ func start_next_chapter() -> void:
 
 
 func next_chapter_ready() -> bool:
-	return chapter < C.CHAPTERS.size() and C.CHAPTERS[chapter]["ready"]
+	return endless() or (chapter < C.CHAPTERS.size() and C.CHAPTERS[chapter]["ready"])
+
+
+func endless() -> bool:
+	return mode == "endless"
+
+
+# The endless run: four made-up people to start with, and periods of a month.
+const START_TEAM := 4
+const PERIOD_DAYS := 20
+
+
+# Which chapter's deck and goals a period plays: the four in order, then round the last three again.
+static func period_chapter(n: int) -> int:
+	return n if n <= C.CHAPTERS.size() else 2 + (n - 2) % (C.CHAPTERS.size() - 1)
+
+
+# The chapter, or in the endless run the period: what per-month counters are kept by.
+func stage() -> int:
+	return period if endless() else chapter
+
+
+func first_day() -> int:
+	return period_start if endless() else C.chapter_first_day(chapter)
 
 
 func last_day() -> int:
-	return C.chapter_last_day(chapter)
+	return period_start + PERIOD_DAYS - 1 if endless() else C.chapter_last_day(chapter)
+
+
+# The day of chapter three when Irina orders a cut; the endless run has none.
+func layoff_day() -> int:
+	return 0 if endless() else C.CHAPTERS[chapter - 1].get("layoff_day", 0)
 
 
 # 1..20: how far into this chapter's month we are.
 func chapter_day() -> int:
-	return day - C.chapter_first_day(chapter) + 1
+	return day - first_day() + 1
 
 
 func chapter_keys() -> Array:
@@ -3561,7 +3626,7 @@ func _finish_chapter() -> void:
 		return
 	var r := results_score()
 	var team := team_score()
-	if flags.get("burnouts_%d" % chapter, 0) >= BURNOUTS_TO_QUIT:
+	if flags.get("burnouts_%d" % stage(), 0) >= BURNOUTS_TO_QUIT:
 		ending = "burned_out"
 	elif quits >= 2:
 		ending = "team_gone"
@@ -3578,7 +3643,7 @@ func _finish_chapter() -> void:
 	else:
 		ending = "fired"
 	promoted = _level_of(boss) >= 3 and ending in ["leader", "puppeteer"]
-	phase = "chapter_end" if passed() and chapter < C.CHAPTERS.size() else "end"
+	phase = "chapter_end" if passed() and (chapter < C.CHAPTERS.size() or endless()) else "end"
 
 
 func passed() -> bool:
@@ -3592,7 +3657,7 @@ func _chapter_verdict() -> void:
 	for g in goal_progress():
 		if goal_met(g):
 			met += 1
-	if flags.get("burnouts_%d" % chapter, 0) >= BURNOUTS_TO_QUIT:
+	if flags.get("burnouts_%d" % stage(), 0) >= BURNOUTS_TO_QUIT:
 		ending = "burned_out"
 	elif quits >= 2:
 		ending = "team_gone"
@@ -3600,6 +3665,9 @@ func _chapter_verdict() -> void:
 		ending = "replaced"
 	elif hours >= 60:
 		ending = "workhorse"
+	elif endless():
+		# A roguelike: every goal of the period, or the run is over.
+		ending = "period_pass" if met == info["goals"].size() else "run_over"
 	elif met == info["goals"].size():
 		ending = _final_standing() if info.get("final", false) else info["id"] + "_pass"
 	elif met > 0:
@@ -3608,7 +3676,7 @@ func _chapter_verdict() -> void:
 	else:
 		ending = info["fail"]
 	promoted = false
-	phase = "chapter_end" if passed() and chapter < C.CHAPTERS.size() else "end"
+	phase = "chapter_end" if passed() and (chapter < C.CHAPTERS.size() or endless()) else "end"
 
 
 const BURNOUTS_TO_QUIT := 4
@@ -3648,10 +3716,10 @@ func goal_progress() -> Array:
 					if banks[b].get("shipped", false):
 						have += 1
 			"max_incidents":
-				have = flags.get("incidents_%d" % chapter, 0)
+				have = flags.get("incidents_%d" % stage(), 0)
 			"improvements":
 				for imp in improved:
-					if improved[imp] >= C.chapter_first_day(chapter):
+					if improved[imp] >= first_day():
 						have += 1
 		out.append({"id": g["id"], "have": have, "need": g["need"], "max": g["kind"].begins_with("max_")})
 	return out

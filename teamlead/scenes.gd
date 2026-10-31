@@ -58,6 +58,10 @@ func queue(r) -> void:
 	for id in ORDER:
 		if r.events.size() >= MAX_PER_MORNING:
 			break
+		# A scene about one of the four (alex_tired, vika_raise...) only while they're on the team.
+		var about: String = id.get_slice("_", 0)
+		if C.PEOPLE.has(about) and not r.available(about):
+			continue
 		var ev: Dictionary = call("_check_" + id, r)
 		if not ev.is_empty():
 			ev["id"] = ev.get("id", id)
@@ -114,7 +118,7 @@ func _check_boss_deadline(r) -> Dictionary:
 
 # Chapter three: the board wants one person cut from every team. Accept and pick, or fight it with weight.
 func _check_layoff_order(r) -> Dictionary:
-	var at: int = C.CHAPTERS[r.chapter - 1].get("layoff_day", 0)
+	var at: int = r.layoff_day()
 	if at == 0 or r.chapter_day() != at or not once(r, "layoff_%d" % r.chapter):
 		return {}
 	return {"who": "boss", "lines": [{"who": "boss", "key": "event.layoff_order.ask"}], "choices": ["accept", "fight"]}
@@ -122,7 +126,7 @@ func _check_layoff_order(r) -> Dictionary:
 
 # The first day of a later chapter: Irina sets the company's goal for the month and names the key projects.
 func _check_chapter_intro(r) -> Dictionary:
-	if r.chapter == 1 or r.chapter_day() != 1 or not once(r, "intro_%d" % r.chapter):
+	if r.chapter == 1 or r.chapter_day() != 1 or not once(r, "intro_%d" % r.stage()):
 		return {}
 	var id: String = C.CHAPTERS[r.chapter - 1]["id"]
 	var names := {}
@@ -802,7 +806,7 @@ func boss_visit(r) -> Dictionary:
 	if not near.is_empty():
 		choices.append("contractor:%d" % near["uid"])
 		labels["contractor:%d" % near["uid"]] = {"task": "@taskname." + near["id"]}
-	if r.people["vika"]["promised"] and r.available("vika"):
+	if r.available("vika") and r.people["vika"]["promised"]:
 		choices.append("vika_promo")
 	choices.append("status")
 	choices.append("leave")
@@ -1118,7 +1122,7 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			var st: Dictionary = r.people[arg]
 			st["absent"] = true
 			st["absent_reason"] = "taras"
-			st["mood"] += {"alex": 0.5, "vika": -0.5, "dima": 1.0, "gena": -1.5}[arg]
+			st["mood"] += {"alex": 0.5, "vika": -0.5, "dima": 1.0, "gena": -1.5}.get(arg, 0.0)
 			r.learn(arg, "pipelines", 2.0)
 			r.flags["taras_owes"] = true
 			r.say(arg, "event.taras_borrow.lent." + arg)
