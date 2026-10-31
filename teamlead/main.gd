@@ -1866,7 +1866,7 @@ func _board_area() -> Control:
 	if rules.endless():
 		hint = Loc.t("step.%s.hint" % rules.step)
 	if not rules.queue_of("me").is_empty():
-		hint = Loc.t("you.busy")
+		hint = Loc.t("you.busy", [rules.own_task_cost()])
 	titles.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
 	if rules.phase == "evening":
 		head.add_child(_button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 200, "primary"))
@@ -2278,7 +2278,7 @@ func _phone_board() -> Control:
 		b.add_theme_font_size_override("font_size", _fs(13))
 		_lit(b, name)
 		switcher.add_child(b)
-	var hint := Loc.t("you.busy") if not rules.queue_of("me").is_empty() else Loc.t("pick_task")
+	var hint := Loc.t("you.busy", [rules.own_task_cost()]) if not rules.queue_of("me").is_empty() else Loc.t("pick_task")
 	v.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
 	var scroll := _scroll("phone_" + lane)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
