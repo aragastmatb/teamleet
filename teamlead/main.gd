@@ -1831,6 +1831,21 @@ func _build_window() -> void:
 		_modal(Loc.person("boss"), _attention_text(), minf(460.0, view.x - 16.0), false, true).add_child(_boss_card())
 	elif window == "company":
 		_modal(Loc.t("nav.clients_title"), "", minf(560.0, view.x - 16.0), false, true).add_child(_chainer_card())
+	elif window == "more":
+		var body := _modal(Loc.t("tab.more"), "", minf(460.0, view.x - 16.0), false, true)
+		var waiting := rules.candidates.size()
+		if rules.endless() or rules.openings > 0 or waiting > 0:
+			body.add_child(_more_row(_nav_button("hire", Loc.t("hire.section"), _badge(waiting), COL_DANGER)))
+		if rules.endless():
+			body.add_child(_more_row(_nav_button("upgrades", Loc.t("up.section"), _badge(_fresh_upgrades()), COL_DANGER)))
+		var unhappy := 0
+		for bank in rules.banks:
+			if rules.bank_word(bank) in ["unhappy", "leaving"]:
+				unhappy += 1
+		body.add_child(_more_row(_nav_button("clients", Loc.t("nav.clients"), _badge(unhappy), COL_DANGER)))
+		var me := _button(Loc.t("me_card"), _open_window.bind("me"), 0, "subtle")
+		me.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		body.add_child(_more_row(me))
 	elif window == "me":
 		_modal(Loc.t("me_card"), "", minf(460.0, view.x - 16.0), false, true).add_child(_me_card())
 	elif window == "done":
@@ -1932,16 +1947,7 @@ func _nav_strip() -> Control:
 	if rules.endless() or rules.openings > 0 or waiting > 0:
 		row.add_child(_nav_button("hire", Loc.t("hire.section"), _badge(waiting), COL_DANGER))
 	if rules.endless():
-		# What you could already afford when the session began isn't news.
-		if upgrades_seen.is_empty():
-			for id in C.UPGRADES:
-				if _upgrade_affordable(id):
-					upgrades_seen[id] = true
-		var affordable := 0
-		for id in C.UPGRADES:
-			if _upgrade_affordable(id) and not upgrades_seen.has(id):
-				affordable += 1
-		var b := _nav_button("upgrades", Loc.t("up.section"), _badge(affordable), COL_DANGER)
+		var b := _nav_button("upgrades", Loc.t("up.section"), _badge(_fresh_upgrades()), COL_DANGER)
 		_lit(b, "upgrades")
 		row.add_child(b)
 	var unhappy := 0
@@ -1953,8 +1959,30 @@ func _nav_strip() -> Control:
 	return bar
 
 
+# Upgrades that came within reach since you last looked at the tree; what you could already afford
+# when the session began isn't news.
+func _fresh_upgrades() -> int:
+	if not rules.endless():
+		return 0
+	if upgrades_seen.is_empty():
+		for id in C.UPGRADES:
+			if _upgrade_affordable(id):
+				upgrades_seen[id] = true
+	var n := 0
+	for id in C.UPGRADES:
+		if _upgrade_affordable(id) and not upgrades_seen.has(id):
+			n += 1
+	return n
+
+
 func _upgrade_affordable(id: String) -> bool:
 	return rules.upgrade_state(id) == "open" and rules.money >= rules.upgrade_price(id)
+
+
+func _more_row(b: Control) -> Control:
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.custom_minimum_size.y = 44
+	return b
 
 
 func _badge(n: int) -> String:
@@ -2884,55 +2912,73 @@ func _build_phone() -> void:
 	var banner := _tip_banner()
 	if banner:
 		v.add_child(banner)
-	var body: Control
-	match tab:
-		"team":
-			body = _team_sidebar()
-		"chat":
-			body = _phone_messenger()
-		_:
-			body = _phone_board()
+	var body: Control = _phone_messenger() if tab == "chat" else _phone_board()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(body)
 	v.add_child(_phone_tabs())
 
 
+# The phone's top: the day, then what you have as game resources: points, money, the race.
 func _phone_top() -> Control:
 	var bar := PanelContainer.new()
-	bar.custom_minimum_size.y = PHONE_TOP_H
-	var style := _box(COL_TOPBAR, COL_TOPBAR, 0, 0)
+	var style := _box(_sky(), _sky(), 0, 0)
 	style.set_corner_radius_all(0)
 	style.content_margin_left = 12
 	style.content_margin_right = 12
-	style.content_margin_top = 6
-	style.content_margin_bottom = 6
+	style.content_margin_top = 8
+	style.content_margin_bottom = 10
 	bar.add_theme_stylebox_override("panel", style)
-	var v := _vbox(2)
+	var v := _vbox(8)
 	bar.add_child(v)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	v.add_child(row)
-	row.add_child(_logo(22))
+	row.add_child(_logo(24))
 	var day := _label(_day_label(), 15, COL_ON_TOP, false, true)
 	day.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(day)
-	var k := rules.key_status()
-	if not rules.endless():
-		row.add_child(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
 	var menu := _button(Loc.t("menu.button"), _open_menu, 0, "on_top")
-	menu.custom_minimum_size.y = 28
+	menu.custom_minimum_size.y = 30
 	row.add_child(menu)
-	var info := _flow(12, 0)
-	v.add_child(info)
-	info.add_child(_attention_label(13))
+	var chips := HFlowContainer.new()
+	chips.add_theme_constant_override("h_separation", 6)
+	chips.add_theme_constant_override("v_separation", 6)
+	v.add_child(chips)
+	var dots := ""
+	for i in rules.max_attention():
+		dots += "●" if i < rules.attention else "○"
+	var points := _label(Loc.t("you.sick_today") if rules.sick_today else dots, 17, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER, false, true)
+	juice_nodes["points"] = points
+	chips.add_child(_chip(points))
 	if rules.endless():
-		info.add_child(_label(_money_text(), 13, _money_color()))
-		info.add_child(_race_label(13))
-	var word := rules.boss_word()
-	info.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 13, BOSS_COLORS[word]))
+		var money := _label(_money_text(), 14, _money_color(), false, true)
+		juice_nodes["money"] = money
+		chips.add_child(_chip(money))
+		var race := _race_label(14)
+		juice_nodes["race"] = race
+		chips.add_child(_chip(race))
+	else:
+		var k := rules.key_status()
+		chips.add_child(_chip(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 14, COL_ON_TOP, false, true)))
 	return bar
 
 
+# A resource on the phone's top bar: a translucent rounded plate around its number.
+func _chip(content: Control) -> Control:
+	var chip := PanelContainer.new()
+	var cs := _flat(Color(1, 1, 1, 0.14))
+	cs.set_corner_radius_all(14)
+	cs.content_margin_left = 10
+	cs.content_margin_right = 10
+	cs.content_margin_top = 3
+	cs.content_margin_bottom = 3
+	chip.add_theme_stylebox_override("panel", cs)
+	chip.add_child(content)
+	return chip
+
+
+# The phone's bottom bar: the board, the messenger, Irina, and everything else, each with its icon and a
+# counter when something waits there.
 func _phone_tabs() -> Control:
 	var bar := PanelContainer.new()
 	var style := _flat(COL_SURFACE)
@@ -2944,51 +2990,130 @@ func _phone_tabs() -> Control:
 	style.content_margin_bottom = 10
 	bar.add_theme_stylebox_override("panel", style)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
+	row.add_theme_constant_override("separation", 4)
 	bar.add_child(row)
 	var unread := 0
+	var asks := false
 	for th in _contacts():
 		unread += _unread(th)
-	for name in ["board", "team", "chat"]:
-		var text := Loc.t("tab." + name)
-		if name == "chat" and unread > 0 and tab != "chat":
-			text += " (%d)" % unread
-		var calls: bool = name == "chat" and tab != "chat" and _asked_thread() != ""
-		var b := _button(text, _go_tab.bind(name), 0, "chosen" if tab == name else ("primary" if calls else "subtle"))
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		if name == "team" and tab != "team":
-			_lit(b, "talk")
-		row.add_child(b)
+		asks = asks or _letters_in(th) > 0 or _asked_thread() == th
+	row.add_child(_tab_item(_icon("nav_board"), Loc.t("tab.board"), "", tab == "board", _go_tab.bind("board")))
+	row.add_child(_tab_item(_icon("nav_chat"), Loc.t("tab.chat"), "!" if asks else _badge(unread), tab == "chat", _go_tab.bind("chat"), asks))
+	var boss := _avatar("boss", 26)
+	row.add_child(_tab_item(boss, Loc.t("tab.boss"), "", window == "boss", _open_window.bind("boss")))
+	row.add_child(_tab_item(_icon("nav_more"), Loc.t("tab.more"), _badge(_more_count()), window == "more", _open_window.bind("more")))
 	return bar
 
 
+func _icon(name: String) -> Control:
+	var tex := TextureRect.new()
+	var path := ICON_DIR + name + ".svg"
+	if ResourceLoader.exists(path):
+		tex.texture = load(path)
+	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tex.custom_minimum_size = Vector2(24, 24)
+	return tex
+
+
+func _tab_item(icon: Control, text_value: String, badge: String, chosen: bool, action: Callable, urgent: bool = false) -> Control:
+	var item := PanelContainer.new()
+	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	item.add_theme_stylebox_override("panel", _box(COL_SELECTED if chosen else Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, 6))
+	item.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			action.call_deferred())
+	var v := _vbox(2)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	item.add_child(v)
+	var spot := Control.new()
+	spot.custom_minimum_size = Vector2(28, 26)
+	spot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	spot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(spot)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	icon.position = Vector2(1, 0)
+	if icon is TextureRect:
+		icon.modulate = COL_PRIMARY if chosen else COL_MUTED
+	spot.add_child(icon)
+	var l := _label(text_value, 12, COL_PRIMARY if chosen else COL_MUTED, false, chosen)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(l)
+	if badge != "":
+		var dot := PanelContainer.new()
+		var ds := _flat(COL_STAR if urgent else COL_DANGER)
+		ds.set_corner_radius_all(9)
+		ds.content_margin_left = 5
+		ds.content_margin_right = 5
+		dot.add_theme_stylebox_override("panel", ds)
+		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		dot.add_child(_label(badge, 10, COL_ON_TOP, false, true))
+		dot.position = Vector2(18, -4)
+		spot.add_child(dot)
+	return item
+
+
+# What waits behind "more": CVs, upgrades newly within reach, unhappy clients.
+func _more_count() -> int:
+	var n := rules.candidates.size() + _fresh_upgrades()
+	for bank in rules.banks:
+		if rules.bank_word(bank) in ["unhappy", "leaving"]:
+			n += 1
+	return n
+
+
+# The phone's board: the inbox, or the team with each person's cards under them; the week's done
+# folded into a line; the day's button.
 func _phone_board() -> Control:
 	var v := _vbox(8)
 	var lanes := _lanes()
 	var switcher := HBoxContainer.new()
 	switcher.add_theme_constant_override("separation", 4)
 	v.add_child(switcher)
-	if not lanes.has(lane):
+	if lane != "team":
 		lane = "inbox"
-	for name in LANES:
-		var b := _button("%s %d" % [Loc.t("col_short." + name), lanes[name].size()], _pick_lane.bind(name), 0, "chosen" if lane == name else "subtle")
+	for name in ["inbox", "team"]:
+		var text_value := "%s %d" % [Loc.t("col_short.inbox"), lanes["inbox"].size()] if name == "inbox" else Loc.t("tab.team")
+		var b := _button(text_value, _pick_lane.bind(name), 0, "chosen" if lane == name else "subtle")
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.add_theme_font_size_override("font_size", _fs(13))
-		_lit(b, "active" if name == "people" else name)
+		b.add_theme_font_size_override("font_size", _fs(14))
+		_lit(b, "inbox" if name == "inbox" else "active")
 		switcher.add_child(b)
-	var hint := Loc.t("you.busy", [rules.own_task_cost()]) if not rules.queue_of("me").is_empty() else Loc.t("pick_task")
+	var hint := Loc.t("you.busy", [rules.own_task_cost()]) if not rules.queue_of("me").is_empty() else (Loc.t("step.%s.hint" % rules.step) if rules.endless() else Loc.t("pick_task"))
 	v.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
 	var scroll := _scroll("phone_" + lane)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(scroll)
-	var list := _vbox(8)
+	var list := _vbox(10)
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(list)
-	if lanes[lane].is_empty():
-		list.add_child(_label(Loc.t("col_empty." + lane), 14, COL_FAINT, true))
-	_fill_lane(list, lane, lanes[lane])
+	if lane == "inbox":
+		if lanes["inbox"].is_empty():
+			list.add_child(_label(Loc.t("col_empty.inbox"), 14, COL_FAINT, true))
+		_fill_lane(list, "inbox", lanes["inbox"])
+	else:
+		for p in rules.team:
+			if not rules.people[p]["gone"]:
+				list.add_child(_phone_lane(_person_row(p), rules.queue_of(p), Loc.t("row.free")))
+		list.add_child(_phone_lane(_me_head(), rules.queue_of("me"), Loc.t("row.me_free")))
+	v.add_child(_done_strip(lanes["done"]))
 	v.add_child(_day_button(0))
 	return _padded(v, 10, 10)
+
+
+# One person on the phone: their plate under their name, full width.
+func _phone_lane(head: Control, items: Array, empty: String) -> Control:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _box(COL_COLUMN, COL_COLUMN, 0, 8))
+	var v := _vbox(6)
+	panel.add_child(v)
+	v.add_child(head)
+	if items.is_empty():
+		var l := _label(empty, 12, COL_FAINT, true)
+		v.add_child(_indented(l))
+	for t in items:
+		v.add_child(_task_card(t, "people"))
+	return panel
 
 
 # ---------- the messenger ----------
