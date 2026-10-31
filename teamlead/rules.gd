@@ -112,6 +112,9 @@ var overtime_today := 0
 var step := "triage"
 # Where the game goes once the open events are answered: back to the board, or on to the evening.
 var after_events := "plan"
+# The endless run's questions don't stop the day: they come as messages and wait in the messenger.
+# Unanswered by the end of the day (by the next morning for the evening's), they settle as if you said nothing.
+var letters: Array = []
 # Incidents that break out in the middle of the day.
 var arriving_midday: Array = []
 # Cards missed deadlines have put into the deck for good (the endless run's curses).
@@ -230,6 +233,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	survey = {}
 	quits = 0
 	events.clear()
+	letters.clear()
 	review.clear()
 	pending = {}
 	lies.clear()
@@ -310,6 +314,8 @@ func _open_morning() -> void:
 	if _open_standup():
 		return
 	_queue_events()
+	if endless():
+		_post_letters()
 	if events.is_empty():
 		_deliver_arrivals()
 		phase = "plan"
@@ -472,6 +478,8 @@ func start_work() -> void:
 	flags.erase("tip_hl")
 	_narrate("log.midday")
 	scenes.queue(self, "midday")
+	if endless():
+		_post_letters()
 	_say_event_lines()
 	if events.is_empty():
 		_deliver_arrivals()
@@ -1662,7 +1670,90 @@ func add_task_raw(id: String, cat: String, size: float, due: int, public: bool, 
 
 func _queue_events() -> void:
 	scenes.queue(self)
-	_say_event_lines()
+	if not endless():
+		_say_event_lines()
+
+
+# Whatever was queued goes out as messages: each one's lines into the asker's conversation, to answer when you like.
+func _post_letters() -> void:
+	while not events.is_empty():
+		_say_event_lines()
+		var ev: Dictionary = events.pop_front()
+		ev["sent"] = step
+		letters.append(ev)
+
+
+func letter(i: int) -> Dictionary:
+	return letters[i] if i >= 0 and i < letters.size() else {}
+
+
+# Saying nothing costs nothing; anything else is a reply, and some replies take more of you.
+func reply_cost(ev: Dictionary, choice: String) -> int:
+	if choice == _silent_choice(ev):
+		return 0
+	return maxi(cost("reply"), choice_cost(ev, choice))
+
+
+func can_answer(i: int, choice: String) -> bool:
+	var ev := letter(i)
+	return not ev.is_empty() and ev["choices"].has(choice) and phase in ["plan", "evening"] and can_afford(reply_cost(ev, choice))
+
+
+func answer_letter(i: int, choice: String) -> void:
+	if not can_answer(i, choice):
+		return
+	var ev: Dictionary = letters.pop_at(i)
+	spend_attention(reply_cost(ev, choice))
+	_settle_letter(ev, choice)
+
+
+# What silence means for each question: the answer it amounts to.
+const SILENCE := {"chaos_meeting": "later", "boss_deadline": "yes", "boss_details": "dodge", "boris_drunk": "refuse",
+	"friday_deploy": "allow", "marina_warns": "dismiss", "stayed_late": "ignore", "conflict": "ignore", "complaint": "shrug",
+	"boss_dump": "take", "taras_brag": "noted"}
+const SILENT_WORDS := ["ignore", "stay_out", "shrug", "later", "dodge", "noted", "dismiss", "not_yet", "ok"]
+
+
+func _silent_choice(ev: Dictionary) -> String:
+	if SILENCE.has(ev["id"]) and ev["choices"].has(SILENCE[ev["id"]]):
+		return SILENCE[ev["id"]]
+	for c in ev["choices"]:
+		if c in SILENT_WORDS:
+			return c
+	if ev.has("comp"):
+		for c in ev["choices"]:
+			if C.COMPLICATIONS[ev["comp"]]["choices"].get(c, {}).get("hours", 0) == 0:
+				return c
+	return ""
+
+
+# The day (or the evening) is over: what's still unanswered settles as silence.
+func _expire_letters(sent: Array) -> void:
+	var keep: Array = []
+	var due: Array = []
+	for ev in letters:
+		if ev.get("sent", "") in sent:
+			due.append(ev)
+		else:
+			keep.append(ev)
+	letters = keep
+	for ev in due:
+		_narrate("letter.unanswered", [], {"who": "@name.%s.dat" % ev["who"]} if ev["who"] != "" else {})
+		history[-1]["thread"] = ev["who"]
+		if team.has(ev["who"]) and available(ev["who"]):
+			people[ev["who"]]["mood"] -= 0.3
+		var c := _silent_choice(ev)
+		if c != "":
+			ev["silent"] = true
+			_settle_letter(ev, c)
+
+
+func _settle_letter(ev: Dictionary, choice: String) -> void:
+	flags["%s:%s" % [ev["id"], choice]] = true
+	scenes.resolve(self, ev, choice)
+	_weight_check()
+	# An answer can bring a follow-up question; it comes as a message too.
+	_post_letters()
 
 
 func _say_event_lines() -> void:
@@ -2828,6 +2919,8 @@ func end_day() -> void:
 		_team_picks()
 	evening_from = history.size()
 	_narrate("log.evening")
+	if endless():
+		_expire_letters(["triage", "work"])
 	_alex_nights()
 	shares.clear()
 	for t in tasks:
@@ -2892,10 +2985,7 @@ func end_day() -> void:
 	if endless():
 		step = "evening"
 		scenes.queue(self, "evening")
-		if not events.is_empty():
-			after_events = phase
-			_say_event_lines()
-			phase = "event"
+		_post_letters()
 	# An evening conversation comes before the day's summary.
 	_queue_story("evening")
 
@@ -4168,7 +4258,7 @@ func _tip_used(target: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 9
+const SAVE_VERSION := 10
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.
@@ -4245,6 +4335,8 @@ func next() -> void:
 		return
 	if _bankrupt():
 		return
+	if endless():
+		_expire_letters(["evening"])
 	if day >= last_day():
 		_finish_chapter()
 		return

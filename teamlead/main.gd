@@ -3180,8 +3180,16 @@ func _contact_face(th: String, size: int) -> Control:
 
 
 # A round marker on a face: a question waiting (orange "!") or how many lines are unread.
+func _letters_in(th: String) -> int:
+	var n := 0
+	for ev in rules.letters:
+		if _contact_of(ev["who"]) == th:
+			n += 1
+	return n
+
+
 func _contact_badge(th: String) -> Control:
-	var waiting: bool = _asked_thread() == th or _thread_offer(th) != ""
+	var waiting: bool = _asked_thread() == th or _thread_offer(th) != "" or _letters_in(th) > 0
 	var n := _unread(th)
 	if not waiting and n == 0:
 		return null
@@ -3345,6 +3353,9 @@ func _thread_prompt(list: VBoxContainer, th: String) -> void:
 		else:
 			_review_prompt(list)
 		return
+	for i in rules.letters.size():
+		if _contact_of(rules.letters[i]["who"]) == th:
+			_letter_prompt(list, i, rules.letters[i])
 	var offer := _thread_offer(th)
 	if offer != "":
 		list.add_child(_offer_card(th, offer))
@@ -3481,6 +3492,28 @@ func _prompt_box(list: VBoxContainer, title: String) -> VBoxContainer:
 	if title != "":
 		v.add_child(_label(title, 12, COL_PRIMARY, true, true))
 	return v
+
+
+# A message waiting for an answer: answering costs, saying nothing is free and settles at the end of the day.
+func _letter_prompt(list: VBoxContainer, i: int, ev: Dictionary) -> void:
+	var v := _prompt_box(list, Loc.t("letter.title"))
+	for choice in ev["choices"]:
+		var parts: PackedStringArray = choice.split(":")
+		var names: Dictionary = ev["names"].duplicate()
+		if ev.has("choice_names"):
+			names.merge(ev["choice_names"].get(choice, {}), true)
+		elif parts.size() > 1:
+			names["who"] = "@name.%s.acc" % parts[1]
+		var text := Loc.render("event.%s.choice.%s" % [ev["id"], parts[0]], [], names) + _cost_mark(rules.reply_cost(ev, choice))
+		var b := _answer_button(text, _answer_letter.bind(i, choice))
+		b.disabled = not rules.can_answer(i, choice)
+		v.add_child(b)
+	v.add_child(_label(Loc.t("letter.hint"), 12, COL_MUTED, true))
+
+
+func _answer_letter(i: int, choice: String) -> void:
+	rules.answer_letter(i, choice)
+	_render()
 
 
 func _event_prompt(list: VBoxContainer, ev: Dictionary) -> void:
