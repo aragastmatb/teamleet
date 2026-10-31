@@ -2523,6 +2523,21 @@ func lighten(p: String) -> bool:
 
 # Does this answer to a morning scene take your attention?
 func choice_costs(ev: Dictionary, choice: String) -> bool:
+	return choice_cost(ev, choice) > 0
+
+
+# The evening scenes say what each answer takes; the rest take one point or none.
+const EVENING_COSTS := {"stayed_late/send_home": 1, "stayed_late/stay_with": 2, "conflict/mediate": 2, "conflict/split": 1, "complaint/apologize": 1}
+
+
+func choice_cost(ev: Dictionary, choice: String) -> int:
+	var key: String = ev["id"] + "/" + choice
+	if EVENING_COSTS.has(key):
+		return EVENING_COSTS[key]
+	return 1 if _old_choice_costs(ev, choice) else 0
+
+
+func _old_choice_costs(ev: Dictionary, choice: String) -> bool:
 	if ev.has("comp"):
 		var fx: Dictionary = C.COMPLICATIONS[ev["comp"]]["choices"].get(choice, {})
 		return fx.get("hours", 0) > 0

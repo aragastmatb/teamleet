@@ -51,6 +51,7 @@ const COMP_STYLE := {
 const ORDER := [
 	"probation", "chapter_intro", "layoff_order", "weekend_fire", "chaos_meeting", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
 	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "dima_question", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow", "boris_drunk", "friday_deploy",
+	"complaint", "stayed_late", "conflict",
 ]
 
 
@@ -58,7 +59,7 @@ const ORDER := [
 # The story keeps them all in the morning.
 const WHEN := {
 	"chaos_meeting": "midday", "boss_deadline": "midday", "boss_details": "midday", "complication": "midday", "boris_drunk": "midday",
-	"friday_deploy": "evening", "marina_warns": "evening",
+	"friday_deploy": "evening", "marina_warns": "evening", "stayed_late": "evening", "conflict": "evening", "complaint": "evening",
 }
 
 
@@ -229,6 +230,53 @@ func _check_taras_brag(r) -> Dictionary:
 	if r.day < 3 or not once(r, "taras_brag"):
 		return {}
 	return {"who": "taras", "lines": [{"who": "taras", "key": "event.taras_brag.ask"}], "choices": ["noted", "who_did"]}
+
+
+# ---------- the endless evening ----------
+
+# Someone swamped or worn out is still at their desk when everyone's gone.
+func _check_stayed_late(r) -> Dictionary:
+	if not r.endless() or r.rng.randf() > 0.35:
+		return {}
+	for p in r.team:
+		if not here(r, p):
+			continue
+		var q: Array = r.queue_of(p)
+		if q.is_empty() or (q.size() < r.OVERLOAD_AT and r.people[p]["energy"] > r.TIRED_ENERGY):
+			continue
+		return {"who": p, "uid": q[0]["uid"], "person": p, "names": {"who": "@name.%s.nom" % p, "task": "@taskname." + q[0]["id"]},
+			"lines": [{"who": "", "key": "event.stayed_late.story"}, {"who": p, "key": "event.stayed_late.ask"}], "choices": ["send_home", "stay_with", "ignore"]}
+	return {}
+
+
+# Two people fall out over how the work gets done. At most once a week.
+func _check_conflict(r) -> Dictionary:
+	if not r.endless() or r.flags.has("conflict_w%d" % r.week()) or r.rng.randf() > 0.3:
+		return {}
+	var here_now: Array = r.team.filter(func(p): return here(r, p))
+	if here_now.size() < 2:
+		return {}
+	here_now.sort_custom(func(a, b): return r.people[a]["mood"] < r.people[b]["mood"])
+	var a: String = here_now[0]
+	if r.people[a]["mood"] > 0.5:
+		return {}
+	var b: String = here_now[1]
+	r.flags["conflict_w%d" % r.week()] = true
+	return {"who": a, "person": a, "other": b, "names": {"who": "@name.%s.nom" % a, "other": "@name.%s.nom" % b, "other_ins": "@name.%s.ins" % b},
+		"lines": [{"who": a, "key": "event.conflict.ask"}], "choices": ["mediate", "split", "ignore"]}
+
+
+# Whoever was waiting for something that slipped today comes to say so.
+func _check_complaint(r) -> Dictionary:
+	if not r.endless():
+		return {}
+	for t in r.tasks:
+		if not t["late"] or t.get("late_day", 0) != r.day or not t["from"] in C.LEAD_VOICE or not r.team.has(t["owner"]):
+			continue
+		var names := task_names(r, t)
+		return {"who": t["from"], "uid": t["uid"], "names": names, "lines": [{"who": t["from"], "key": "event.complaint.ask"}],
+			"choices": ["apologize", "blame", "shrug"]}
+	return {}
 
 
 # Irina lets slip that Vika is rising.
@@ -1140,6 +1188,54 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.say(arg, "event.taras_borrow.lent." + arg)
 		"taras_borrow/refuse":
 			r.flags["taras_grudge"] = true
+
+		"stayed_late/send_home":
+			r.spend_attention(r.choice_cost(ev, c))
+			var st: Dictionary = r.people[ev["person"]]
+			st["energy"] = minf(r._stamina(ev["person"]), st["energy"] + 1.5)
+			st["mood"] += 0.3
+		"stayed_late/stay_with":
+			r.spend_attention(r.choice_cost(ev, c))
+			if not t.is_empty():
+				t["progress"] = minf(t["size"] * 0.95, t["progress"] + 0.5)
+				t["involved"] = true
+			r.people[ev["person"]]["mood"] += 0.5
+			r.people[ev["person"]]["trust"] += 1
+		"stayed_late/ignore":
+			r.people[ev["person"]]["energy"] -= 1.0
+			r.people[ev["person"]]["mood"] -= 0.3
+
+		"conflict/mediate":
+			r.spend_attention(r.choice_cost(ev, c))
+			for q in [ev["person"], ev["other"]]:
+				r.people[q]["mood"] += 0.5
+				r.people[q]["trust"] += 1
+		"conflict/split":
+			r.spend_attention(r.choice_cost(ev, c))
+			for task in r.tasks:
+				if task["status"] == "active" and [task["owner"], task["helper"]].has(ev["person"]) and [task["owner"], task["helper"]].has(ev["other"]):
+					task["helper"] = ""
+			r.people[ev["person"]]["mood"] += 0.2
+		"conflict/ignore":
+			for q in [ev["person"], ev["other"]]:
+				r.people[q]["mood"] -= 0.7
+
+		"complaint/apologize":
+			r.spend_attention(r.choice_cost(ev, c))
+			r.flags["complaints_" + who] = maxi(0, r.flags.get("complaints_" + who, 0) - 1)
+			# Promised for tomorrow: it goes to the front of its owner's queue.
+			if not t.is_empty() and t["status"] == "active":
+				for other in r.queue_of(t["owner"]):
+					other["first"] = false
+				t["first"] = true
+		"complaint/blame":
+			if r.team.has(t.get("owner", "")):
+				r.people[t["owner"]]["mood"] -= 1.0
+				r.people[t["owner"]]["trust"] -= 1
+		"complaint/shrug":
+			r.flags["complaints_" + who] = r.flags.get("complaints_" + who, 0) + 1
+			if r.flags["complaints_" + who] >= 2:
+				r.boss -= 0.5
 
 		"boris_drunk/take":
 			_add_tagged(r, "boris_promise")

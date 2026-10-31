@@ -2512,7 +2512,7 @@ func _event_prompt(list: VBoxContainer, ev: Dictionary) -> void:
 		if ev["id"] == "boss_dump" and choice == "refuse" and not rules.has_weight():
 			text += " " + Loc.t("needs_weight")
 		if rules.choice_costs(ev, choice):
-			text += _cost_mark()
+			text += _cost_mark(rules.choice_cost(ev, choice))
 		if ev["id"] == "boss_visit" and (parts[0] == "delay" or parts[0] == "contractor") and not rules.has_weight():
 			text += " " + Loc.t("needs_weight")
 		v.add_child(_answer_button(text, _event.bind(choice)))
