@@ -194,7 +194,7 @@ func _check_weekend_fire(r) -> Dictionary:
 	var names := {}
 	# Whoever was on it has left since: it fell to you.
 	if fixer == "me" or not r.available(fixer):
-		r.my_energy -= 2.0
+		r.week_pool -= 2
 		r.my_week_hours[r.week()] += 8
 		names["who"] = "@you"
 	elif r.available(fixer):

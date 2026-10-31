@@ -1281,7 +1281,7 @@ func _top_bar() -> Control:
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(gap)
-	top.add_child(_label(_attention_text(), 15, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
+	top.add_child(_attention_label(15))
 	if rules.endless():
 		top.add_child(_label(_money_text(), 15, _money_color()))
 		top.add_child(_race_label(15))
@@ -1330,13 +1330,21 @@ func _logo(size: int) -> Control:
 	return box
 
 
+func _attention_label(size: int) -> Label:
+	var l := _label(_attention_text(), size, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER)
+	l.tooltip_text = Loc.t("attention_tip")
+	l.mouse_filter = Control.MOUSE_FILTER_PASS
+	return l
+
+
 func _attention_text() -> String:
 	if rules.sick_today:
 		return Loc.t("you.sick_today")
 	var dots := ""
 	for i in rules.max_attention():
 		dots += "●" if i < rules.attention else "○"
-	var text := Loc.render("attention_label", [], {"dots": dots, "state": "@me." + rules.my_state()})
+	var week := "%d/%d" % [maxi(0, rules.week_pool), rules.week_max()]
+	var text := Loc.render("attention_label", [], {"dots": dots, "week": week, "state": "@me." + rules.my_state()})
 	if rules.overtime_today > 0:
 		text += " " + Loc.render("overtime_label", [], {"n": rules.overtime_today})
 	return text
@@ -1996,7 +2004,7 @@ func _phone_top() -> Control:
 	row.add_child(menu)
 	var info := _flow(12, 0)
 	v.add_child(info)
-	info.add_child(_label(_attention_text(), 13, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER))
+	info.add_child(_attention_label(13))
 	if rules.endless():
 		info.add_child(_label(_money_text(), 13, _money_color()))
 		info.add_child(_race_label(13))

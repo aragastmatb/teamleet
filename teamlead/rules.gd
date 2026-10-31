@@ -22,7 +22,6 @@ const DRAIN := 0.15
 const HARD_DRAIN := 0.4
 const OVERTIME_DRAIN := 0.35 # per hour past the 8
 const WEEKEND_REST := 4.0
-const MY_WEEKEND_REST := 3.0
 const OVERLOAD_AT := 3
 const IDLE_REST := 2.0
 const DAYOFF_REST := 4.0
@@ -102,10 +101,12 @@ var improved := {}
 var banks := {}
 var reputation := 0.0
 var comp_off := {}
-# Your attention: a few tokens a day for managing. Past them you stay late, and that wears you out.
+# Your attention: a few tokens a day for managing, all drawn from the week's stock (week_pool, a day's
+# worth times five, full again each Monday). Spend more in a day than the day has and you're staying
+# late, and that comes out of the rest of the week. Run the week below zero and you burn out.
 var attention := 0
 var overtime_today := 0
-var my_energy := 10.0
+var week_pool := 0
 var my_sick := 0
 # A late night (a scene says so): tomorrow you have this much less attention.
 var my_hangover := 0
@@ -186,7 +187,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 		banks[b] = {"mood": 0.0, "since": 1}
 	reputation = 0.0
 	_refill_deck()
-	my_energy = 10.0
+	week_pool = week_max()
 	my_sick = 0
 	my_hangover = 0
 	init_next.clear()
@@ -227,7 +228,7 @@ func _start_day() -> void:
 	_narrate("log.morning", [day_key()])
 	var monday := day % 5 == 1 and day > 1
 	if monday:
-		my_energy = minf(10.0, my_energy + MY_WEEKEND_REST)
+		week_pool = week_max()
 	for p in team:
 		var st: Dictionary = people[p]
 		if st["gone"]:
@@ -262,13 +263,14 @@ func _start_day() -> void:
 			offer_today[p] = true
 	visited_today = false
 	overtime_today = 0
-	attention = 0 if my_sick > 0 else max_attention()
+	attention = 0 if my_sick > 0 else mini(max_attention(), maxi(0, week_pool))
 	sick_today = my_sick > 0
 	if my_sick > 0:
 		my_sick -= 1
 	elif not queue_of("me").is_empty():
 		# Doing a task yourself takes most of your day.
-		attention = maxi(0, attention - 2)
+		attention = maxi(0, attention - OWN_TASK_COST)
+		week_pool -= OWN_TASK_COST
 	attention = maxi(0, attention - my_hangover)
 	my_hangover = 0
 	# A story conversation comes first, on its own screen; the morning's chat waits for it.
@@ -2249,6 +2251,7 @@ func can_talk(p: String) -> bool:
 
 # Every bit of managing costs a token of attention; past them you're staying late.
 func spend_attention() -> void:
+	week_pool -= 1
 	if attention > 0:
 		attention -= 1
 	else:
@@ -2506,20 +2509,14 @@ func end_day() -> void:
 # Staying late wears you down; rest days bring you back. Run yourself into the ground and you're
 # off sick tomorrow, and the team works without you.
 func _end_of_my_day() -> void:
-	if overtime_today > 0:
-		my_energy -= 2.0 * overtime_today
-	elif not queue_of("me").is_empty():
-		my_energy -= 1.0
-	else:
-		my_energy = minf(10.0, my_energy + 1.5)
-	if my_energy <= 0.0:
+	if week_pool < 0:
 		my_sick = 1
-		my_energy = 6.0
+		week_pool = 0
 		_narrate("you.burnout")
-		flags["burnouts_%d" % stage()] = flags.get("burnouts_%d" % stage(), 0) + 1
+		flags[burnout_key()] = flags.get(burnout_key(), 0) + 1
 		# One short of quitting: the body says so first.
-		if flags["burnouts_%d" % stage()] == BURNOUTS_TO_QUIT - 1:
-			_narrate("you.burnout_warning")
+		if flags[burnout_key()] == burnouts_to_quit() - 1:
+			_narrate("you.burnout_warning_run" if endless() else "you.burnout_warning")
 	# Untouched tech debt makes itself felt: each Friday another outage goes into the deck.
 	if day % 5 == 0 and day < last_day() and not flags.has("tech_debt_done"):
 		var fires := C.tasks_with("tag", "debt").filter(func(id): return _improved_by("remove", id).is_empty())
@@ -2528,12 +2525,22 @@ func _end_of_my_day() -> void:
 			_narrate("deck.neglect_tech")
 
 
+const OWN_TASK_COST := 2
+
+
+func week_max() -> int:
+	return max_attention() * 5
+
+
+# How you're holding up: what's left of the week against what the days left would normally take.
 func my_state() -> String:
-	if my_energy >= 7.0:
+	var ahead := max_attention() * (5 - (day - 1) % 5)
+	var ratio := float(week_pool) / maxf(1.0, ahead)
+	if ratio >= 1.0:
 		return "fresh"
-	if my_energy >= 4.0:
+	if ratio >= 0.7:
 		return "ok"
-	if my_energy > 2.0:
+	if ratio > 0.3:
 		return "tired"
 	return "drained"
 
@@ -3490,7 +3497,7 @@ func _tip_used(target: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.
@@ -3792,10 +3799,16 @@ func give_raise(p: String) -> void:
 	hires[p]["raise"] = hires[p].get("raise", 0.0) + RAISE
 
 
+# The endless run ends the moment it can't go on: no money for salaries, or you've burned out for good.
 func _bankrupt() -> bool:
-	if not endless() or not flags.has("bankrupt"):
+	if not endless():
 		return false
-	ending = "bankrupt"
+	if flags.has("bankrupt"):
+		ending = "bankrupt"
+	elif flags.get(burnout_key(), 0) >= burnouts_to_quit():
+		ending = "burned_out"
+	else:
+		return false
 	phase = "end"
 	return true
 
@@ -3844,7 +3857,7 @@ func _finish_chapter() -> void:
 		return
 	var r := results_score()
 	var team := team_score()
-	if flags.get("burnouts_%d" % stage(), 0) >= BURNOUTS_TO_QUIT:
+	if flags.get(burnout_key(), 0) >= burnouts_to_quit():
 		ending = "burned_out"
 	elif quits >= 2:
 		ending = "team_gone"
@@ -3875,7 +3888,7 @@ func _chapter_verdict() -> void:
 	for g in goal_progress():
 		if goal_met(g):
 			met += 1
-	if flags.get("burnouts_%d" % stage(), 0) >= BURNOUTS_TO_QUIT:
+	if flags.get(burnout_key(), 0) >= burnouts_to_quit():
 		ending = "burned_out"
 	elif quits >= 2:
 		ending = "team_gone"
@@ -3898,6 +3911,16 @@ func _chapter_verdict() -> void:
 
 
 const BURNOUTS_TO_QUIT := 4
+const BURNOUTS_ENDLESS := 3 # in the whole endless run
+
+
+# Burnouts count by the month in the story, over the whole run in the endless one.
+func burnout_key() -> String:
+	return "burnouts_run" if endless() else "burnouts_%d" % stage()
+
+
+func burnouts_to_quit() -> int:
+	return BURNOUTS_ENDLESS if endless() else BURNOUTS_TO_QUIT
 
 
 # The deal went through: what becomes of you depends on Irina's view of you and on the team.
