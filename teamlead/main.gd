@@ -91,7 +91,8 @@ var text_scale := "normal"
 # The menu: on the title screen, and over the game when opened from the top bar (or Esc).
 # menu_page is "" for the list itself, or "settings", "about", "confirm_new".
 var menu_open := false
-var upgrades_open := false
+# A window over the board (desktop): "hire", "upgrades", "boss", "company" or "person:<id>"; "" for none.
+var window := ""
 var menu_page := ""
 var heard := 0
 var last_phase := "title"
@@ -319,12 +320,14 @@ func _unassign() -> void:
 
 
 func _talk_to(p: String) -> void:
+	window = "" # what it opens is a conversation, which the window would cover
 	_clear_selection()
 	rules.start_talk(p)
 	_render()
 
 
 func _visit_boss() -> void:
+	window = ""
 	_clear_selection()
 	rules.visit_boss()
 	_render()
@@ -736,8 +739,8 @@ func _render() -> void:
 				_build_report()
 			"end", "chapter_end":
 				_build_end()
-	if upgrades_open and rules.endless() and rules.phase in ["plan", "event", "standup"]:
-		_build_upgrades()
+	if window != "" and rules.phase in ["plan", "event", "standup"]:
+		_build_window()
 	if menu_open:
 		_build_menu_overlay()
 	_let_touches_through(ui)
@@ -1285,11 +1288,12 @@ func _build_office() -> void:
 	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(v)
 	v.add_child(_top_bar())
+	v.add_child(_nav_strip())
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 0)
 	v.add_child(body)
-	body.add_child(_team_sidebar())
+	body.add_child(_team_strip())
 	body.add_child(_board_area())
 	body.add_child(_chat())
 
@@ -1318,8 +1322,7 @@ func _top_bar() -> Control:
 	else:
 		var k := rules.key_status()
 		top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
-	var word := rules.boss_word()
-	top.add_child(_label(Loc.t("boss_label", ["@weight." + word]), 15, BOSS_COLORS[word]))
+	# How Irina sees you sits on her button under the bar, where there's room for it.
 	top.add_child(_button(Loc.t("menu.button"), _open_menu, 0, "on_top"))
 	return bar
 
@@ -1589,11 +1592,13 @@ func _candidate_card(c: Dictionary) -> Control:
 
 
 func _fire(p: String) -> void:
+	window = ""
 	rules.start_fire(p)
 	_render()
 
 
 func _interview(id: String) -> void:
+	window = ""
 	rules.interview(id)
 	_render()
 
@@ -1606,6 +1611,232 @@ func _hire(id: String) -> void:
 func _reject_candidate(id: String) -> void:
 	rules.reject_candidate(id)
 	_render()
+
+
+# ---------- windows over the board ----------
+
+# What's needed now and then lives in windows, so the screen holds only the team, the board and the chat.
+func _open_window(name: String) -> void:
+	window = name
+	_render()
+
+
+func _close_window() -> void:
+	window = ""
+	_render()
+
+
+func _build_window() -> void:
+	if window == "upgrades":
+		if rules.endless():
+			_build_upgrades()
+		return
+	var view := get_viewport().get_visible_rect().size
+	if window.begins_with("person:"):
+		var p := window.substr(7)
+		if not rules.people.has(p):
+			window = ""
+			return
+		_modal(Loc.person(p), "", minf(460.0, view.x - 16.0), false, true).add_child(_person_card(p))
+	elif window == "hire":
+		var hint := Loc.t("money.fee", [_rub(rules.HIRE_FEE)]) if rules.endless() else Loc.t("hire.openings_left", [rules.openings])
+		var body := _modal(Loc.t("hire.section"), hint + "   " + _money_text() + "   " + _attention_text(), minf(980.0, view.x - 16.0), true, true)
+		if rules.candidates.is_empty():
+			body.add_child(_label(Loc.t("win.no_candidates"), 14, COL_MUTED, true))
+		var grid := GridContainer.new()
+		grid.columns = 1 if mobile else 2
+		grid.add_theme_constant_override("h_separation", 12)
+		grid.add_theme_constant_override("v_separation", 12)
+		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		body.add_child(grid)
+		for c in rules.candidates:
+			var card := _candidate_card(c)
+			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			grid.add_child(card)
+	elif window == "boss":
+		_modal(Loc.person("boss"), _attention_text(), minf(460.0, view.x - 16.0), false, true).add_child(_boss_card())
+	elif window == "company":
+		_modal(Loc.t("chainer_header"), "", minf(560.0, view.x - 16.0), false, true).add_child(_chainer_card())
+
+
+# A dimmed screen and a panel with a title, a line under it and a close button; returns where the content goes.
+func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool = false) -> VBoxContainer:
+	var dim := ColorRect.new()
+	dim.color = Color(0.035, 0.118, 0.259, 0.7)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and not event.pressed:
+			_close_window.call_deferred())
+	ui.add_child(dim)
+	var view := get_viewport().get_visible_rect().size
+	# Small windows (fit) grow to what's in them, up to the screen; big ones take the screen.
+	var h := view.y - (16.0 if mobile else 64.0)
+	var panel := PanelContainer.new()
+	panel.anchor_left = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -w / 2.0
+	panel.offset_right = w / 2.0
+	panel.offset_top = -h / 2.0
+	panel.offset_bottom = h / 2.0
+	var style := _box(COL_SURFACE, COL_BORDER, 1, 0)
+	style.set_corner_radius_all(16)
+	panel.add_theme_stylebox_override("panel", style)
+	ui.add_child(panel)
+	var right := _vbox(0)
+	panel.add_child(right)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	var titles := _vbox(4)
+	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	titles.add_child(_label(title, 22, COL_TEXT, true, true))
+	if hint != "":
+		titles.add_child(_label(hint, 13, COL_MUTED, true))
+	head.add_child(titles)
+	var close := _button(Loc.t("up.close"), _close_window, 0, "subtle")
+	close.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	head.add_child(close)
+	var head_box := _padded(head, 18 if mobile else 28, 16)
+	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	right.add_child(head_box)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED if wide_scroll or mobile else ScrollContainer.SCROLL_MODE_AUTO
+	right.add_child(scroll)
+	scrolls["window"] = scroll
+	var body := _vbox(12)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var pad := _padded(body, 18 if mobile else 28, 4)
+	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(pad)
+	right.add_child(_spacer(12))
+	if fit:
+		# Once laid out, shrink the panel around its content, keeping it centred.
+		var shrink := func():
+			if not is_instance_valid(panel):
+				return
+			var want := head_box.size.y + pad.get_combined_minimum_size().y + 12.0
+			var ph := minf(h, want)
+			panel.offset_top = -ph / 2.0
+			panel.offset_bottom = ph / 2.0
+		pad.minimum_size_changed.connect(shrink)
+		shrink.call_deferred()
+	return body
+
+
+# Under the top bar: the way into hiring, upgrades, Irina and the company, each saying if something waits.
+func _nav_strip() -> Control:
+	var bar := PanelContainer.new()
+	var style := _box(COL_SURFACE, COL_BORDER, 0, 0)
+	style.set_corner_radius_all(0)
+	style.border_width_bottom = 1
+	style.content_margin_left = 12
+	style.content_margin_right = 12
+	style.content_margin_top = 6
+	style.content_margin_bottom = 6
+	bar.add_theme_stylebox_override("panel", style)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	bar.add_child(row)
+	var waiting := rules.candidates.size()
+	if rules.endless() or rules.openings > 0 or waiting > 0:
+		row.add_child(_nav_button(Loc.t("hire.section") + (" · %d" % waiting if waiting > 0 else ""), "hire", waiting > 0))
+	if rules.endless():
+		var building := 0
+		var affordable := false
+		for id in C.UPGRADES:
+			if rules.upgrade_state(id) == "building":
+				building += 1
+			elif rules.upgrade_state(id) == "open" and rules.money >= rules.upgrade_price(id):
+				affordable = true
+		var b := _nav_button(Loc.t("up.section") + (" · " + Loc.t("win.building", [building]) if building > 0 else ""), "upgrades", affordable and building == 0)
+		_lit(b, "upgrades")
+		row.add_child(b)
+	var boss_button := _nav_button(Loc.t("boss_label", ["@weight." + rules.boss_word()]), "boss", false)
+	boss_button.add_theme_color_override("font_color", {"w3": COL_GOOD, "w2": COL_GOOD, "w1": COL_TEXT, "w0": COL_DANGER}[rules.boss_word()])
+	row.add_child(boss_button)
+	row.add_child(_nav_button(Loc.t("chainer_header"), "company", false))
+	return bar
+
+
+func _nav_button(text_value: String, name: String, hot: bool) -> Button:
+	var b := _button(text_value, _open_upgrades if name == "upgrades" else _open_window.bind(name), 0, "chosen" if hot else "subtle")
+	b.add_theme_font_size_override("font_size", _fs(13))
+	b.custom_minimum_size.y = 30
+	return b
+
+
+# The left column on a desktop: you, then the team, one line each; a click opens the whole card.
+func _team_strip() -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size.x = SIDEBAR_W
+	var style := _flat(COL_SURFACE)
+	style.border_color = COL_BORDER
+	style.border_width_right = 1
+	panel.add_theme_stylebox_override("panel", style)
+	var scroll := _scroll("team")
+	panel.add_child(scroll)
+	var v := _vbox(6)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_padded(v, 10, 12))
+	v.add_child(_me_card())
+	v.add_child(_section(Loc.t("team_header")))
+	var gone := PackedStringArray()
+	for p in rules.team:
+		if rules.people[p]["gone"]:
+			gone.append(Loc.person(p))
+		else:
+			v.add_child(_person_row(p))
+	if not gone.is_empty():
+		v.add_child(_label(Loc.t("gone_list", [", ".join(gone)]), 12, COL_FAINT, true))
+	return panel
+
+
+func _person_row(p: String) -> Control:
+	var st: Dictionary = rules.people[p]
+	var card := PanelContainer.new()
+	var target: bool = rules.pending.get("p", "") == p
+	card.add_theme_stylebox_override("panel", _box(COL_SELECTED if target else COL_SURFACE, COL_FOCUS if target else COL_BORDER, 2 if target else 1, 8))
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	card.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_open_window.call_deferred("person:" + p))
+	_lit(card, "talk")
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(row)
+	row.add_child(_avatar(p, 32))
+	var v := _vbox(1)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(v)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 6)
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(top)
+	top.add_child(_label(Loc.person(p), 14, COL_TEXT, false, true))
+	var load := rules.queue_of(p).size()
+	var load_label := _label(Loc.t("row.load", [load]) if load > 0 else Loc.t("row.free"), 12, COL_WARN if load >= rules.OVERLOAD_AT else COL_MUTED)
+	load_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	load_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	top.add_child(load_label)
+	var line := _flow(4, 0)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(line)
+	if st["absent"]:
+		line.add_child(_label(Loc.t("absent.%s_label" % st["absent_reason"]), 12, COL_WARN))
+	else:
+		var mood := rules.mood_word(p)
+		line.add_child(_label(Loc.t("mood." + mood), 12, MOOD_COLORS[mood]))
+		var energy := rules.energy_word(p)
+		line.add_child(_label("· " + Loc.t("energy." + energy), 12, ENERGY_COLORS[energy]))
+	if rules.day - st["joined"] < rules.NEWBIE_DAYS:
+		line.add_child(_label("· " + Loc.t("newbie_label"), 12, COL_PRIMARY))
+	if rules.warned(p):
+		line.add_child(_label("· " + Loc.t("fire.warned_label"), 12, COL_DANGER))
+	return card
 
 
 # ---------- the upgrade tree ----------
@@ -1632,13 +1863,11 @@ func _upgrades_card() -> Control:
 
 func _open_upgrades() -> void:
 	rules._tip_used("upgrades")
-	upgrades_open = true
-	_render()
+	_open_window("upgrades")
 
 
 func _close_upgrades() -> void:
-	upgrades_open = false
-	_render()
+	_close_window()
 
 
 func _buy_upgrade(id: String) -> void:
@@ -1647,54 +1876,15 @@ func _buy_upgrade(id: String) -> void:
 
 
 func _build_upgrades() -> void:
-	var dim := ColorRect.new()
-	dim.color = Color(0.035, 0.118, 0.259, 0.7)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.add_child(dim)
 	var view := get_viewport().get_visible_rect().size
 	var w := view.x - (16.0 if mobile else 64.0)
-	var h := view.y - (16.0 if mobile else 64.0)
-	var panel := PanelContainer.new()
-	panel.anchor_left = 0.5
-	panel.anchor_right = 0.5
-	panel.anchor_top = 0.5
-	panel.anchor_bottom = 0.5
-	panel.offset_left = -w / 2.0
-	panel.offset_right = w / 2.0
-	panel.offset_top = -h / 2.0
-	panel.offset_bottom = h / 2.0
-	var style := _box(COL_SURFACE, COL_BORDER, 1, 0)
-	style.set_corner_radius_all(16)
-	panel.add_theme_stylebox_override("panel", style)
-	ui.add_child(panel)
-	var right := _vbox(0)
-	panel.add_child(right)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 12)
-	var titles := _vbox(4)
-	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	titles.add_child(_label(Loc.t("up.title"), 22, COL_TEXT, false, true))
-	titles.add_child(_label(Loc.t("up.hint") + "   " + _money_text() + "   " + _attention_text(), 13, COL_MUTED, true))
-	head.add_child(titles)
-	var close := _button(Loc.t("up.close"), _close_upgrades, 0, "subtle")
-	close.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	head.add_child(close)
-	var head_box := _padded(head, 18 if mobile else 28, 16)
-	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	right.add_child(head_box)
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	# Five branches side by side when they fit, one under another on a phone.
 	var side_by_side := not mobile and w >= 1100.0
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED if side_by_side or mobile else ScrollContainer.SCROLL_MODE_AUTO
-	right.add_child(scroll)
-	scrolls["upgrades"] = scroll
+	var body := _modal(Loc.t("up.title"), Loc.t("up.hint") + "   " + _money_text() + "   " + _attention_text(), w, side_by_side)
 	var columns: Container = HBoxContainer.new() if not mobile else _vbox(16)
 	if not mobile:
 		columns.add_theme_constant_override("separation", 12)
-	var body := _padded(columns, 18 if mobile else 28, 4)
-	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(body)
+	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_child(columns)
 	for branch in C.UPGRADE_BRANCHES:
 		var col := _vbox(10)
 		col.custom_minimum_size.x = 0.0 if mobile or side_by_side else 240.0
@@ -1706,7 +1896,6 @@ func _build_upgrades() -> void:
 		for id in ids:
 			col.add_child(_upgrade_tile(id))
 		columns.add_child(col)
-	right.add_child(_spacer(12))
 
 
 func _upgrade_tile(id: String) -> Control:
@@ -1812,6 +2001,14 @@ func _chainer_card() -> Control:
 		v.add_child(row)
 	v.add_child(_spacer(4))
 	v.add_child(_label(Loc.t("chainer.improved"), 13, COL_MUTED, false, true))
+	# The endless run improves through its upgrade tree, not the story's backlog.
+	if rules.endless():
+		var done: Array = C.UPGRADES.keys().filter(func(id): return rules.upgrade_state(id) == "done")
+		if done.is_empty():
+			v.add_child(_label(Loc.t("win.nothing_upgraded"), 13, COL_FAINT, true))
+		for id in done:
+			v.add_child(_label("✓ " + Loc.t("up.%s.name" % id), 13, COL_GOOD, true))
+		return card
 	if rules.improved.is_empty():
 		v.add_child(_label(Loc.t("chainer.nothing_yet"), 13, COL_FAINT, true))
 	for id in rules.improved:
@@ -1847,6 +2044,7 @@ func _boss_card() -> Control:
 
 
 func _ask_people() -> void:
+	window = ""
 	rules.ask_people()
 	_render()
 
@@ -1879,9 +2077,9 @@ func _board_area() -> Control:
 	columns.add_theme_constant_override("separation", 8)
 	v.add_child(columns)
 	var lanes := _lanes()
-	for lane in ["inbox", "queued", "active", "done"]:
-		var column := _column(lane, lanes[lane])
-		_lit(column, lane)
+	for name in LANES:
+		var column := _column(name, lanes[name])
+		_lit(column, "active" if name == "people" else name)
 		columns.add_child(column)
 	if selected >= 0 and _looking():
 		var t := rules.task(selected)
@@ -1890,20 +2088,31 @@ func _board_area() -> Control:
 	return wrap
 
 
-# Which column each card sits in: waiting in someone's queue, being worked on, done this week.
+# Three columns: the inbox, what's on people's plates (each person's queue, the first card being worked
+# on), and what's done this week.
+const LANES := ["inbox", "people", "done"]
+
+
 func _lanes() -> Dictionary:
-	var lanes := {"inbox": rules.inbox(), "queued": [], "active": [], "done": []}
+	var lanes := {"inbox": rules.inbox(), "people": [], "done": []}
 	lanes["inbox"].sort_custom(func(a, b): return a["due"] < b["due"])
 	for p in rules.team + ["me"]:
-		var q := rules.queue_of(p)
-		for i in q.size():
-			lanes["active" if i == 0 else "queued"].append(q[i])
+		lanes["people"].append_array(rules.queue_of(p))
 	for t in rules.tasks:
 		if t["status"] == "taras":
-			lanes["active"].append(t)
+			lanes["people"].append(t)
 		elif t["status"] == "done" and rules.week() == int((t["done_day"] - 1) / 5.0):
 			lanes["done"].push_front(t)
 	return lanes
+
+
+# A person's name over their cards, in the people column.
+func _owner_head(list: VBoxContainer, owner: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.add_child(_avatar(owner, 20))
+	row.add_child(_label(Loc.t("me_card") if owner == "me" else (Loc.t("owner.outside") if owner in ["taras", "contractor"] else Loc.person(owner)), 12, COL_MUTED, false, true))
+	list.add_child(row)
 
 
 func _column(lane: String, items: Array) -> Control:
@@ -1925,11 +2134,19 @@ func _column(lane: String, items: Array) -> Control:
 	scroll.add_child(list)
 	if items.is_empty():
 		list.add_child(_label(Loc.t("col_empty." + lane), 12, COL_FAINT, true))
+	_fill_lane(list, lane, items)
+	return panel
+
+
+func _fill_lane(list: VBoxContainer, lane: String, items: Array) -> void:
+	var last_owner := ""
 	for t in items:
+		if lane == "people" and t["owner"] != last_owner:
+			last_owner = t["owner"]
+			_owner_head(list, last_owner)
 		list.add_child(_task_card(t, lane))
 	if lane == "inbox":
 		_backlog_section(list)
-	return panel
 
 
 # Under the inbox: Chainer's own backlog. Nothing burns here, but what's done makes every week lighter.
@@ -2274,11 +2491,13 @@ func _phone_board() -> Control:
 	var switcher := HBoxContainer.new()
 	switcher.add_theme_constant_override("separation", 4)
 	v.add_child(switcher)
-	for name in ["inbox", "queued", "active", "done"]:
+	if not lanes.has(lane):
+		lane = "inbox"
+	for name in LANES:
 		var b := _button("%s %d" % [Loc.t("col_short." + name), lanes[name].size()], _pick_lane.bind(name), 0, "chosen" if lane == name else "subtle")
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.add_theme_font_size_override("font_size", _fs(13))
-		_lit(b, name)
+		_lit(b, "active" if name == "people" else name)
 		switcher.add_child(b)
 	var hint := Loc.t("you.busy", [rules.own_task_cost()]) if not rules.queue_of("me").is_empty() else Loc.t("pick_task")
 	v.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
@@ -2290,10 +2509,7 @@ func _phone_board() -> Control:
 	scroll.add_child(list)
 	if lanes[lane].is_empty():
 		list.add_child(_label(Loc.t("col_empty." + lane), 14, COL_FAINT, true))
-	for t in lanes[lane]:
-		list.add_child(_task_card(t, lane))
-	if lane == "inbox":
-		_backlog_section(list)
+	_fill_lane(list, lane, lanes[lane])
 	v.add_child(_day_button(0))
 	return _padded(v, 10, 10)
 
