@@ -91,6 +91,11 @@ var text_scale := "normal"
 # The menu: on the title screen, and over the game when opened from the top bar (or Esc).
 # menu_page is "" for the list itself, or "settings", "about", "confirm_new".
 var menu_open := false
+# The top bar's counters as last drawn, and the nodes showing them now, so a change can be called out.
+var juice_before := {}
+var juice_nodes := {}
+# Cards to light up on this render: uid -> colour.
+var flash_cards := {}
 # A window over the board (desktop): "hire", "upgrades", "boss", "company" or "person:<id>"; "" for none.
 var window := ""
 var menu_page := ""
@@ -686,6 +691,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _render() -> void:
 	if rules.auto_end_day():
 		selected = -1
+	var before := juice_before
+	juice_before = _juice_state()
+	juice_nodes.clear()
+	flash_cards = _cards_to_flash(before, juice_before)
 	if rules.phase != "title":
 		rules.update_tips()
 		_play(_sound_for_changes())
@@ -745,6 +754,89 @@ func _render() -> void:
 		_build_menu_overlay()
 	_let_touches_through(ui)
 	_restore_scrolls()
+	_juice.call_deferred(before, juice_before)
+
+
+# ---------- feedback ----------
+
+# What the player should see change: points left (borrowing counted), money, the race, who has which card.
+func _juice_state() -> Dictionary:
+	if not rules.phase in ["plan", "event", "standup", "evening", "report", "review"]:
+		return {}
+	var owners := {}
+	var done := {}
+	for t in rules.tasks:
+		if t["status"] == "active":
+			owners[t["uid"]] = t["owner"]
+		elif t["status"] == "done":
+			done[t["uid"]] = true
+	return {"day": rules.day, "points": rules.attention - rules.overtime_today, "money": rules.money,
+		"race": int(round(rules.my_points())), "owners": owners, "done": done}
+
+
+# A card just handed to someone flashes blue; one finished since the last look flashes green.
+func _cards_to_flash(was: Dictionary, now: Dictionary) -> Dictionary:
+	var out := {}
+	if was.is_empty() or now.is_empty():
+		return out
+	for uid in now["owners"]:
+		if was["owners"].get(uid, "") != now["owners"][uid]:
+			out[uid] = COL_FOCUS
+	for uid in now["done"]:
+		if not was["done"].has(uid):
+			out[uid] = COL_GOOD
+	return out
+
+
+# Numbers that changed float up off their counter and fade, and the counter blinks.
+func _juice(was: Dictionary, now: Dictionary) -> void:
+	if was.is_empty() or now.is_empty():
+		return
+	# Layout settles a frame after the screen is built.
+	await get_tree().process_frame
+	# A new day refills the points: that's not something you spent.
+	if was["day"] == now["day"]:
+		_float_change("points", now["points"] - was["points"], "", true)
+	_float_change("money", now["money"] - was["money"], " " + Loc.t("money.k"), false)
+	_float_change("race", now["race"] - was["race"], "", false)
+
+
+func _float_change(node_name: String, delta: int, unit: String, cost: bool) -> void:
+	var node: Control = juice_nodes.get(node_name)
+	if delta == 0 or node == null or not is_instance_valid(node):
+		return
+	var good := delta > 0
+	var tag := _label(("+%d" if good else "−%d") % absi(delta) + unit, 16, COL_ON_TOP_GOOD if good else COL_STAR, false, true)
+	tag.z_index = 50
+	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(tag)
+	var at := node.get_global_rect()
+	tag.position = Vector2(at.position.x + at.size.x * (0.25 if cost else 0.5), at.position.y + at.size.y - 4)
+	var t := create_tween().set_parallel()
+	t.tween_property(tag, "position:y", tag.position.y + 26, 0.9).set_ease(Tween.EASE_OUT)
+	t.tween_property(tag, "modulate:a", 0.0, 0.9).set_delay(0.35)
+	t.chain().tween_callback(tag.queue_free)
+	var blink := create_tween()
+	blink.tween_property(node, "modulate", Color(1.6, 1.4, 0.8) if not good else Color(0.8, 1.6, 1.0), 0.12)
+	blink.tween_property(node, "modulate", Color.WHITE, 0.35)
+
+
+func _flash(card: Control, color: Color) -> void:
+	if not is_instance_valid(card):
+		return
+	var t := create_tween()
+	card.scale = Vector2(1.04, 1.04)
+	card.pivot_offset = card.size / 2.0
+	t.set_parallel()
+	t.tween_property(card, "scale", Vector2.ONE, 0.35).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_BACK)
+	var glow := card.get_theme_stylebox("panel").duplicate() as StyleBoxFlat
+	if glow:
+		var calm := glow.duplicate() as StyleBoxFlat
+		glow.border_color = color
+		glow.set_border_width_all(3)
+		card.add_theme_stylebox_override("panel", glow)
+		t.chain().tween_interval(0.6)
+		t.chain().tween_callback(func(): if is_instance_valid(card): card.add_theme_stylebox_override("panel", calm))
 
 
 # Panels, buttons and rich text stop presses by default, so a finger that lands on them can't scroll
@@ -1315,10 +1407,16 @@ func _top_bar() -> Control:
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(gap)
-	top.add_child(_attention_label(15))
+	var points := _attention_label(15)
+	juice_nodes["points"] = points
+	top.add_child(points)
 	if rules.endless():
-		top.add_child(_label(_money_text(), 15, _money_color()))
-		top.add_child(_race_label(15))
+		var money := _label(_money_text(), 15, _money_color())
+		juice_nodes["money"] = money
+		top.add_child(money)
+		var race := _race_label(15)
+		juice_nodes["race"] = race
+		top.add_child(race)
 	else:
 		var k := rules.key_status()
 		top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
@@ -2248,6 +2346,9 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 		card.gui_input.connect(_on_card_input.bind(t["uid"]))
 	if lane == "done":
 		card.modulate = Color(1, 1, 1, 0.7)
+	if flash_cards.has(t["uid"]):
+		var color: Color = flash_cards[t["uid"]]
+		card.ready.connect(func(): _flash.call_deferred(card, color))
 	var v := _vbox(4)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(v)
