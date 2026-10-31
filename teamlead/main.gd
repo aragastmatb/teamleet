@@ -3454,13 +3454,18 @@ func _append_entry(list: VBoxContainer, e: Dictionary) -> void:
 		list.add_child(_label(body, 13, COL_MUTED, true))
 		chat_last = ""
 		return
-	var speaker: String = e["who"] + ">" + e.get("to", "")
-	# A new task or tip always starts its own message, even from someone who was just talking.
-	if speaker != chat_last or key.begins_with("task.") or key.begins_with("tip."):
-		list.add_child(_spacer(4))
-		list.add_child(_message_head(e))
-	chat_last = speaker
-	list.add_child(_indented(_label(body, 15, COL_MUTED if body.begins_with("(") else COL_TEXT, true)))
+	# Every message is its own bubble under its own face and name, so two in a row never run together.
+	list.add_child(_spacer(4))
+	var bubble := PanelContainer.new()
+	var you: bool = e["who"] == "you"
+	var bs := _box(Color("eef4ff") if you else COL_BG, Color("d6e4ff") if you else COL_BORDER, 1, 10)
+	bubble.add_theme_stylebox_override("panel", bs)
+	var v := _vbox(4)
+	bubble.add_child(v)
+	v.add_child(_message_head(e))
+	v.add_child(_indented(_label(body, 15, COL_MUTED if body.begins_with("(") else COL_TEXT, true)))
+	list.add_child(bubble)
+	chat_last = e["who"]
 
 
 func _message_head(e: Dictionary) -> Control:
