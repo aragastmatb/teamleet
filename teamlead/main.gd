@@ -112,6 +112,8 @@ var mobile := false
 var tab := "board"
 var lane := "inbox"
 var chat_read := 0
+# On a computer the endless chat is folded into a narrow rail; you open it when you want to read.
+var chat_open := false
 # Where the chat was left. Anything new in it (a message, a question, answer buttons) brings it to the
 # bottom; otherwise it stays where you scrolled it.
 var chat_pos := 0
@@ -1012,7 +1014,22 @@ func _let_touches_through(node: Node) -> void:
 
 # The chat holds a question you have to answer before anything else happens.
 func _waiting_for_answer() -> bool:
-	return rules.phase == "event" or rules.phase == "review" or not rules.pending.is_empty()
+	return _chat_asks() or not rules.pending.is_empty()
+
+
+# A question only the chat can answer (a pushback over a task is answered in the task's window).
+func _chat_asks() -> bool:
+	return rules.phase == "event" or rules.phase == "review"
+
+
+# The story lives in the chat, so it stays open there; the endless chat opens when asked or when it asks.
+func _chat_shown() -> bool:
+	return mobile or not rules.endless() or chat_open or _chat_asks()
+
+
+func _toggle_chat() -> void:
+	chat_open = not chat_open
+	_render()
 
 
 # The board can be looked through during the day, a question in the chat included.
@@ -1024,7 +1041,7 @@ func _looking() -> bool:
 func _teach_chat() -> bool:
 	if rules.flags.has("chat_taught"):
 		return false
-	if _waiting_for_answer():
+	if _chat_asks():
 		taught_now = true
 		return true
 	if taught_now:
@@ -1548,7 +1565,11 @@ func _build_office() -> void:
 	v.add_child(body)
 	body.add_child(_team_strip())
 	body.add_child(_board_area())
-	body.add_child(_chat())
+	if _chat_shown():
+		chat_read = rules.history.size()
+		body.add_child(_chat())
+	else:
+		body.add_child(_chat_rail())
 
 
 func _top_bar() -> Control:
@@ -2809,7 +2830,7 @@ func _phone_tabs() -> Control:
 		var text := Loc.t("tab." + name)
 		if name == "chat" and unread > 0 and tab != "chat":
 			text += " (%d)" % unread
-		var calls: bool = name == "chat" and tab != "chat" and (_waiting_for_answer() or rules.phase == "evening")
+		var calls: bool = name == "chat" and tab != "chat" and (_chat_asks() or rules.phase == "evening")
 		var b := _button(text, _go_tab.bind(name), 0, "chosen" if tab == name else ("primary" if calls else "subtle"))
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if name == "team" and tab != "team":
@@ -2914,7 +2935,16 @@ func _chat() -> Control:
 	head_style.content_margin_bottom = 10
 	head.add_theme_stylebox_override("panel", head_style)
 	v.add_child(head)
-	head.add_child(_label(Loc.t("chat_title"), 16, COL_TEXT, false, true))
+	var head_row := HBoxContainer.new()
+	head.add_child(head_row)
+	var chat_title := _label(Loc.t("chat_title"), 16, COL_TEXT, false, true)
+	chat_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head_row.add_child(chat_title)
+	if not mobile and rules.endless() and not _chat_asks():
+		var fold := _button(Loc.t("chat.fold"), _toggle_chat, 0, "subtle")
+		fold.custom_minimum_size.y = 26
+		fold.add_theme_font_size_override("font_size", _fs(12))
+		head_row.add_child(fold)
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -2957,6 +2987,54 @@ func _chat() -> Control:
 		_scroll_to_end(scroll)
 	else:
 		_scroll_to(scroll, chat_pos)
+	return panel
+
+
+# The folded chat: a narrow rail with how many lines wait and whose they are; a click opens it.
+func _chat_rail() -> Control:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size.x = 84
+	var style := _flat(COL_SURFACE)
+	style.border_color = COL_BORDER
+	style.border_width_left = 1
+	style.content_margin_top = 12
+	panel.add_theme_stylebox_override("panel", style)
+	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	panel.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_toggle_chat.call_deferred())
+	var v := _vbox(8)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(v)
+	var open := _button(Loc.t("tab.chat"), _toggle_chat, 0, "subtle")
+	open.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	v.add_child(open)
+	var unread := 0
+	var faces: Array[String] = []
+	for i in range(rules.history.size() - 1, chat_read - 1, -1):
+		var who: String = rules.history[i]["who"]
+		if who == "you" or who == "" or rules.history[i]["key"].begins_with("log."):
+			continue
+		unread += 1
+		if not faces.has(who) and faces.size() < 5:
+			faces.append(who)
+	if unread == 0:
+		return panel
+	var count := PanelContainer.new()
+	var cs := _flat(COL_DANGER)
+	cs.set_corner_radius_all(10)
+	cs.content_margin_left = 8
+	cs.content_margin_right = 8
+	count.add_theme_stylebox_override("panel", cs)
+	count.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	count.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	count.add_child(_label(str(unread), 12, COL_ON_TOP, false, true))
+	v.add_child(count)
+	for who in faces:
+		var face := _avatar(who, 36)
+		face.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		face.tooltip_text = Loc.person(who)
+		v.add_child(face)
 	return panel
 
 
