@@ -1878,7 +1878,7 @@ func _task_detail(t: Dictionary) -> Control:
 		b.disabled = b.disabled or t["owner"] == p
 		who.add_child(b)
 	who.add_child(_button("%s  ~%s" % [Loc.t("myself"), _days(rules.estimate(t, "me")["days"])], _direct.bind("me"), 0))
-	if not t.get("backlog", false):
+	if not t.get("backlog", false) and not rules.endless():
 		who.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
 	if rules.can_decline(t):
 		who.add_child(_button(Loc.t("decline_button"), _decline, 0, "subtle"))

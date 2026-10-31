@@ -1925,7 +1925,8 @@ func assign(uid: int, p: String) -> void:
 	_tip_used("inbox")
 	var previous: String = t["owner"]
 	if p == "taras":
-		_hand_to_taras(t)
+		if not endless():
+			_hand_to_taras(t)
 		return
 	if p != "me" and not available(p):
 		return
@@ -3639,8 +3640,7 @@ func salary(p: String) -> int:
 	var levels := 0
 	for cat in cv:
 		levels += cv[cat]
-	# A raise (to keep them from Taras) stays for good.
-	return int(round((SALARY_BASE + SALARY_PER_LEVEL * levels) * (1.0 + info(p).get("raise", 0.0))))
+	return SALARY_BASE + SALARY_PER_LEVEL * levels
 
 
 # ---------- Taras, the rival (endless run) ----------
@@ -3653,7 +3653,6 @@ const TARAS_GROWTH := 0.06 # a period
 const BUDGET_POT := 2000 # both departments' budget together
 const SHARE_MIN := 0.3
 const SHARE_MAX := 0.7
-const RAISE := 0.2
 
 
 func _task_points(t: Dictionary) -> float:
@@ -3663,20 +3662,16 @@ func _task_points(t: Dictionary) -> float:
 func my_points() -> float:
 	var sum := 0.0
 	for t in tasks:
-		if t["status"] == "done" and t.get("done_day", 0) >= first_day() and t["owner"] != "taras" and not t.get("stolen", false):
+		if t["status"] == "done" and t.get("done_day", 0) >= first_day() and t["owner"] != "taras":
 			sum += _task_points(t)
 		if t["late"] and t.get("late_day", 0) >= first_day():
 			sum -= t["size"] * LATE_PENALTY
 	return snappedf(sum, 0.1)
 
 
-# Taras's own department, plus whatever of yours went to him: handed over or claimed.
+# Taras runs his own department and never touches yours.
 func taras_total() -> float:
-	var sum := taras_points
-	for t in tasks:
-		if t["status"] == "done" and t.get("done_day", 0) >= first_day() and (t["owner"] == "taras" or t.get("stolen", false)):
-			sum += _task_points(t)
-	return snappedf(sum, 0.1)
+	return snappedf(taras_points, 0.1)
 
 
 func _taras_period() -> void:
@@ -3782,21 +3777,6 @@ func _payday() -> void:
 	_narrate("money.payday", [pay, money])
 	if money < 0:
 		flags["bankrupt"] = true
-
-
-# Taras takes someone: they go to his department, salary and all, and he's the stronger for it.
-func lose_to_taras(p: String) -> void:
-	people[p]["gone"] = true
-	people[p]["to_taras"] = true
-	_drop_tasks(p)
-	taras_target += TARAS_BASE * 0.1
-	for q in team:
-		if q != p and available(q):
-			people[q]["mood"] = clampf(people[q]["mood"] - 0.3, -5.0, 5.0)
-
-
-func give_raise(p: String) -> void:
-	hires[p]["raise"] = hires[p].get("raise", 0.0) + RAISE
 
 
 # The endless run ends the moment it can't go on: no money for salaries, or you've burned out for good.
