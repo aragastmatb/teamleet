@@ -114,6 +114,8 @@ var lane := "inbox"
 var chat_read := 0
 # On a computer the endless chat is folded into a narrow rail; you open it when you want to read.
 var chat_open := false
+# Upgrades you could afford when you last looked at the tree; the counter only shows ones new since.
+var upgrades_seen := {}
 # Where the chat was left. Anything new in it (a message, a question, answer buttons) brings it to the
 # bottom; otherwise it stays where you scrolled it.
 var chat_pos := 0
@@ -1563,7 +1565,6 @@ func _build_office() -> void:
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 0)
 	v.add_child(body)
-	body.add_child(_team_strip())
 	body.add_child(_board_area())
 	if _chat_shown():
 		chat_read = rules.history.size()
@@ -1943,6 +1944,18 @@ func _build_window() -> void:
 		_modal(Loc.person("boss"), _attention_text(), minf(460.0, view.x - 16.0), false, true).add_child(_boss_card())
 	elif window == "company":
 		_modal(Loc.t("nav.clients_title"), "", minf(560.0, view.x - 16.0), false, true).add_child(_chainer_card())
+	elif window == "me":
+		_modal(Loc.t("me_card"), "", minf(460.0, view.x - 16.0), false, true).add_child(_me_card())
+	elif window == "done":
+		var body := _modal(Loc.t("col.done"), "", minf(760.0, view.x - 16.0), true, true)
+		var grid := GridContainer.new()
+		grid.columns = 1 if mobile else 3
+		grid.add_theme_constant_override("h_separation", 8)
+		grid.add_theme_constant_override("v_separation", 8)
+		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		body.add_child(grid)
+		for t in _lanes()["done"]:
+			grid.add_child(_task_card(t, "done"))
 
 
 # A dimmed screen and a panel with a title, a line under it and a close button; returns where the content goes.
@@ -2025,25 +2038,34 @@ func _nav_strip() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	bar.add_child(row)
+	# A counter means there's something to do in there, and only then: CVs waiting, upgrades you can
+	# afford, clients who are unhappy.
 	var waiting := rules.candidates.size()
 	if rules.endless() or rules.openings > 0 or waiting > 0:
-		row.add_child(_nav_button("hire", Loc.t("hire.section"), str(waiting) if waiting > 0 else "", COL_DANGER))
+		row.add_child(_nav_button("hire", Loc.t("hire.section"), _badge(waiting), COL_DANGER))
 	if rules.endless():
-		var building := 0
-		var affordable := false
+		var affordable := 0
 		for id in C.UPGRADES:
-			if rules.upgrade_state(id) == "building":
-				building += 1
-			elif rules.upgrade_state(id) == "open" and rules.money >= rules.upgrade_price(id):
-				affordable = true
-		# A number for what's rolling out; a star when nothing is and you could afford something.
-		var badge := str(building) if building > 0 else ("★" if affordable else "")
-		var b := _nav_button("upgrades", Loc.t("up.section"), badge, COL_PRIMARY if building > 0 else COL_STAR)
+			if _upgrade_affordable(id) and not upgrades_seen.has(id):
+				affordable += 1
+		var b := _nav_button("upgrades", Loc.t("up.section"), _badge(affordable), COL_DANGER)
 		_lit(b, "upgrades")
 		row.add_child(b)
-	row.add_child(_nav_button("clients", Loc.t("nav.clients"), str(rules.banks.size()), COL_GOOD))
+	var unhappy := 0
+	for bank in rules.banks:
+		if rules.bank_word(bank) in ["unhappy", "leaving"]:
+			unhappy += 1
+	row.add_child(_nav_button("clients", Loc.t("nav.clients"), _badge(unhappy), COL_DANGER))
 	row.add_child(_boss_button())
 	return bar
+
+
+func _upgrade_affordable(id: String) -> bool:
+	return rules.upgrade_state(id) == "open" and rules.money >= rules.upgrade_price(id)
+
+
+func _badge(n: int) -> String:
+	return str(n) if n > 0 else ""
 
 
 func _nav_button(name: String, text_value: String, badge: String, badge_color: Color) -> Control:
@@ -2173,11 +2195,8 @@ func _person_row(p: String) -> Control:
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(top)
 	top.add_child(_label(Loc.person(p), 14, COL_TEXT, false, true))
-	var load := rules.queue_of(p).size()
-	var load_label := _label(Loc.t("row.load", [load]) if load > 0 else Loc.t("row.free"), 12, COL_WARN if load >= rules.OVERLOAD_AT else COL_MUTED)
-	load_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	load_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	top.add_child(load_label)
+	if rules.queue_of(p).size() >= rules.OVERLOAD_AT:
+		top.add_child(_label(Loc.t("row.overload"), 12, COL_WARN))
 	var line := _flow(4, 0)
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(line)
@@ -2219,6 +2238,9 @@ func _upgrades_card() -> Control:
 
 func _open_upgrades() -> void:
 	rules._tip_used("upgrades")
+	for id in C.UPGRADES:
+		if _upgrade_affordable(id):
+			upgrades_seen[id] = true
 	_open_window("upgrades")
 
 
@@ -2425,18 +2447,128 @@ func _board_area() -> Control:
 	head.add_child(day_button)
 	var columns := HBoxContainer.new()
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	columns.add_theme_constant_override("separation", 8)
+	columns.add_theme_constant_override("separation", 10)
 	v.add_child(columns)
 	var lanes := _lanes()
-	for name in LANES:
-		var column := _column(name, lanes[name])
-		_lit(column, "active" if name == "people" else name)
-		columns.add_child(column)
+	var inbox := _column("inbox", lanes["inbox"])
+	inbox.size_flags_horizontal = Control.SIZE_FILL
+	inbox.custom_minimum_size.x = INBOX_W
+	_lit(inbox, "inbox")
+	columns.add_child(inbox)
+	var team := _team_zone()
+	_lit(team, "active")
+	columns.add_child(team)
+	var done := _done_strip(lanes["done"])
+	_lit(done, "done")
+	v.add_child(done)
 	if selected >= 0 and _looking():
 		var t := rules.task(selected)
 		if not t.is_empty() and t["status"] in ["inbox", "active"]:
 			v.add_child(_task_detail(t))
 	return wrap
+
+
+const INBOX_W := 300
+const LANE_HEAD_W := 180
+const LANE_CARD_W := 220
+
+
+# The team: one lane per person, their face and state on the left and what's on their plate to the right.
+func _team_zone() -> Control:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", _box(COL_COLUMN, COL_COLUMN, 0, 8))
+	var v := _vbox(8)
+	panel.add_child(v)
+	v.add_child(_label(Loc.t("col.team"), 12, COL_MUTED, false, true))
+	var scroll := _scroll("col_team")
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(scroll)
+	var list := _vbox(8)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(list)
+	var gone := PackedStringArray()
+	for p in rules.team:
+		if rules.people[p]["gone"]:
+			gone.append(Loc.person(p))
+		else:
+			list.add_child(_lane_row(_person_row(p), rules.queue_of(p), Loc.t("row.free")))
+	list.add_child(_lane_row(_me_head(), rules.queue_of("me"), Loc.t("row.me_free")))
+	var outside: Array = []
+	for t in rules.tasks:
+		if t["status"] == "taras" or (t["status"] == "active" and t["owner"] == "contractor"):
+			outside.append(t)
+	if not outside.is_empty():
+		var head := _vbox(0)
+		head.add_child(_label(Loc.t("owner.outside"), 14, COL_MUTED, true, true))
+		list.add_child(_lane_row(head, outside, ""))
+	if not gone.is_empty():
+		list.add_child(_label(Loc.t("gone_list", [", ".join(gone)]), 12, COL_FAINT, true))
+	return panel
+
+
+func _lane_row(head: Control, items: Array, empty: String) -> Control:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _box(Color(1, 1, 1, 0.55), Color(0, 0, 0, 0), 0, 8))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	panel.add_child(row)
+	head.custom_minimum_size.x = LANE_HEAD_W
+	head.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	row.add_child(head)
+	var cards := HFlowContainer.new()
+	cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cards.add_theme_constant_override("h_separation", 8)
+	cards.add_theme_constant_override("v_separation", 8)
+	row.add_child(cards)
+	if items.is_empty() and empty != "":
+		var l := _label(empty, 12, COL_FAINT, true)
+		l.custom_minimum_size.y = 40
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cards.add_child(l)
+	for t in items:
+		var card := _task_card(t, "people")
+		card.size_flags_horizontal = Control.SIZE_FILL
+		card.custom_minimum_size.x = LANE_CARD_W
+		cards.add_child(card)
+	return panel
+
+
+# Your own lane: what you took on yourself; a click shows your strengths.
+func _me_head() -> Control:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 8))
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	card.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_open_window.call_deferred("me"))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(row)
+	row.add_child(_avatar("me", 32))
+	var v := _vbox(1)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(v)
+	v.add_child(_label(Loc.t("me_card"), 14, COL_TEXT, false, true))
+	v.add_child(_label(Loc.t("me_profile." + rules.profile), 12, COL_MUTED, true))
+	return card
+
+
+# What's done this week, folded into one line; a click lays the cards out.
+func _done_strip(items: Array) -> Control:
+	var late := 0
+	for t in items:
+		if t["late"]:
+			late += 1
+	var text_value := Loc.t("done.strip", [items.size()])
+	if late > 0:
+		text_value += " · " + Loc.t("done.strip_late", [late])
+	var b := _button(text_value, _open_window.bind("done"), 0, "subtle")
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.disabled = items.is_empty()
+	b.add_theme_font_size_override("font_size", _fs(13))
+	return b
 
 
 # Three columns: the inbox, what's on people's plates (each person's queue, the first card being worked
