@@ -292,6 +292,10 @@ func _start_day() -> void:
 
 
 func _open_morning() -> void:
+	# In the endless run the cards are on the table before the stand-up, so people can grab some.
+	if endless() and step == "triage" and flags.get("delivered_day", -1) != day:
+		_deliver_arrivals()
+		_team_pulls()
 	if _open_standup():
 		return
 	_queue_events()
@@ -309,6 +313,9 @@ func _deliver_arrivals() -> void:
 			tasks[-1]["midday"] = day
 		arriving_midday = []
 		return
+	if flags.get("delivered_day", -1) == day:
+		return
+	flags["delivered_day"] = day
 	_maybe_sell()
 	_layoff_rush()
 	_hiring_morning()
@@ -318,6 +325,101 @@ func _deliver_arrivals() -> void:
 		else:
 			add_task(id)
 	arriving = []
+
+
+# ---------- initiative ----------
+
+# How readily someone grabs work without being asked, hidden: you only see who takes what.
+# Praise feeds it, taking a card back crushes it, and the others on the call notice.
+const PULL_BASE := {"solid": 0.35, "junior": 0.5, "faker": 0.4, "stump": 0.05, "life_first": 0.1, "genius": 0.45}
+const PULL_PRAISE := 0.12
+const PULL_SCOLD := -0.3
+const PULL_FEAR := -0.06
+const PULL_SILENCE := 0.02
+const PULL_MAX := 0.75
+const PULL_SETTLE := 0.08 # each morning it drifts this share of the way back to the person's nature
+const PULL_FLOOR := 0.1 # below this they don't take anything, even when you're not there
+const PULL_ALONE := 1.5 # on a day without you everyone's keener
+
+
+func pull(p: String) -> float:
+	return people[p].get("pull", PULL_BASE.get(archetype(p), 0.3))
+
+
+func _nudge_pull(p: String, by: float) -> void:
+	people[p]["pull"] = clampf(pull(p) + by, 0.0, PULL_MAX)
+
+
+# Which waiting card this person would grab, by their kind: the strong take what they're good at, the
+# keen beginner takes the biggest, the faker and the ones who'd rather not take the smallest.
+func _pull_choice(p: String) -> Dictionary:
+	var best: Dictionary = {}
+	var best_score := -INF
+	for t in inbox():
+		if t.get("midday", -1) == day:
+			continue
+		var skill: int = people[p]["skills"][t["cat"]]
+		var score: float
+		match archetype(p):
+			"genius":
+				score = skill * 2.0 + t["size"]
+			"junior":
+				score = t["size"] * 2.0 + (1.0 if t["key"] else 0.0)
+			"faker", "stump", "life_first":
+				score = -t["size"]
+			_:
+				score = skill * 2.0 + (1.0 if info(p)["likes"].has(t["cat"]) else 0.0)
+		score += rng.randf() * 0.5
+		if score > best_score:
+			best = t
+			best_score = score
+	return best
+
+
+func _take(p: String, t: Dictionary) -> void:
+	t["owner"] = p
+	t["status"] = "active"
+	t["assigned_day"] = day
+	t["first"] = false
+	t["pulled"] = day
+
+
+func _will_pull(p: String, keen: float) -> bool:
+	if not available(p) or people[p]["absent"] or pull(p) < PULL_FLOOR:
+		return false
+	var load := queue_of(p).size()
+	var chance := pull(p) * keen * (1.0 if load == 0 else (0.5 if load == 1 else 0.0))
+	return rng.randf() < chance
+
+
+# The morning: before the stand-up, whoever feels like it takes a card for themselves.
+func _team_pulls() -> void:
+	if day == 1:
+		return
+	for p in team:
+		if available(p):
+			_nudge_pull(p, (PULL_BASE.get(archetype(p), 0.3) - pull(p)) * PULL_SETTLE)
+	for p in team:
+		if _will_pull(p, 1.0):
+			var t := _pull_choice(p)
+			if not t.is_empty():
+				_take(p, t)
+
+
+# A day without you: the team shares out the waiting cards among themselves, each as they see fit.
+# Those who've learned not to take anything leave theirs where it is.
+func _team_picks() -> void:
+	var order: Array = team.filter(func(p): return available(p))
+	order.sort_custom(func(a, b): return pull(a) > pull(b))
+	for _pass in 2:
+		for p in order:
+			if inbox().is_empty():
+				return
+			if _will_pull(p, PULL_ALONE):
+				var t := _pull_choice(p)
+				if not t.is_empty():
+					_take(p, t)
+					_say(p, _own_key("pulled.alone", p), [], {"task": "@taskname." + t["id"]})
 
 
 # The endless run's actions belong to steps of the day; the story lets you do anything on the board.
@@ -1818,7 +1920,7 @@ const STANDUP_REACTIONS := {"stuck": "sit", "tired": "rest", "swamped": "lighten
 
 
 func _open_standup() -> bool:
-	if day == 1 or flags.get("standup_day", -1) == day:
+	if day == 1 or flags.get("standup_day", -1) == day or sick_today:
 		return false
 	flags["standup_day"] = day
 	var lines: Array = []
@@ -1836,6 +1938,13 @@ func _open_standup() -> bool:
 func _standup_line(p: String) -> Dictionary:
 	var q := queue_of(p)
 	var line := {"who": p, "topic": "quiet", "uid": -1, "args": [], "names": {}, "reacted": false}
+	for t in q:
+		if t.get("pulled", -1) == day:
+			line["topic"] = "pulled"
+			line["uid"] = t["uid"]
+			line["key"] = _own_key("standup.pulled", p)
+			line["names"] = {"task": "@taskname." + t["id"]}
+			return line
 	for t in q:
 		if t.get("stuck", 0) > 0:
 			line["topic"] = "stuck"
@@ -1876,26 +1985,36 @@ func _own_key(key: String, p: String) -> String:
 
 # What you can say to this line, or "" if there's nothing to do about it.
 func standup_reaction(i: int) -> String:
+	var all := standup_reactions(i)
+	return all[0] if not all.is_empty() else ""
+
+
+# Someone who grabbed a card can be thanked for it or have it taken back; saying nothing lets it stand.
+func standup_reactions(i: int) -> Array:
 	if phase != "standup" or i < 0 or i >= standup["lines"].size():
-		return ""
+		return []
 	var line: Dictionary = standup["lines"][i]
-	var r: String = STANDUP_REACTIONS.get(line["topic"], "")
 	if line["reacted"] or not available(line["who"]):
-		return ""
+		return []
+	if line["topic"] == "pulled":
+		return ["praise_pull", "take_back"] if not task(line["uid"]).is_empty() else []
+	var r: String = STANDUP_REACTIONS.get(line["topic"], "")
 	if r == "backlog" and backlog().is_empty():
-		return ""
+		return []
 	if r == "sit" and task(line["uid"]).is_empty():
-		return ""
-	return r
+		return []
+	return [r] if r != "" else []
 
 
 func standup_cost() -> bool:
 	return endless() or standup.get("reacted", 0) > 0
 
 
-func standup_react(i: int) -> void:
-	var r := standup_reaction(i)
+func standup_react(i: int, r: String = "") -> void:
+	var options := standup_reactions(i)
 	if r == "":
+		r = options[0] if not options.is_empty() else ""
+	if not options.has(r):
 		return
 	var line: Dictionary = standup["lines"][i]
 	var p: String = line["who"]
@@ -1905,6 +2024,7 @@ func standup_react(i: int) -> void:
 		spend_attention(cost("react"))
 	standup["reacted"] += 1
 	line["reacted"] = true
+	line["said"] = r
 	history.append({"who": "you", "key": "standup.say." + r, "args": [], "names": line["names"], "to": p, "day": day})
 	match r:
 		"sit":
@@ -1932,6 +2052,19 @@ func standup_react(i: int) -> void:
 		"praise":
 			people[p]["mood"] = clampf(people[p]["mood"] + 0.3, -5.0, 5.0)
 			lead("I", 0.3)
+		"praise_pull":
+			_nudge_pull(p, PULL_PRAISE)
+			people[p]["mood"] = clampf(people[p]["mood"] + 0.3, -5.0, 5.0)
+			lead("E", 0.3)
+		"take_back":
+			unassign_now(task(line["uid"]))
+			_nudge_pull(p, PULL_SCOLD)
+			people[p]["mood"] = clampf(people[p]["mood"] - 0.5, -5.0, 5.0)
+			# Everyone on the call saw it.
+			for q in team:
+				if q != p and available(q):
+					_nudge_pull(q, PULL_FEAR)
+			lead("A", 0.5)
 	line["reply"] = _own_key("standup.reply." + r, p)
 	_say(p, line["reply"], [], line["names"])
 
@@ -1939,6 +2072,10 @@ func standup_react(i: int) -> void:
 func standup_close() -> void:
 	if phase != "standup":
 		return
+	# Saying nothing about a grabbed card is saying it's fine.
+	for line in standup["lines"]:
+		if line["topic"] == "pulled" and not line["reacted"]:
+			_nudge_pull(line["who"], PULL_SILENCE)
 	standup = {}
 	_open_morning()
 
@@ -2342,12 +2479,12 @@ func borrow_cap() -> int:
 
 
 func can_afford(n: int) -> bool:
-	return n <= attention + borrow_cap() - overtime_today
+	return not sick_today and n <= attention + borrow_cap() - overtime_today
 
 
 # Nothing left to give today, borrowing included: in the endless run the day goes on without you.
 func spent_out() -> bool:
-	return endless() and attention <= 0 and overtime_today >= borrow_cap()
+	return endless() and (sick_today or (attention <= 0 and overtime_today >= borrow_cap()))
 
 
 # Called after every action: once you're spent out and nothing is waiting on you, the day ends.
@@ -2547,10 +2684,12 @@ func end_day() -> void:
 	if phase != "plan" or not pending.is_empty():
 		return
 	flags.erase("tip_hl")
-	# Skipped straight past the morning: whatever broke out today came in all the same.
+	# Skipped straight past the morning: whatever broke out today came in all the same, and the team
+	# shared out the work as it saw fit.
 	if endless() and step == "triage":
 		step = "work"
 		_deliver_arrivals()
+		_team_picks()
 	evening_from = history.size()
 	_narrate("log.evening")
 	_alex_nights()
@@ -3608,7 +3747,7 @@ func _tip_used(target: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 4
+const SAVE_VERSION := 5
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.

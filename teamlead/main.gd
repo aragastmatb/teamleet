@@ -2593,7 +2593,7 @@ func _build_standup() -> void:
 	panel.add_child(right)
 	var head := _vbox(4)
 	head.add_child(_label(Loc.t("standup.title"), 22, COL_TEXT, false, true))
-	head.add_child(_label(Loc.t("standup.hint_cost" if rules.standup_cost() else "standup.hint_free") + "   " + _attention_text(), 13, COL_MUTED, true))
+	head.add_child(_label(Loc.t("standup.hint_endless" if rules.endless() else ("standup.hint_cost" if rules.standup_cost() else "standup.hint_free")) + "   " + _attention_text(), 13, COL_MUTED, true))
 	var head_box := _padded(head, 18 if mobile else 28, 16)
 	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	right.add_child(head_box)
@@ -2639,17 +2639,19 @@ func _standup_tile(line: Dictionary, i: int) -> Control:
 	v.add_child(_label(Loc.render(line["key"], line["args"], line["names"]), 15, COL_MUTED if quiet else COL_TEXT, true))
 	if Loc.has_key(line["key"] + ".aside"):
 		v.add_child(_label(Loc.t(line["key"] + ".aside"), 13, COL_FAINT, true))
-	var r := rules.standup_reaction(i)
-	if r != "":
-		v.add_child(_answer_button(Loc.render("standup.say." + r, [], line["names"]) + (_cost_mark(rules.cost("react")) if rules.standup_cost() else ""), _standup_react.bind(i)))
-	elif line["reacted"]:
-		v.add_child(_label(Loc.render("standup.say." + rules.STANDUP_REACTIONS[line["topic"]], [], line["names"]), 13, COL_PRIMARY, true))
+	var options := rules.standup_reactions(i)
+	for r in options:
+		var b := _answer_button(Loc.render("standup.say." + r, [], line["names"]) + (_cost_mark(rules.cost("react")) if rules.standup_cost() else ""), _standup_react.bind(i, r))
+		b.disabled = b.disabled or (rules.standup_cost() and not rules.can_afford(rules.cost("react")))
+		v.add_child(b)
+	if options.is_empty() and line["reacted"]:
+		v.add_child(_label(Loc.render("standup.say." + line.get("said", rules.STANDUP_REACTIONS.get(line["topic"], "")), [], line["names"]), 13, COL_PRIMARY, true))
 		v.add_child(_label(Loc.render(line["reply"], [], line["names"]), 14, COL_TEXT, true))
 	return tile
 
 
-func _standup_react(i: int) -> void:
-	rules.standup_react(i)
+func _standup_react(i: int, r: String = "") -> void:
+	rules.standup_react(i, r)
 	_render()
 
 
