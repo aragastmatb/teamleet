@@ -1092,8 +1092,10 @@ func _build_setup() -> void:
 	var tips_row := HBoxContainer.new()
 	tips_row.add_theme_constant_override("separation", 12)
 	v.add_child(tips_row)
-	tips_row.add_child(_button(Loc.t("setup.tips_on" if pick_tips else "setup.tips_off"), _toggle_tips, 0, "chosen" if pick_tips else ""))
-	tips_row.add_child(_label(Loc.t("setup.tips_hint"), 13, COL_MUTED, true))
+	# The endless run's tips are Marina's, the story's are Gena's.
+	var tips_key := "setup.run_tips" if pick_mode == "endless" else "setup.tips"
+	tips_row.add_child(_button(Loc.t(tips_key + ("_on" if pick_tips else "_off")), _toggle_tips, 0, "chosen" if pick_tips else ""))
+	tips_row.add_child(_label(Loc.t(tips_key + "_hint"), 13, COL_MUTED, true))
 	v.add_child(_spacer(6))
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 12)
