@@ -955,7 +955,10 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 		names.merge(ev["choice_names"].get(choice, {}), true)
 	elif arg != "":
 		names["who"] = "@name.%s.acc" % arg
-	r.history.append({"who": "you", "key": "event.%s.choice.%s" % [ev["id"], c], "args": [], "names": names, "day": r.day})
+	var said := {"who": "you", "key": "event.%s.choice.%s" % [ev["id"], c], "args": [], "names": names, "day": r.day}
+	if ev["who"] != "":
+		said["thread"] = ev["who"]
+	r.history.append(said)
 	for pair in STYLE.get(ev["id"] + "/" + c, []):
 		r.lead(pair[0], pair[1])
 	var who: String = ev["who"]

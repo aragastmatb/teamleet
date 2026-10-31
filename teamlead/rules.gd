@@ -1657,8 +1657,12 @@ func _say_event_lines() -> void:
 	if events.is_empty():
 		return
 	var ev: Dictionary = events[0]
+	var from := history.size()
 	for line in ev["lines"]:
 		_say(line["who"], line["key"], [], ev["names"])
+	# The whole question, narration included, belongs to the conversation with whoever asks it.
+	for i in range(from, history.size()):
+		history[i]["thread"] = ev["who"]
 
 
 func resolve_event(choice: String) -> void:

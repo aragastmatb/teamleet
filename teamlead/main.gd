@@ -111,9 +111,15 @@ var cue := ""
 var mobile := false
 var tab := "board"
 var lane := "inbox"
-var chat_read := 0
-# On a computer the endless chat is folded into a narrow rail; you open it when you want to read.
-var chat_open := false
+# The messenger: a column of contacts, and the one conversation that's open ("" for none).
+var chat_thread := ""
+# How far each conversation has been read, as an index into the history.
+var thread_read := {}
+# Each history line's conversation, worked out once a render; and each day's name, for the dividers.
+var threads := {}
+var day_names := {}
+# The question the messenger last opened by itself, so it does it once.
+var asked_seen := ""
 # Where in the history the talk over the open task began, while it's on screen; -1 when there's none.
 var deal_from := -1
 var deal_who := ""
@@ -124,9 +130,6 @@ var upgrades_seen := {}
 var chat_pos := 0
 var chat_seen := ""
 var chat_to_end := false # a scroll to the bottom is on its way; until it lands, the bottom is where the chat is
-# The first question of a run shades the board to teach where answers go; after that the board stays
-# open to look at while you think, with only the actions held until you answer.
-var taught_now := false
 const HELD_WHILE_ASKED := ["_helper", "_end_day", "_visit_boss", "_unassign", "_talk_to", "_sit", "_reject_candidate",
 	"_prioritize", "_pick", "_interview", "_ask_people", "_intervene", "_hire", "_fire", "_direct", "_decline", "_days", "_ask_stay",
 	"_accept_initiative"]
@@ -140,18 +143,10 @@ var pick_tips := true
 var pick_mode := "endless"
 # The last of Marina's tips the phone banner was closed on.
 var tip_closed := ""
-# The chat plays out like a messenger: entries of rules.history up to `shown` are on screen, the rest come
-# one by one, with "… is typing" before each. A click on the chat shows everything at once.
-const TYPE_PAUSE := 0.6
-const NARRATION_PAUSE := 0.25
-var shown := 0
-var reveal_wait := 0.0
+# The open conversation's list and scroll, and who spoke last in it (to group their lines).
 var chat_list: VBoxContainer
 var chat_scroll: ScrollContainer
 var chat_last := ""
-var typing_row: Control
-# Once the evening comes, the morning folds into one line; this opens it again for that day.
-var morning_open_day := 0
 
 
 func _ready() -> void:
@@ -220,9 +215,8 @@ func _start_test(point: String) -> void:
 		print("test point %s: chapter %d, day %d, %s" % [point, rules.chapter, rules.chapter_day(), rules.phase])
 	else:
 		push_warning("test point %s never came up; known points: %s" % [point, DevTest.points()])
-	shown = rules.history.size()
 	heard = rules.history.size()
-	chat_read = rules.history.size()
+	_read_all()
 	_clear_selection()
 
 
@@ -429,7 +423,6 @@ func _start_run() -> void:
 	rules.start_run(-1, C.BOSS_KINDS.pick_random() if pick_boss == "random" else pick_boss, pick_profile, pick_mode)
 	rules.tips = pick_tips
 	tip_closed = ""
-	shown = 0
 	_clear_selection()
 	_render()
 
@@ -491,76 +484,6 @@ func _process(delta: float) -> void:
 	if rules.phase == "title":
 		_pan_title(delta)
 		return
-	if shown >= rules.history.size():
-		return
-	while shown < rules.history.size() and not _on_screen(shown):
-		shown += 1
-	if shown >= rules.history.size():
-		return
-	# Chat on another tab (phone): nothing to play out, just catch up for the unread count.
-	if not is_instance_valid(chat_list) or not chat_list.is_inside_tree():
-		_show_all()
-		return
-	reveal_wait += delta
-	if reveal_wait < _pause_before(rules.history[shown]):
-		return
-	reveal_wait = 0.0
-	_reveal_next()
-
-
-# Your own lines show at once; narration quickly; people take a moment to type.
-func _pause_before(e: Dictionary) -> float:
-	if e["who"] == "you":
-		return 0.0
-	if e["who"] == "" or e["key"].begins_with("log."):
-		return NARRATION_PAUSE
-	return TYPE_PAUSE
-
-
-func _reveal_next() -> void:
-	var e: Dictionary = rules.history[shown]
-	shown += 1
-	if shown >= rules.history.size() or not is_instance_valid(chat_list):
-		# The last one is in: the full render brings the answers and buttons.
-		_render()
-		return
-	if typing_row and is_instance_valid(typing_row):
-		typing_row.queue_free()
-	_append_entry(chat_list, e)
-	if e["who"] != "you" and e["who"] != "":
-		_play("message")
-	typing_row = _typing_row()
-	if typing_row:
-		chat_list.add_child(typing_row)
-	_scroll_to_end(chat_scroll)
-
-
-func _show_all() -> void:
-	if shown < rules.history.size():
-		shown = rules.history.size()
-		reveal_wait = 0.0
-		_render()
-
-
-# Is this entry in today's chat (and not folded away with the morning)?
-func _on_screen(i: int) -> bool:
-	var e: Dictionary = rules.history[i]
-	return e["day"] == rules.day and not _folded(i)
-
-
-func _folded(i: int) -> bool:
-	return i < rules.evening_from and _evening_today() and morning_open_day != rules.day
-
-
-# The evening has begun today: its first line (rules.evening_from) belongs to this day.
-func _evening_today() -> bool:
-	var i: int = rules.evening_from
-	return i < rules.history.size() and rules.history[i]["day"] == rules.day and rules.history[i]["key"] == "log.evening"
-
-
-func _open_morning() -> void:
-	morning_open_day = rules.day
-	_render()
 
 
 # Back to where the last session stopped, chat and all, without replaying its sounds.
@@ -570,8 +493,7 @@ func _continue_run() -> void:
 		return
 	heard = rules.history.size()
 	last_phase = rules.phase
-	chat_read = rules.history.size()
-	shown = rules.history.size()
+	_read_all()
 	_clear_selection()
 
 
@@ -637,7 +559,7 @@ func _sound_for_changes() -> String:
 		return "question"
 	if moved and phase == "evening":
 		return "day_end"
-	for name in ["assign"]: # people's messages sound as they appear (_reveal_next)
+	for name in ["assign", "message"]:
 		if found.has(name):
 			return name
 	return cue
@@ -767,12 +689,19 @@ func _render() -> void:
 		_let_touches_through(ui)
 		_restore_scrolls()
 		return
+	_sort_threads()
+	# A new question opens its conversation once; closing it leaves it closed.
+	var asked := _asked_thread()
+	var asked_key := ""
+	if asked != "":
+		asked_key = "%s/%s/%d" % [asked, rules.events[0]["id"] if rules.phase == "event" else "review", rules.day]
+	if asked_key != "" and asked_key != asked_seen:
+		chat_thread = asked
+	asked_seen = asked_key
 	if mobile:
 		_build_phone()
 	else:
 		_build_office()
-		if _teach_chat():
-			_block_board()
 	if not rules.convo.is_empty():
 		_build_convo()
 	else:
@@ -1052,31 +981,11 @@ func _chat_asks() -> bool:
 	return rules.phase == "event" or rules.phase == "review"
 
 
-# The story lives in the chat, so it stays open there; the endless chat opens when asked or when it asks.
-func _chat_shown() -> bool:
-	return mobile or not rules.endless() or chat_open or _chat_asks()
-
-
-func _toggle_chat() -> void:
-	chat_open = not chat_open
-	_render()
 
 
 # The board can be looked through during the day, a question in the chat included.
 func _looking() -> bool:
 	return rules.phase in ["plan", "event", "review"]
-
-
-# Only the run's first question shades the board; once it's answered, never again.
-func _teach_chat() -> bool:
-	if rules.flags.has("chat_taught"):
-		return false
-	if _chat_asks():
-		taught_now = true
-		return true
-	if taught_now:
-		rules.flags["chat_taught"] = true
-	return false
 
 
 # The key art fills the screen and darkens towards the bottom, where the menu sits straight on it.
@@ -1594,11 +1503,7 @@ func _build_office() -> void:
 	body.add_theme_constant_override("separation", 0)
 	v.add_child(body)
 	body.add_child(_board_area())
-	if _chat_shown():
-		chat_read = rules.history.size()
-		body.add_child(_chat())
-	else:
-		body.add_child(_chat_rail())
+	body.add_child(_messenger())
 
 
 func _top_bar() -> Control:
@@ -3022,30 +2927,6 @@ func _row_label(text_value: String) -> Control:
 	return l
 
 
-# While a question waits in the chat, the board and the team are out of reach.
-func _block_board() -> void:
-	var shade := ColorRect.new()
-	shade.color = Color(COL_BG, 0.6)
-	shade.anchor_right = 1.0
-	shade.anchor_bottom = 1.0
-	shade.offset_top = TOP_H
-	shade.offset_right = -CHAT_W
-	shade.mouse_filter = Control.MOUSE_FILTER_STOP
-	ui.add_child(shade)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shade.add_child(center)
-	var pill := PanelContainer.new()
-	var style := _box(COL_TEXT, COL_TEXT, 0, 12)
-	style.set_corner_radius_all(20)
-	style.content_margin_left = 20
-	style.content_margin_right = 20
-	pill.add_theme_stylebox_override("panel", style)
-	pill.add_child(_label(Loc.t("answer_in_chat"), 16, COL_SURFACE, false, true))
-	center.add_child(pill)
-
-
 # ---------- the phone layout ----------
 
 func _view_width() -> float:
@@ -3055,8 +2936,6 @@ func _view_width() -> float:
 # One screen at a time, and only you switch them: when the chat needs you, the other screens say so
 # and point there, but nothing jumps by itself.
 func _build_phone() -> void:
-	if tab == "chat":
-		chat_read = rules.history.size()
 	var v := _vbox(0)
 	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(v)
@@ -3069,14 +2948,12 @@ func _build_phone() -> void:
 		"team":
 			body = _team_sidebar()
 		"chat":
-			body = _chat()
+			body = _phone_messenger()
 		_:
 			body = _phone_board()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(body)
 	v.add_child(_phone_tabs())
-	if _teach_chat() and tab != "chat":
-		_phone_block()
 
 
 func _phone_top() -> Control:
@@ -3129,14 +3006,13 @@ func _phone_tabs() -> Control:
 	row.add_theme_constant_override("separation", 6)
 	bar.add_child(row)
 	var unread := 0
-	for i in range(chat_read, rules.history.size()):
-		if rules.history[i]["who"] != "you":
-			unread += 1
+	for th in _contacts():
+		unread += _unread(th)
 	for name in ["board", "team", "chat"]:
 		var text := Loc.t("tab." + name)
 		if name == "chat" and unread > 0 and tab != "chat":
 			text += " (%d)" % unread
-		var calls: bool = name == "chat" and tab != "chat" and (_chat_asks() or rules.phase == "evening")
+		var calls: bool = name == "chat" and tab != "chat" and _asked_thread() != ""
 		var b := _button(text, _go_tab.bind(name), 0, "chosen" if tab == name else ("primary" if calls else "subtle"))
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if name == "team" and tab != "team":
@@ -3174,29 +3050,209 @@ func _phone_board() -> Control:
 	return _padded(v, 10, 10)
 
 
-# While the chat waits for an answer, the other screens point you there.
-func _phone_block() -> void:
-	var shade := ColorRect.new()
-	shade.color = Color(COL_BG, 0.6)
-	shade.anchor_right = 1.0
-	shade.anchor_bottom = 1.0
-	shade.offset_top = PHONE_TOP_H
-	shade.offset_bottom = -70
-	shade.mouse_filter = Control.MOUSE_FILTER_STOP
-	ui.add_child(shade)
-	var center := CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	shade.add_child(center)
-	var b := _button(Loc.t("answer_in_chat"), _go_tab.bind("chat"), 0, "primary")
-	center.add_child(b)
+# ---------- the messenger ----------
+# No common feed: a contact list, and one conversation at a time. Each line of the history belongs to
+# one conversation: the person who said it or was spoken to, or the team channel for everything else.
+
+const GENERAL := "general"
 
 
-# ---------- the chat ----------
+func _contacts() -> Array:
+	var out: Array = [GENERAL]
+	for p in rules.team:
+		if not rules.people[p]["gone"]:
+			out.append(p)
+	out.append_array(["boss", "marina"])
+	if not threads.get("taras", []).is_empty():
+		out.append("taras")
+	return out
 
-func _chat() -> Control:
+
+func _contact_of(p: String) -> String:
+	if p in ["boss", "marina", "taras"] or (rules.team.has(p) and not rules.people[p]["gone"]):
+		return p
+	return GENERAL
+
+
+func _sort_threads() -> void:
+	threads = {}
+	day_names = {}
+	var last := GENERAL
+	for i in rules.history.size():
+		var e: Dictionary = rules.history[i]
+		var key: String = e["key"]
+		if key == "log.morning":
+			day_names[e["day"]] = Loc.render(key, e.get("args", []), e.get("names", {})).replace("—", "").strip_edges()
+		var th := GENERAL
+		if e.has("thread"):
+			th = _contact_of(e["thread"])
+		elif key.begins_with("log."):
+			th = GENERAL
+		elif e["who"] == "you":
+			if e.has("to"):
+				th = _contact_of(e["to"])
+			elif key.begins_with("visit."):
+				th = "boss"
+			elif key == "you.to_taras":
+				th = "taras"
+			elif key == "people.ask":
+				th = "marina"
+			elif key.begins_with("up."):
+				th = GENERAL
+			else:
+				th = last
+		elif e["who"] != "":
+			th = _contact_of(e["who"])
+		last = th
+		if not threads.has(th):
+			threads[th] = []
+		threads[th].append(i)
+
+
+# A loaded game or a test point starts with everything read.
+func _read_all() -> void:
+	_sort_threads()
+	for th in threads:
+		thread_read[th] = rules.history.size()
+
+
+func _unread(th: String) -> int:
+	var n := 0
+	var from: int = thread_read.get(th, 0)
+	for i in threads.get(th, []):
+		if i >= from and rules.history[i]["who"] not in ["you", ""]:
+			n += 1
+	return n
+
+
+# The conversation where a question waits for you, if any.
+func _asked_thread() -> String:
+	if rules.phase == "event" and not rules.events.is_empty():
+		return _contact_of(rules.events[0]["who"])
+	if rules.phase == "review" and not rules.review.is_empty():
+		return GENERAL
+	return ""
+
+
+# Offers a person makes on their own (the story's initiative), shown in their conversation.
+func _thread_offer(th: String) -> String:
+	if rules.phase != "plan" or not rules.team.has(th):
+		return ""
+	return rules.initiative_offer(th)
+
+
+func _open_thread(th: String) -> void:
+	chat_thread = "" if chat_thread == th and not mobile else th
+	_render()
+
+
+func _close_thread() -> void:
+	chat_thread = ""
+	_render()
+
+
+func _contact_name(th: String) -> String:
+	return Loc.t("chat.general") if th == GENERAL else Loc.person(th)
+
+
+func _contact_face(th: String, size: int) -> Control:
+	if th != GENERAL:
+		return _avatar(th, size)
+	var box := PanelContainer.new()
+	box.custom_minimum_size = Vector2(size, size)
+	box.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var style := _flat(COL_PRIMARY)
+	style.set_corner_radius_all(int(size / 2.0))
+	box.add_theme_stylebox_override("panel", style)
+	var l := _label("#", int(size * 0.5), COL_ON_TOP, false, true)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	box.add_child(l)
+	box.tooltip_text = _contact_name(th)
+	return box
+
+
+# A round marker on a face: a question waiting (orange "!") or how many lines are unread.
+func _contact_badge(th: String) -> Control:
+	var waiting: bool = _asked_thread() == th or _thread_offer(th) != ""
+	var n := _unread(th)
+	if not waiting and n == 0:
+		return null
+	var dot := PanelContainer.new()
+	var ds := _flat(COL_STAR if waiting else COL_DANGER)
+	ds.set_corner_radius_all(10)
+	ds.content_margin_left = 6
+	ds.content_margin_right = 6
+	dot.add_theme_stylebox_override("panel", ds)
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dot.add_child(_label("!" if waiting else str(n), 11, COL_ON_TOP, false, true))
+	return dot
+
+
+# The desktop's right side: the open conversation, if any, then the column of contacts.
+func _messenger() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 0)
+	if chat_thread != "" and _contacts().has(chat_thread):
+		var view := _thread_view(chat_thread)
+		view.custom_minimum_size.x = CHAT_W
+		row.add_child(view)
+	else:
+		chat_thread = ""
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = 0 if mobile else CHAT_W
+	panel.custom_minimum_size.x = 76
+	var style := _flat(COL_SURFACE)
+	style.border_color = COL_BORDER
+	style.border_width_left = 1
+	style.content_margin_top = 10
+	panel.add_theme_stylebox_override("panel", style)
+	row.add_child(panel)
+	var scroll := _scroll("contacts")
+	panel.add_child(scroll)
+	var v := _vbox(10)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(v)
+	for th in _contacts():
+		v.add_child(_contact_dot(th))
+	return row
+
+
+func _contact_dot(th: String) -> Control:
+	var holder := CenterContainer.new()
+	# A plain box under the ring, so the counter can hang off its corner instead of being laid out.
+	var spot := Control.new()
+	spot.custom_minimum_size = Vector2(52, 52)
+	holder.add_child(spot)
+	var ring := PanelContainer.new()
+	ring.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var open: bool = chat_thread == th
+	var rs := _box(COL_SELECTED if open else Color(0, 0, 0, 0), COL_FOCUS if open else Color(0, 0, 0, 0), 2, 3)
+	rs.set_corner_radius_all(30)
+	ring.add_theme_stylebox_override("panel", rs)
+	ring.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	ring.tooltip_text = _contact_name(th)
+	ring.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_open_thread.call_deferred(th))
+	spot.add_child(ring)
+	var face := _contact_face(th, 44)
+	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ring.add_child(face)
+	var badge := _contact_badge(th)
+	if badge:
+		badge.anchor_left = 1.0
+		badge.anchor_right = 1.0
+		badge.offset_left = -16
+		badge.offset_top = -4
+		badge.grow_horizontal = Control.GROW_DIRECTION_END
+		spot.add_child(badge)
+	return holder
+
+
+# One conversation: the last few days of it, what waits for an answer, and what you can say first.
+func _thread_view(th: String) -> Control:
+	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL if mobile else Control.SIZE_FILL
 	var style := _flat(COL_SURFACE)
 	style.border_color = COL_BORDER
@@ -3208,22 +3264,27 @@ func _chat() -> Control:
 	var head_style := _flat(COL_SURFACE)
 	head_style.border_color = COL_BORDER
 	head_style.border_width_bottom = 1
-	head_style.content_margin_left = 14
-	head_style.content_margin_right = 14
-	head_style.content_margin_top = 10
-	head_style.content_margin_bottom = 10
+	head_style.content_margin_left = 12
+	head_style.content_margin_right = 10
+	head_style.content_margin_top = 8
+	head_style.content_margin_bottom = 8
 	head.add_theme_stylebox_override("panel", head_style)
 	v.add_child(head)
 	var head_row := HBoxContainer.new()
+	head_row.add_theme_constant_override("separation", 8)
 	head.add_child(head_row)
-	var chat_title := _label(Loc.t("chat_title"), 16, COL_TEXT, false, true)
-	chat_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head_row.add_child(chat_title)
-	if not mobile and rules.endless() and not _chat_asks():
-		var fold := _button(Loc.t("chat.fold"), _toggle_chat, 0, "subtle")
-		fold.custom_minimum_size.y = 26
-		fold.add_theme_font_size_override("font_size", _fs(12))
-		head_row.add_child(fold)
+	if mobile:
+		head_row.add_child(_button("‹", _close_thread, 36, "subtle"))
+	head_row.add_child(_contact_face(th, 30))
+	var title := _label(_contact_name(th), 16, COL_TEXT, false, true)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head_row.add_child(title)
+	if rules.team.has(th):
+		var card := _button(Loc.t("chat.card"), _open_window.bind("person:" + th), 0, "subtle")
+		card.add_theme_font_size_override("font_size", _fs(12))
+		head_row.add_child(card)
+	if not mobile:
+		head_row.add_child(_button("×", _close_thread, 30, "subtle"))
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -3234,33 +3295,31 @@ func _chat() -> Control:
 	chat_list = list
 	chat_scroll = scroll
 	chat_last = ""
-	typing_row = null
-	shown = mini(shown, rules.history.size())
-	var folded := 0
-	for i in shown:
-		if rules.history[i]["day"] == rules.day and _folded(i):
-			folded += 1
-	if folded > 0:
-		var open := _button(Loc.t("chat.morning_folded", [folded]), _open_morning, 0, "subtle")
-		open.add_theme_font_size_override("font_size", _fs(13))
-		list.add_child(open)
-	for i in shown:
-		if _on_screen(i):
-			_append_entry(list, rules.history[i])
-	if shown < rules.history.size():
-		typing_row = _typing_row()
-		if typing_row:
-			list.add_child(typing_row)
-		# A click (not a scroll) on the chat shows the rest at once.
-		panel.gui_input.connect(func(event: InputEvent):
-			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-				if event.pressed:
-					press_pos = event.global_position
-				elif event.global_position.distance_to(press_pos) < 12.0:
-					_show_all.call_deferred())
-	else:
-		_chat_prompt(list)
-	var now := "%d/%d/%s/%d/%d/%d/%d" % [shown, rules.history.size(), rules.phase, rules.events.size(), rules.review.size(), rules.pending.size(), morning_open_day]
+	var items: Array = threads.get(th, [])
+	var shown_day := -1
+	var any := false
+	for i in items:
+		var e: Dictionary = rules.history[i]
+		if e["day"] < rules.day - 2 or (e["key"].begins_with("log.") and th != GENERAL):
+			continue
+		if e["day"] != shown_day and not e["key"].begins_with("log."):
+			shown_day = e["day"]
+			list.add_child(_spacer(4))
+			var sep := _label(day_names.get(shown_day, ""), 12, COL_FAINT, true, true)
+			sep.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			list.add_child(sep)
+			chat_last = ""
+		if e["key"].begins_with("log."):
+			if e["key"] == "log.morning":
+				continue
+			shown_day = e["day"]
+		_append_entry(list, e)
+		any = true
+	if not any:
+		list.add_child(_label(Loc.t("chat.empty"), 13, COL_FAINT, true))
+	_thread_prompt(list, th)
+	thread_read[th] = rules.history.size()
+	var now := "%s/%d/%s/%d/%d" % [th, rules.history.size(), rules.phase, rules.events.size(), rules.review.size()]
 	if now != chat_seen:
 		chat_seen = now
 		_scroll_to_end(scroll)
@@ -3269,52 +3328,71 @@ func _chat() -> Control:
 	return panel
 
 
-# The folded chat: a narrow rail with how many lines wait and whose they are; a click opens it.
-func _chat_rail() -> Control:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = 84
-	var style := _flat(COL_SURFACE)
-	style.border_color = COL_BORDER
-	style.border_width_left = 1
-	style.content_margin_top = 12
-	panel.add_theme_stylebox_override("panel", style)
-	panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	panel.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-			_toggle_chat.call_deferred())
-	var v := _vbox(8)
-	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(v)
-	var open := _button(Loc.t("tab.chat"), _toggle_chat, 0, "subtle")
-	open.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	v.add_child(open)
-	var unread := 0
-	var faces: Array[String] = []
-	for i in range(rules.history.size() - 1, chat_read - 1, -1):
-		var who: String = rules.history[i]["who"]
-		if who == "you" or who == "" or rules.history[i]["key"].begins_with("log."):
-			continue
-		unread += 1
-		if not faces.has(who) and faces.size() < 5:
-			faces.append(who)
-	if unread == 0:
-		return panel
-	var count := PanelContainer.new()
-	var cs := _flat(COL_DANGER)
-	cs.set_corner_radius_all(10)
-	cs.content_margin_left = 8
-	cs.content_margin_right = 8
-	count.add_theme_stylebox_override("panel", cs)
-	count.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	count.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	count.add_child(_label(str(unread), 12, COL_ON_TOP, false, true))
-	v.add_child(count)
-	for who in faces:
-		var face := _avatar(who, 36)
-		face.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		face.tooltip_text = Loc.person(who)
-		v.add_child(face)
-	return panel
+# Under a conversation: the question waiting there, an offer, or what you can start yourself.
+func _thread_prompt(list: VBoxContainer, th: String) -> void:
+	if _asked_thread() == th:
+		if rules.phase == "event":
+			_event_prompt(list, rules.events[0])
+		else:
+			_review_prompt(list)
+		return
+	var offer := _thread_offer(th)
+	if offer != "":
+		list.add_child(_offer_card(th, offer))
+	if rules.team.has(th) and rules.phase == "plan":
+		list.add_child(_spacer(8))
+		var talk := _button(Loc.t("talk_button") + _cost_mark(rules.cost("talk")), _talk_to.bind(th), 0, "")
+		talk.disabled = talk.disabled or not rules.can_talk(th)
+		list.add_child(talk)
+	elif th == "boss" and rules.phase == "plan":
+		list.add_child(_spacer(8))
+		var go := _button(Loc.t("visit_button") + _cost_mark(rules.cost("boss")), _visit_boss, 0, "")
+		go.disabled = go.disabled or rules.visited_today or not rules.can_afford(rules.cost("boss")) or not rules.pending.is_empty()
+		list.add_child(go)
+
+
+# The phone's chat tab: the contact list, or the conversation picked from it.
+func _phone_messenger() -> Control:
+	if chat_thread != "" and _contacts().has(chat_thread):
+		return _thread_view(chat_thread)
+	chat_thread = ""
+	var scroll := _scroll("contacts")
+	var v := _vbox(6)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_padded(v, 10, 10))
+	for th in _contacts():
+		var row := PanelContainer.new()
+		row.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 10))
+		row.gui_input.connect(func(event: InputEvent):
+			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+				if event.pressed:
+					press_pos = event.global_position
+				elif event.global_position.distance_to(press_pos) < 12.0:
+					_open_thread.call_deferred(th))
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 10)
+		h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(h)
+		h.add_child(_contact_face(th, 40))
+		var col := _vbox(2)
+		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		h.add_child(col)
+		col.add_child(_label(_contact_name(th), 15, COL_TEXT, false, true))
+		var items: Array = threads.get(th, [])
+		if not items.is_empty():
+			var e: Dictionary = rules.history[items[-1]]
+			var line := Loc.render(e["key"], e.get("args", []), e.get("names", {})).replace("\n", " ")
+			var preview := _label(line, 13, COL_MUTED)
+			preview.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			preview.clip_text = true
+			col.add_child(preview)
+		var badge := _contact_badge(th)
+		if badge:
+			badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			h.add_child(badge)
+		v.add_child(row)
+	return scroll
 
 
 # One chat entry: a day-part divider, narration, or a line under its speaker's name.
@@ -3343,19 +3421,6 @@ func _append_entry(list: VBoxContainer, e: Dictionary) -> void:
 	list.add_child(_indented(_label(body, 15, COL_MUTED if body.begins_with("(") else COL_TEXT, true)))
 
 
-# "Gena is typing…" under the chat while the next person's line is on its way.
-func _typing_row() -> Control:
-	for i in range(shown, rules.history.size()):
-		if not _on_screen(i):
-			continue
-		var who: String = rules.history[i]["who"]
-		if who == "you" or who == "":
-			return null
-		var l := _label(Loc.t("chat.typing", [Loc.t("you") if who == "me" else Loc.person(who)]), 12, COL_FAINT, true)
-		return _indented(l)
-	return null
-
-
 func _message_head(e: Dictionary) -> Control:
 	var who: String = e["who"]
 	var h := HBoxContainer.new()
@@ -3363,7 +3428,7 @@ func _message_head(e: Dictionary) -> Control:
 	h.add_child(_avatar("me" if who == "you" else who, 28))
 	var name := Loc.t("you") if who == "you" else Loc.person(who)
 	h.add_child(_label(name, 14, COL_TEXT, false, true))
-	if who == "you" and e.has("to"):
+	if who == "you" and e.has("to") and chat_thread == GENERAL:
 		h.add_child(_label("→ " + Loc.t("name.%s.dat" % e["to"]), 13, COL_MUTED))
 	return h
 
@@ -3373,23 +3438,6 @@ func _indented(c: Control) -> Control:
 	m.add_theme_constant_override("margin_left", 36)
 	m.add_child(c)
 	return m
-
-
-# What waits for you at the bottom of the chat: a question with answers, or offers you can take.
-func _chat_prompt(list: VBoxContainer) -> void:
-	if rules.phase == "event" and not rules.events.is_empty():
-		_event_prompt(list, rules.events[0])
-	elif rules.phase == "review" and not rules.review.is_empty():
-		_review_prompt(list)
-	elif rules.phase == "evening":
-		list.add_child(_spacer(8))
-		var b := _button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 0, "primary")
-		list.add_child(b)
-	elif rules.phase == "plan":
-		for p in rules.team:
-			var offer := rules.initiative_offer(p)
-			if offer != "":
-				list.add_child(_offer_card(p, offer))
 
 
 func _prompt_box(list: VBoxContainer, title: String) -> VBoxContainer:
