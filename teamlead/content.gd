@@ -248,6 +248,7 @@ static func _static_init() -> void:
 			for v in _variants(row, ch):
 				_add_card(row, ch, v)
 	_load_improvements()
+	_build_endless_deck()
 	for b in BANKS:
 		for lang in ["ru", "en"]:
 			TASK_TEXT[lang]["bankphrase." + b] = bank_phrase(b, lang)
@@ -255,6 +256,30 @@ static func _static_init() -> void:
 		for b in TASKS[id]["then"]:
 			if not TASKS.has(b["next"]):
 				push_error("%s leads to %s, which isn't in %s" % [id, b["next"], TASKS_PATH])
+
+
+# The endless run's one deck: every chapter's dealt cards, each as many times as its row says, except
+# any that names one of the story's own people.
+static var ENDLESS_DECK: Array = []
+static var _TEAM_NAMES := RegEx.create_from_string("\\b(Alex|Vika|Dima|Gena|Palych)\\b|Алекс|Палыч|Ген[аыеуо]й?\\b|Вик[аиеуо]й?\\b|Дим[аыеуо]й?\\b")
+
+
+static func _build_endless_deck() -> void:
+	var copies := {}
+	for ch in DECK:
+		var count := {}
+		for id in DECK[ch]:
+			count[id] = count.get(id, 0) + 1
+		for id in count:
+			copies[id] = maxi(copies.get(id, 0), count[id])
+	for id in copies:
+		var text := ""
+		for lang in ["ru", "en"]:
+			text += TASK_TEXT[lang].get("taskname." + id, "") + " " + TASK_TEXT[lang].get("task.%s.ask" % id, "")
+		if _TEAM_NAMES.search(text) != null:
+			continue
+		for i in copies[id]:
+			ENDLESS_DECK.append(id)
 
 
 static func _load_improvements() -> void:

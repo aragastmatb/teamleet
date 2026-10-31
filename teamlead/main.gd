@@ -2868,7 +2868,7 @@ func _build_end() -> void:
 	var v := _document(780)
 	var info: Dictionary = C.CHAPTERS[rules.chapter - 1]
 	if rules.endless():
-		v.add_child(_section(Loc.t("period.results", [rules.period, Loc.t("chapter.%s.name" % info["id"])])))
+		v.add_child(_section(Loc.t("period.results", [rules.period])))
 	else:
 		v.add_child(_section(Loc.t("chapter.results", [rules.chapter, Loc.t("chapter.%s.name" % info["id"])])))
 	var good := rules.ending == "beloved" or rules.passed()
@@ -2889,7 +2889,8 @@ func _build_end() -> void:
 			late += 1
 	v.add_child(_label(Loc.t("summary.done", [done, late]), 15, COL_TEXT, true))
 	var k := rules.key_status()
-	v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": rules.chapter_keys().size(), "boss": "@weight." + rules.boss_word()}), 15, COL_TEXT, true))
+	if not rules.endless():
+		v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": rules.chapter_keys().size(), "boss": "@weight." + rules.boss_word()}), 15, COL_TEXT, true))
 	var bank_names := PackedStringArray()
 	for b in rules.banks:
 		bank_names.append(Loc.t("bank." + b))
@@ -2938,16 +2939,18 @@ func _build_end() -> void:
 
 # What the next chapter is about, or that it's still being made.
 func _next_chapter_block(v: VBoxContainer) -> void:
-	var id: String = C.CHAPTERS[(Rules.period_chapter(rules.period + 1) if rules.endless() else rules.chapter + 1) - 1]["id"]
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 16))
 	var box := _vbox(6)
 	card.add_child(box)
 	box.add_child(_section(Loc.t("chapter.next")))
 	if rules.endless():
-		box.add_child(_label(Loc.t("period.title", [rules.period + 1, Loc.t("chapter.%s.name" % id)]), 20, COL_TEXT, true, true))
-	else:
-		box.add_child(_label(Loc.t("chapter.title", [rules.chapter + 1, Loc.t("chapter.%s.name" % id)]), 20, COL_TEXT, true, true))
+		box.add_child(_label(Loc.t("period.title", [rules.period + 1]), 20, COL_TEXT, true, true))
+		box.add_child(_label(Loc.t("period.next", [_rub(rules.last_race.get("budget", 0))]), 15, COL_TEXT, true))
+		v.add_child(card)
+		return
+	var id: String = C.CHAPTERS[rules.chapter]["id"]
+	box.add_child(_label(Loc.t("chapter.title", [rules.chapter + 1, Loc.t("chapter.%s.name" % id)]), 20, COL_TEXT, true, true))
 	box.add_child(_label(Loc.t("chapter.%s.goal" % id), 15, COL_TEXT, true))
 	if not rules.next_chapter_ready():
 		box.add_child(_label(Loc.t("chapter.soon"), 14, COL_MUTED, true))

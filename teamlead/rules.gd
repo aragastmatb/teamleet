@@ -47,8 +47,9 @@ var day := 1
 # Which chapter (1..4) of C.CHAPTERS; days run on through the chapters.
 var chapter := 1
 # "story": the four chapters with the team and the scenes. "endless": the tycoon, a made-up team and
-# period after period of PERIOD_DAYS; each period plays one chapter's deck and goals (see period_chapter),
-# and missing any goal ends the run. No named teammates and no story scenes there.
+# period after period of PERIOD_DAYS on one common deck (C.ENDLESS_DECK). A period closes with the budget
+# split; the run ends on running out of money, the team or yourself (see _bankrupt). No named teammates
+# and no story scenes there.
 var mode := "story"
 var period := 1
 var period_start := 1
@@ -464,10 +465,11 @@ func _arrivals() -> Array:
 	var out: Array = []
 	if day % 5 == 1 and not flags.has("automated_report"):
 		out.append_array(C.tasks_with("kind", "weekly"))
-	var keys: Dictionary = C.KEY_DAYS.get(chapter, {})
+	# The endless run has no key projects and no story chains, only the deck.
+	var keys: Dictionary = {} if endless() else C.KEY_DAYS.get(chapter, {})
 	if keys.has(chapter_day()):
 		out.append(keys[chapter_day()])
-	for id in C.START_DAYS.get(chapter, {}).get(chapter_day(), []):
+	for id in ({} if endless() else C.START_DAYS.get(chapter, {})).get(chapter_day(), []):
 		# A chain that only starts if something hasn't happened yet (unless:<flag>).
 		if not C.TASKS[id]["tags"].any(func(tag): return tag.begins_with("unless:") and flags.has(tag.substr(7))):
 			out.append(id)
@@ -508,7 +510,8 @@ func _arrivals() -> Array:
 
 # How hard this week of the chapter pushes (C.RAMP): past the listed weeks, full load.
 func ramp_now() -> Dictionary:
-	var weeks: Array = C.RAMP.get(chapter, C.RAMP[0])
+	# The endless run eases in over its first month, then stays the same.
+	var weeks: Array = (C.RAMP[1] if period == 1 else C.RAMP[0]) if endless() else C.RAMP.get(chapter, C.RAMP[0])
 	var w := (chapter_day() - 1) / 5
 	return weeks[w] if w < weeks.size() else {"load": 1.0, "cards": C.MAX_CARDS_A_DAY, "slack": 0}
 
@@ -525,8 +528,12 @@ func _can_come_again(id: String) -> bool:
 
 
 # A fresh shuffle of the base deck goes under what's left. Improvements keep their cards out.
+func deck_source() -> Array:
+	return C.ENDLESS_DECK if endless() else C.DECK.get(chapter, [])
+
+
 func _refill_deck() -> void:
-	var fresh: Array = C.DECK.get(chapter, []).duplicate()
+	var fresh: Array = deck_source().duplicate()
 	if flags.has("tech_debt_done"):
 		fresh = fresh.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
 	fresh.append_array(curses)
@@ -1397,7 +1404,7 @@ func _join_bank(b: String) -> void:
 	banks[b] = {"mood": 0.0, "since": day}
 	_narrate("bank.joined", [], {"bank": "@bankphrase." + b})
 	# Its deliveries mix into the deck from here on.
-	for id in C.DECK.get(chapter, []):
+	for id in deck_source():
 		if C.TASKS[id].get("bank", "") == b:
 			deck.insert(rng.randi_range(0, deck.size()), id)
 
@@ -1462,7 +1469,7 @@ func _maybe_sell() -> void:
 	if day % 5 != 1 or day == first_day():
 		return
 	var pool: Array = []
-	for ch in range(1, chapter + 1):
+	for ch in range(1, (C.CHAPTERS.size() if endless() else chapter) + 1):
 		pool.append_array(C.BANK_POOL.get(ch, []))
 	pool = pool.filter(func(b): return not banks.has(b) and not flags.has("bank_lost_" + b))
 	if pool.is_empty() or rng.randf() > SALE_CHANCE + REPUTATION_SALE * maxf(0.0, reputation):
@@ -1517,7 +1524,7 @@ func _improved_by(kind: String, id: String) -> Array:
 func _fill_backlog() -> void:
 	var open := tasks.filter(func(t): return t.get("backlog", false) and t["status"] == "inbox").size()
 	var ids: Array = []
-	for ch in range(1, chapter + 1):
+	for ch in range(1, (C.CHAPTERS.size() if endless() else chapter) + 1):
 		ids.append_array(C.improvements_of(ch))
 	for id in ids:
 		if open >= BACKLOG_SIZE:
@@ -3804,7 +3811,7 @@ func _tip_used(target: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 6
+const SAVE_VERSION := 7
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.
@@ -3897,12 +3904,7 @@ func start_next_chapter() -> void:
 	if endless():
 		period += 1
 		period_start = day
-		chapter = period_chapter(period)
 		_period_budget()
-		# The chapter's deck comes round again: its goals start from nothing.
-		for g in C.CHAPTERS[chapter - 1].get("goals", []):
-			for f in g.get("flags", []):
-				flags.erase(f)
 	else:
 		chapter += 1
 	ending = ""
@@ -4094,15 +4096,12 @@ func _bankrupt() -> bool:
 		ending = "bankrupt"
 	elif flags.get(burnout_key(), 0) >= burnouts_to_quit():
 		ending = "burned_out"
+	elif not team.any(func(p): return available(p)):
+		ending = "team_gone_run"
 	else:
 		return false
 	phase = "end"
 	return true
-
-
-# Which chapter's deck and goals a period plays: the four in order, then round the last three again.
-static func period_chapter(n: int) -> int:
-	return n if n <= C.CHAPTERS.size() else 2 + (n - 2) % (C.CHAPTERS.size() - 1)
 
 
 # The chapter, or in the endless run the period: what per-month counters are kept by.
@@ -4129,7 +4128,7 @@ func chapter_day() -> int:
 
 
 func chapter_keys() -> Array:
-	return C.KEY_PROJECTS.get(chapter, [])
+	return [] if endless() else C.KEY_PROJECTS.get(chapter, [])
 
 
 # The end of a chapter: results (the boss's view, mostly the key projects) against what the team says.
@@ -4137,8 +4136,12 @@ func chapter_keys() -> Array:
 func _finish_chapter() -> void:
 	if _bankrupt():
 		return
+	# The endless run has no verdicts: the month closes, the budget is split, and on you go.
 	if endless():
 		_split_budget()
+		ending = "period_pass"
+		phase = "chapter_end"
+		return
 	if chapter > 1:
 		_chapter_verdict()
 		return
@@ -4183,9 +4186,6 @@ func _chapter_verdict() -> void:
 		ending = "replaced"
 	elif hours >= 60:
 		ending = "workhorse"
-	elif endless():
-		# A roguelike: every goal of the period, or the run is over.
-		ending = "period_pass" if met == info["goals"].size() else "run_over"
 	elif met == info["goals"].size():
 		ending = _final_standing() if info.get("final", false) else info["id"] + "_pass"
 	elif met > 0:
@@ -4232,6 +4232,8 @@ func goal_met(g: Dictionary) -> bool:
 # This chapter's goals and how far along they are: [{"id", "have", "need"}].
 func goal_progress() -> Array:
 	var out: Array = []
+	if endless():
+		return out
 	for g in C.CHAPTERS[chapter - 1].get("goals", []):
 		var have := 0
 		match g["kind"]:

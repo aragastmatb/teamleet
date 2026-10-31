@@ -147,7 +147,7 @@ func _check_chapter_intro(r) -> Dictionary:
 
 # Day one: Irina explains the probation and names the key projects.
 func _check_probation(r) -> Dictionary:
-	if r.day != 1 or not once(r, "probation"):
+	if r.endless() or r.day != 1 or not once(r, "probation"):
 		return {}
 	var names := {}
 	for i in r.chapter_keys().size():
