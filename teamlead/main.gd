@@ -91,6 +91,11 @@ var text_scale := "normal"
 # The menu: on the title screen, and over the game when opened from the top bar (or Esc).
 # menu_page is "" for the list itself, or "settings", "about", "confirm_new".
 var menu_open := false
+# Across runs: achievements earned for good, and the most periods an endless run has lasted.
+var unlocked: Array = []
+var best_periods := 0
+# This run's best before it started, so the end screen can say it's a new record.
+var best_before := 0
 # The top bar's counters as last drawn, and the nodes showing them now, so a change can be called out.
 var juice_before := {}
 var juice_nodes := {}
@@ -168,6 +173,8 @@ func _ready() -> void:
 		pick_boss = settings.get_value("setup", "boss", pick_boss)
 		pick_profile = settings.get_value("setup", "profile", pick_profile)
 		pick_tips = settings.get_value("setup", "tips", pick_tips)
+		unlocked = settings.get_value("progress", "achievements", [])
+		best_periods = settings.get_value("progress", "best_periods", 0)
 	if not (pick_boss == "random" or C.BOSSES.has(pick_boss)):
 		pick_boss = "random"
 	if not C.PROFILES.has(pick_profile):
@@ -392,6 +399,7 @@ func _start_run() -> void:
 	settings.set_value("setup", "profile", pick_profile)
 	settings.set_value("setup", "tips", pick_tips)
 	settings.save(SETTINGS_PATH)
+	best_before = best_periods
 	rules.start_run(-1, C.BOSS_KINDS.pick_random() if pick_boss == "random" else pick_boss, pick_profile, pick_mode)
 	rules.tips = pick_tips
 	tip_closed = ""
@@ -758,6 +766,48 @@ func _render() -> void:
 	_let_touches_through(ui)
 	_restore_scrolls()
 	_juice.call_deferred(before, juice_before)
+	_check_progress()
+
+
+# New achievements pop up as they come and are kept for good; so is the longest endless run.
+func _check_progress() -> void:
+	if not rules.endless() or rules.phase in ["title", "draft"]:
+		return
+	var fresh: Array = rules.run_achievements().filter(func(a): return not unlocked.has(a))
+	for i in fresh.size():
+		unlocked.append(fresh[i])
+		_achievement_toast.call_deferred(fresh[i], i)
+	if not fresh.is_empty():
+		_save_setting("progress", "achievements", unlocked)
+	if rules.done_periods() > best_periods:
+		best_periods = rules.done_periods()
+		_save_setting("progress", "best_periods", best_periods)
+
+
+func _achievement_toast(id: String, order: int) -> void:
+	var box := PanelContainer.new()
+	var style := _box(Color("fff7e6"), COL_STAR, 2, 12)
+	style.set_corner_radius_all(12)
+	box.add_theme_stylebox_override("panel", style)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.z_index = 70
+	var v := _vbox(2)
+	box.add_child(v)
+	v.add_child(_label("★ " + Loc.t("ach.got", [Loc.t("ach.%s.name" % id)]), 16, COL_WARN, false, true))
+	v.add_child(_label(Loc.t("ach.%s.text" % id), 13, COL_TEXT))
+	ui.add_child(box)
+	await get_tree().process_frame
+	if not is_instance_valid(box):
+		return
+	var view := get_viewport().get_visible_rect().size
+	box.position = Vector2((view.x - box.size.x) / 2.0, 96.0 + order * (box.size.y + 8.0))
+	box.modulate.a = 0.0
+	var t := create_tween()
+	t.tween_interval(order * 0.4)
+	t.tween_property(box, "modulate:a", 1.0, 0.25)
+	t.tween_interval(2.8)
+	t.tween_property(box, "modulate:a", 0.0, 0.5)
+	t.tween_callback(box.queue_free)
 
 
 # ---------- the day's moments ----------
@@ -3553,6 +3603,32 @@ func _survey_block(v: VBoxContainer) -> void:
 	v.add_child(_label(Loc.t("survey.verdict." + verdict), 15, COL_GOOD if verdict == "for" else (COL_WARN if verdict == "wary" else COL_DANGER), true, true))
 
 
+# The end of an endless run: the record, the run in numbers, and what it earned.
+func _run_record(v: VBoxContainer) -> void:
+	var n := rules.done_periods()
+	if n > best_before and best_before > 0:
+		v.add_child(_label("★ " + Loc.t("run.new_record", [n]), 20, COL_STAR, true, true))
+	else:
+		v.add_child(_label(Loc.t("run.best", [best_periods]), 15, COL_MUTED, true))
+	var st := rules.run_stats()
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 24)
+	grid.add_theme_constant_override("v_separation", 6)
+	v.add_child(grid)
+	for key in ["days", "done", "good", "late", "hired", "quit", "fired", "upgrades", "race_wins"]:
+		var cell := _vbox(0)
+		cell.add_child(_label(str(st[key]), 26, COL_TEXT, false, true))
+		cell.add_child(_label(Loc.t("run.stat." + key), 12, COL_MUTED))
+		grid.add_child(cell)
+	var earned: Array = rules.run_achievements()
+	v.add_child(_section(Loc.t("run.achievements", [unlocked.size(), rules.ACHIEVEMENTS.size()])))
+	if earned.is_empty():
+		v.add_child(_label(Loc.t("run.no_achievements"), 14, COL_MUTED, true))
+	for id in earned:
+		v.add_child(_label("★ " + Loc.t("ach.%s.name" % id) + " · " + Loc.t("ach.%s.text" % id), 14, COL_WARN, true))
+
+
 # The end of a chapter or of the run: Irina's verdict, the numbers, the team, and what comes next.
 func _build_end() -> void:
 	var v := _document(780)
@@ -3565,11 +3641,14 @@ func _build_end() -> void:
 	v.add_child(_label(Loc.t("ending.%s.title" % rules.ending), 28, COL_GOOD if good else COL_DANGER, true, true))
 	v.add_child(_label(Loc.t("ending.%s.text" % rules.ending), 16, COL_TEXT, true))
 	if rules.endless():
-		v.add_child(_label(Loc.t("period.survived", [rules.period - (0 if rules.passed() else 1)]), 18, COL_TEXT, true, true))
-		if not rules.last_race.is_empty():
+		v.add_child(_label(Loc.t("period.survived", [rules.done_periods()]), 18, COL_TEXT, true, true))
+		if not rules.last_race.is_empty() and rules.phase == "chapter_end":
 			var race: Dictionary = rules.last_race
 			v.add_child(_label(Loc.t("race.summary", [race["mine"], race["taras"], _rub(race["budget"])]), 16, COL_GOOD if race["mine"] >= race["taras"] else COL_DANGER, true))
-	v.add_child(_label(Loc.t("summary.hours", [rules.hours]), 15, COL_GOOD if rules.hours == 0 else COL_DANGER, true))
+		if rules.phase == "end":
+			_run_record(v)
+	else:
+		v.add_child(_label(Loc.t("summary.hours", [rules.hours]), 15, COL_GOOD if rules.hours == 0 else COL_DANGER, true))
 	var done := 0
 	var late := 0
 	for t in rules.tasks:
@@ -3577,7 +3656,9 @@ func _build_end() -> void:
 			done += 1
 		if t["late"]:
 			late += 1
-	v.add_child(_label(Loc.t("summary.done", [done, late]), 15, COL_TEXT, true))
+	# (the end of an endless run has these in its own table)
+	if not (rules.endless() and rules.phase == "end"):
+		v.add_child(_label(Loc.t("summary.done", [done, late]), 15, COL_TEXT, true))
 	var k := rules.key_status()
 	if not rules.endless():
 		v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": rules.chapter_keys().size(), "boss": "@weight." + rules.boss_word()}), 15, COL_TEXT, true))

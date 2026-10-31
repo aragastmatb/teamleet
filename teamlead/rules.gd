@@ -417,11 +417,15 @@ func _team_pulls() -> void:
 	for p in team:
 		if available(p):
 			_nudge_pull(p, (_pull_nature(p) - pull(p)) * PULL_SETTLE)
+	var pulled := 0
 	for p in team:
 		if _will_pull(p, 1.0):
 			var t := _pull_choice(p)
 			if not t.is_empty():
 				_take(p, t)
+				pulled += 1
+	if pulled >= 3:
+		flags["self_org"] = true
 
 
 # A day without you: the team shares out the waiting cards among themselves, each as they see fit.
@@ -1347,6 +1351,7 @@ func warn(p: String) -> void:
 
 # They're gone: their work goes back to the inbox, the team reacts, and the opening is yours again.
 func let_go(p: String, with_warning: bool) -> void:
+	flags["stat_fired"] = flags.get("stat_fired", 0) + 1
 	var st: Dictionary = people[p]
 	st["gone"] = true
 	st["fired"] = true
@@ -2867,6 +2872,8 @@ func end_day() -> void:
 # Staying late wears you down; rest days bring you back. Run yourself into the ground and you're
 # off sick tomorrow, and the team works without you.
 func _end_of_my_day() -> void:
+	if overtime_today > 0:
+		flags["borrowed_p%d" % period] = true
 	debt = overtime_today
 	debt_days = debt_days + 1 if debt > 0 else 0
 	if debt_days >= BURNOUT_DEBT_DAYS:
@@ -3051,6 +3058,60 @@ func _automation_credit(id: String) -> void:
 	var key := "auto_points_%d" % period
 	flags[key] = flags.get(key, 0.0) + C.TASKS[id]["size"] * QUALITY_POINTS["ok"]
 	flags["auto_today"] = flags.get("auto_today", 0) + 1
+
+
+# ---------- the run's record ----------
+
+# Months the endless run has got through.
+func done_periods() -> int:
+	return period - 1 + (1 if phase == "chapter_end" else 0)
+
+
+func run_stats() -> Dictionary:
+	var done := tasks.filter(func(t): return t["status"] == "done" and not t["id"].begins_with("up_"))
+	return {
+		"periods": done_periods(), "days": day,
+		"done": done.size(), "good": done.filter(func(t): return t["quality"] == "good").size(),
+		"late": tasks.filter(func(t): return t["late"]).size(),
+		"hired": team.size(), "quit": quits, "fired": flags.get("stat_fired", 0),
+		"upgrades": upgrades.values().filter(func(u): return u["state"] == "done").size(),
+		"race_wins": flags.get("race_wins", 0),
+	}
+
+
+# The achievements this run has earned so far (the endless run only); the game keeps them across runs.
+const ACHIEVEMENTS := ["first_period", "five_periods", "ten_periods", "clean_period", "beat_taras", "taras_streak",
+	"clean_week", "self_org", "branch_done", "openshift", "rich"]
+
+
+func run_achievements() -> Array:
+	if not endless():
+		return []
+	var out: Array = []
+	var n := done_periods()
+	if n >= 1:
+		out.append("first_period")
+	if n >= 5:
+		out.append("five_periods")
+	if n >= 10:
+		out.append("ten_periods")
+	for f in ["clean_period", "clean_week", "self_org"]:
+		if flags.has(f):
+			out.append(f)
+	if flags.get("race_wins", 0) >= 1:
+		out.append("beat_taras")
+	if flags.get("race_streak", 0) >= 3:
+		out.append("taras_streak")
+	for b in C.UPGRADE_BRANCHES:
+		var ids: Array = C.UPGRADES.keys().filter(func(id): return C.UPGRADES[id]["branch"] == b)
+		if ids.all(func(id): return upgrade_state(id) == "done"):
+			out.append("branch_done")
+			break
+	if upgrade_state("openshift") == "done":
+		out.append("openshift")
+	if money >= 5000:
+		out.append("rich")
+	return out
 
 
 # ---------- penalties ----------
@@ -4264,6 +4325,14 @@ func _split_budget() -> void:
 	var his := maxf(0.0, taras_total())
 	var share := 0.5 if mine + his <= 0.0 else clampf(mine / (mine + his), SHARE_MIN, SHARE_MAX)
 	last_race = {"mine": int(round(my_points())), "taras": int(round(taras_total())), "budget": int(round(BUDGET_POT * share / 10.0)) * 10}
+	# For the run's record and achievements.
+	if last_race["mine"] > last_race["taras"]:
+		flags["race_wins"] = flags.get("race_wins", 0) + 1
+		flags["race_streak"] = flags.get("race_streak", 0) + 1
+	else:
+		flags["race_streak"] = 0
+	if not flags.has("borrowed_p%d" % period):
+		flags["clean_period"] = true
 
 
 func weekly_pay(p: String) -> int:
@@ -4347,6 +4416,10 @@ func _period_budget() -> void:
 
 
 func _payday() -> void:
+	# A week with five or more cards done and none missed.
+	var done := tasks.filter(func(t): return t["status"] == "done" and t.get("done_day", 0) > day - 5).size()
+	if done >= 5 and not tasks.any(func(t): return t["late"] and t.get("late_day", 0) > day - 5):
+		flags["clean_week"] = true
 	var pay := payroll()
 	money -= pay
 	_narrate("money.payday", [pay, money])
