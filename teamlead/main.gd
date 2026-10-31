@@ -373,6 +373,8 @@ func _answer(choice: String) -> void:
 
 func _start_run() -> void:
 	setup_open = false
+	if not (C.RUN_PROFILE_KINDS if pick_mode == "endless" else C.PROFILE_KINDS).has(pick_profile):
+		pick_profile = C.DEFAULT_PROFILE
 	var settings := ConfigFile.new()
 	settings.load(SETTINGS_PATH)
 	settings.set_value("setup", "boss", pick_boss)
@@ -1086,7 +1088,10 @@ func _build_setup() -> void:
 	v.add_child(_option_grid("boss", bosses, pick_boss, width))
 	v.add_child(_spacer(6))
 	v.add_child(_label(Loc.t("setup.me_head"), 17, COL_TEXT, true, true))
-	v.add_child(_option_grid("me", C.PROFILE_KINDS, pick_profile, width))
+	var kinds: Array = C.RUN_PROFILE_KINDS if pick_mode == "endless" else C.PROFILE_KINDS
+	if not kinds.has(pick_profile):
+		pick_profile = C.DEFAULT_PROFILE
+	v.add_child(_option_grid("me", kinds, pick_profile, width))
 	v.add_child(_spacer(2))
 	var tips_row := HBoxContainer.new()
 	tips_row.add_theme_constant_override("separation", 12)
@@ -1733,7 +1738,7 @@ func _upgrade_tile(id: String) -> Control:
 				names.append("«%s»" % Loc.t("up.%s.name" % r))
 		v.add_child(_label(Loc.t("up.needs", [", ".join(names)]), 12, COL_FAINT, true))
 	if state in ["open", "locked"]:
-		var b := _button(Loc.t("up.buy", [_rub(up["price"])]) + _cost_mark(rules.cost("buy")), _buy_upgrade.bind(id), 0, "primary" if rules.can_buy(id) else "")
+		var b := _button(Loc.t("up.buy", [_rub(rules.upgrade_price(id))]) + _cost_mark(rules.cost("buy")), _buy_upgrade.bind(id), 0, "primary" if rules.can_buy(id) else "")
 		b.disabled = not rules.can_buy(id)
 		v.add_child(b)
 	return tile

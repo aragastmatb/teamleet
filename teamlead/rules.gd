@@ -2938,9 +2938,13 @@ func upgrade_state(id: String) -> String:
 	return "open"
 
 
+func upgrade_price(id: String) -> int:
+	return int(round(C.UPGRADES[id]["price"] * (1.0 - C.PROFILES[profile].get("upgrade_discount", 0.0))))
+
+
 func can_buy(id: String) -> bool:
 	return endless() and phase == "plan" and pending.is_empty() and upgrade_state(id) == "open" \
-		and money >= C.UPGRADES[id]["price"] and can_afford(cost("buy"))
+		and money >= upgrade_price(id) and can_afford(cost("buy"))
 
 
 func buy_upgrade(id: String) -> void:
@@ -2948,12 +2952,12 @@ func buy_upgrade(id: String) -> void:
 		return
 	var up: Dictionary = C.UPGRADES[id]
 	spend_attention(cost("buy"))
-	money -= up["price"]
+	money -= upgrade_price(id)
 	upgrades[id] = {"state": "building", "done": []}
 	_apply_effects(up["start"])
 	for card in up["cards"]:
 		deck.insert(rng.randi_range(0, mini(UPGRADE_DECK_AHEAD, deck.size())), card)
-	history.append({"who": "you", "key": "up.bought", "args": [up["price"]], "names": {"up": "@up.%s.name" % id}, "day": day})
+	history.append({"who": "you", "key": "up.bought", "args": [upgrade_price(id)], "names": {"up": "@up.%s.name" % id}, "day": day})
 
 
 # How far its rollout has got: implementation cards done well enough, out of all of them.
@@ -3195,6 +3199,8 @@ func _speed(p: String, t: Dictionary) -> float:
 	# Told to hurry or to take care when you stepped in.
 	s *= t.get("pace", 1.0)
 	s *= tools_factor(p) * perk_mult("speed", t["cat"])
+	if t["id"].begins_with("up_"):
+		s *= C.PROFILES[profile].get("rollout", 1.0)
 	if archetype(p) == "plodder":
 		s *= PLODDER_PACE
 	var share: float = shares.get(t["uid"], 0.0)
@@ -4036,7 +4042,7 @@ func _next_run_tip() -> String:
 						due.append("penalty")
 					if day >= 3 and not inbox().is_empty():
 						due.append("decline")
-					if day >= 4 and C.UPGRADES.keys().any(func(id): return upgrade_state(id) == "open" and money >= C.UPGRADES[id]["price"]):
+					if day >= 4 and C.UPGRADES.keys().any(func(id): return upgrade_state(id) == "open" and money >= upgrade_price(id)):
 						due.append("upgrades")
 			elif step == "work" and (flags.get("tip_day", 0) != day or day == 1):
 				due.append("midday")

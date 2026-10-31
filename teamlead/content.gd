@@ -113,6 +113,7 @@ const DEFAULT_BOSS := "A"
 # Who you were before this job, picked at the start. skills: yours when you do the work yourself or step
 # into someone's (same 0..4 scale as the team). attention: tokens a day. talk: added to how people take
 # it when you talk them into a task. knows_team: you start out knowing everyone's skills.
+# upgrade_discount: off the price of every upgrade; rollout: how much faster upgrade rollout cards go.
 const PROFILES := {
 	# Strong hands; talking people round is the hard part.
 	"techie": {"skills": {"pipelines": 3, "infra": 3, "portal": 2, "support": 1}, "attention": 3, "talk": 0.0},
@@ -120,8 +121,14 @@ const PROFILES := {
 	"manager": {"skills": {"pipelines": 1, "infra": 1, "portal": 2, "support": 2}, "attention": 4, "talk": 0.5},
 	# Grew up in this very team: knows who's good at what, but the old colleagues don't take orders well.
 	"insider": {"skills": {"pipelines": 2, "infra": 2, "portal": 2, "support": 2}, "attention": 3, "talk": -0.4, "knows_team": true},
+	# The endless run's third: designed platforms before, so upgrades come cheaper and roll out faster;
+	# the price is weaker hands than an engineer's.
+	"architect": {"skills": {"pipelines": 2, "infra": 3, "portal": 2, "support": 1}, "attention": 3, "talk": 0.0,
+		"upgrade_discount": 0.3, "rollout": 1.5},
 }
+# The story's choice; the endless run hires its own team, so knowing it from before makes no sense there.
 const PROFILE_KINDS := ["techie", "manager", "insider"]
+const RUN_PROFILE_KINDS := ["techie", "manager", "architect"]
 const DEFAULT_PROFILE := "techie"
 
 # When someone pushes back on a task, you answer with an intent. Each motive takes each intent
