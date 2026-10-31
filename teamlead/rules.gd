@@ -147,6 +147,8 @@ var review: Array[Dictionary] = []
 var flags := {}
 var ending := ""
 var evening_from := 0
+# Where the day started, for the evening's summary: money, race points, points to spend.
+var day_start := {}
 var next_uid := 0
 # An objection waiting for your answer: {"uid", "p", "reason"}. Empty when none.
 var pending := {}
@@ -281,6 +283,7 @@ func _start_day() -> void:
 			offer_today[p] = true
 	visited_today = false
 	overtime_today = 0
+	day_start = {"money": money, "race": my_points() if endless() else 0.0, "taras": taras_total() if endless() else 0.0}
 	step = "triage"
 	after_events = "plan"
 	attention = 0 if my_sick > 0 else maxi(0, max_attention() - debt)
@@ -4073,7 +4076,7 @@ func _tip_used(target: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 8
+const SAVE_VERSION := 9
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.

@@ -693,6 +693,9 @@ func _render() -> void:
 		selected = -1
 	var before := juice_before
 	juice_before = _juice_state()
+	# The evening opens on the day's summary; it doesn't come back once closed.
+	if not before.is_empty() and not juice_before.is_empty() and juice_before["phase"] == "evening" and before["phase"] != "evening":
+		window = "summary"
 	juice_nodes.clear()
 	flash_cards = _cards_to_flash(before, juice_before)
 	if rules.phase != "title":
@@ -748,13 +751,118 @@ func _render() -> void:
 				_build_report()
 			"end", "chapter_end":
 				_build_end()
-	if window != "" and rules.phase in ["plan", "event", "standup"]:
+	if window != "" and rules.phase in ["plan", "event", "standup", "evening"]:
 		_build_window()
 	if menu_open:
 		_build_menu_overlay()
 	_let_touches_through(ui)
 	_restore_scrolls()
 	_juice.call_deferred(before, juice_before)
+
+
+# ---------- the day's moments ----------
+
+# The top bar takes the colour of the time of day: morning blue, brighter at midday, dusk in the evening.
+func _sky() -> Color:
+	match _moment():
+		"midday":
+			return Color("0c66e4")
+		"evening":
+			return Color("2d2a6e")
+	return COL_TOPBAR
+
+
+func _moment() -> String:
+	if rules.phase in ["evening", "report", "review"] or (rules.endless() and rules.step == "evening"):
+		return "evening"
+	if rules.endless() and rules.step == "work":
+		return "midday"
+	return "morning"
+
+
+# A big "Tuesday · Morning" across the screen as the day moves on; it fades by itself and stops nothing.
+func _splash(text_value: String) -> void:
+	var box := PanelContainer.new()
+	var style := _flat(Color(COL_NIGHT, 0.82))
+	style.set_corner_radius_all(18)
+	style.content_margin_left = 40
+	style.content_margin_right = 40
+	style.content_margin_top = 18
+	style.content_margin_bottom = 18
+	box.add_theme_stylebox_override("panel", style)
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.z_index = 60
+	var l := _label(text_value, 34, COL_ON_TOP, false, true)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(l)
+	ui.add_child(box)
+	await get_tree().process_frame
+	if not is_instance_valid(box):
+		return
+	var view := get_viewport().get_visible_rect().size
+	box.position = (view - box.size) / 2.0 - Vector2(0, view.y * 0.12)
+	box.modulate.a = 0.0
+	var t := create_tween()
+	t.tween_property(box, "modulate:a", 1.0, 0.2)
+	t.tween_interval(0.7)
+	t.tween_property(box, "modulate:a", 0.0, 0.45)
+	t.tween_callback(box.queue_free)
+
+
+func _day_summary_rows() -> Array:
+	var done := 0
+	var good := 0
+	var late := 0
+	for t in rules.tasks:
+		if t["status"] == "done" and t.get("done_day", 0) == rules.day:
+			done += 1
+			if t["quality"] == "good":
+				good += 1
+		if t["late"] and t.get("late_day", 0) == rules.day:
+			late += 1
+	var rows := [[Loc.t("sum.done"), str(done), COL_GOOD if done > 0 else COL_MUTED, Loc.t("sum.good", [good]) if good > 0 else ""],
+		[Loc.t("sum.late"), str(late), COL_DANGER if late > 0 else COL_MUTED, ""]]
+	var spent := rules.max_attention() - rules.attention + rules.overtime_today
+	rows.append([Loc.t("sum.points"), str(spent), COL_TEXT, Loc.t("sum.debt", [rules.overtime_today]) if rules.overtime_today > 0 else ""])
+	if rules.endless() and not rules.day_start.is_empty():
+		var dm: int = rules.money - int(rules.day_start["money"])
+		if dm != 0:
+			rows.append([Loc.t("sum.money"), ("+%s" if dm > 0 else "−%s") % _rub(absi(dm)), COL_GOOD if dm > 0 else COL_DANGER, ""])
+		var mine := int(round(rules.my_points() - rules.day_start["race"]))
+		var his := int(round(rules.taras_total() - rules.day_start["taras"]))
+		rows.append([Loc.t("sum.race"), "%+d" % mine, COL_GOOD if mine >= his else COL_DANGER, Loc.t("sum.taras", ["%+d" % his])])
+	return rows
+
+
+func _build_summary() -> void:
+	var view := get_viewport().get_visible_rect().size
+	var body := _modal(Loc.t("sum.title", [Loc.t(rules.day_key().substr(1))]), "", minf(520.0, view.x - 16.0), false, true)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 18)
+	grid.add_theme_constant_override("v_separation", 10)
+	body.add_child(grid)
+	for row in _day_summary_rows():
+		var big := _label(row[1], 30, row[2], false, true)
+		big.custom_minimum_size.x = 90
+		big.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		grid.add_child(big)
+		var words := _vbox(0)
+		words.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		words.add_child(_label(row[0], 15, COL_TEXT))
+		if row[3] != "":
+			words.add_child(_label(row[3], 12, COL_MUTED))
+		grid.add_child(words)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 10)
+	body.add_child(_spacer(4))
+	body.add_child(buttons)
+	buttons.add_child(_button(Loc.t("sum.read"), _close_window, 0, "subtle"))
+	var go := _day_button(0)
+	buttons.add_child(go)
+	go.pressed.connect(func(): window = "")
 
 
 # ---------- feedback ----------
@@ -770,7 +878,7 @@ func _juice_state() -> Dictionary:
 			owners[t["uid"]] = t["owner"]
 		elif t["status"] == "done":
 			done[t["uid"]] = true
-	return {"day": rules.day, "points": rules.attention - rules.overtime_today, "money": rules.money,
+	return {"day": rules.day, "moment": _moment(), "phase": rules.phase, "points": rules.attention - rules.overtime_today, "money": rules.money,
 		"race": int(round(rules.my_points())), "owners": owners, "done": done}
 
 
@@ -792,6 +900,9 @@ func _cards_to_flash(was: Dictionary, now: Dictionary) -> Dictionary:
 func _juice(was: Dictionary, now: Dictionary) -> void:
 	if was.is_empty() or now.is_empty():
 		return
+	# (the evening has its own summary window, which says the same)
+	if (was["moment"] != now["moment"] or was["day"] != now["day"]) and window != "summary":
+		_splash(Loc.t(rules.day_key().substr(1)) + " · " + Loc.t("moment." + now["moment"]))
 	# Layout settles a frame after the screen is built.
 	await get_tree().process_frame
 	# A new day refills the points: that's not something you spent.
@@ -1393,7 +1504,7 @@ func _build_office() -> void:
 func _top_bar() -> Control:
 	var bar := PanelContainer.new()
 	bar.custom_minimum_size.y = TOP_H
-	var style := _box(COL_TOPBAR, COL_TOPBAR, 0, 0)
+	var style := _box(_sky(), _sky(), 0, 0)
 	style.set_corner_radius_all(0)
 	style.content_margin_left = 16
 	style.content_margin_right = 12
@@ -1725,6 +1836,12 @@ func _close_window() -> void:
 
 
 func _build_window() -> void:
+	if window == "summary":
+		if rules.phase == "evening":
+			_build_summary()
+		else:
+			window = ""
+		return
 	if window == "upgrades":
 		if rules.endless():
 			_build_upgrades()
@@ -1814,7 +1931,7 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 		var shrink := func():
 			if not is_instance_valid(panel):
 				return
-			var want := head_box.size.y + pad.get_combined_minimum_size().y + 12.0
+			var want := head_box.get_combined_minimum_size().y + pad.get_combined_minimum_size().y + 12.0
 			var ph := minf(h, want)
 			panel.offset_top = -ph / 2.0
 			panel.offset_bottom = ph / 2.0
