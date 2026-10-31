@@ -54,6 +54,12 @@ textarea:focus { outline: none; border-color: #4c9aff; background: #fff; }
 textarea.en { color: var(--muted); font-size: 13.5px; }
 textarea.saving { border-color: var(--faint); }
 textarea.saved { border-color: var(--good); }
+textarea.dirty { border-color: #ff991f; background: #fffaf0; }
+.tools button.save { background: #0052cc; color: #fff; border: 0; border-radius: 6px; padding: 4px 12px; font: inherit; font-weight: 600; cursor: pointer; }
+.tools button.save:hover { background: #0065ff; }
+#toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #00875a; color: #fff; padding: 10px 18px; border-radius: 8px; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,.2); opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 100; }
+#toast.show { opacity: 1; }
+#toast.err { background: #de350b; }
 textarea.error { border-color: var(--danger); background: #ffebe6; }
 .tools { display: flex; gap: 10px; align-items: center; margin-top: 4px; font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
 .tools button { font: inherit; border: 0; background: none; color: var(--primary); cursor: pointer; padding: 0; }
@@ -310,6 +316,7 @@ function textBlock(it, opts = {}) {
     <textarea class="ru" data-id="${esc(it.id)}" data-lang="ru" rows="1" placeholder="(пусто)">${esc(it.ru || "")}</textarea>
     <textarea class="en" data-id="${esc(it.id)}" data-lang="en" rows="1" placeholder="(нет перевода)">${esc(it.en || "")}</textarea>
     <div class="tools">
+      <button type="button" class="save" data-save="${esc(it.id)}" hidden>Сохранить</button>
       ${dash}
       <label><input type="checkbox" data-done="${esc(k)}" ${note.done ? "checked" : ""}> готово</label>
       <button type="button" data-note-open="${esc(k)}">${note.note ? "заметка для Claude ✎" : "+ заметка для Claude"}</button>
@@ -383,7 +390,7 @@ function route() {
   if (!g) {
     main.innerHTML = `<div class="intro"><h2>Тексты игры</h2>
       <p>Слева все тексты, разложенные по местам, где они звучат. Сцены показаны целиком, как пьеса: кто говорит, с какой эмоцией, условия, варианты игрока и куда они ведут.</p>
-      <p>Правка сохраняется в файл игры, как только уходишь из поля. Видна при следующем запуске игры.</p>
+      <p>Изменённое поле подсвечивается оранжевым, и под ним появляется кнопка «Сохранить». Нажми её или ⌘S, а ещё правка сама сохраняется, как только уходишь из поля. Внизу всплывёт «Сохранено». В игре видно при следующем запуске.</p>
       <p>«Заметка для Claude»: напиши, что не так или что поменять в логике, я прочитаю. «Готово»: отметка для себя, чтобы видеть, что уже переписано.</p>
       <p>Перевод на английский можно не трогать: скажи, и я переведу переписанное.</p>
       <p><b>Схема сцены.</b> Сцена слева в списке открывается схемой: ветки разговора, стрелки от вариантов игрока. Справа правится всё: реплики, эмоции, условия, эффекты, куда ведёт вариант. Сохраняется кнопкой «Сохранить» (или ⌘S), перед записью сцена проверяется, со сломанной в файл не попадёт. Вкладка «Текст» показывает ту же сцену пьесой.</p></div>`;
@@ -417,14 +424,38 @@ async function saveText(t) {
   try {
     await post("/api/save", { id: it.id, lang, old, new: now });
     it[lang] = now;
-    t.className = t.className.replace(" saving", "") + " saved";
+    t.className = t.className.replace(/ ?dirty/g, "").replace(" saving", "") + " saved";
     say(it.id, "сохранено");
+    toast("Сохранено");
+    markDirty(t);
     setTimeout(() => t.classList.remove("saved"), 1500);
     renderNav();
   } catch (e) {
     t.className = t.className.replace(" saving", "") + " error";
     say(it.id, e.message, true);
+    toast("Не сохранилось: " + e.message, true);
   }
+}
+
+// A changed field turns orange and gets a Save button until it's written to the file.
+function markDirty(t) {
+  const it = byId[t.dataset.id];
+  if (!it) return;
+  const dirty = t.value !== (it[t.dataset.lang] || "");
+  t.classList.toggle("dirty", dirty);
+  const any = [...document.querySelectorAll(`textarea[data-id="${CSS.escape(it.id)}"]`)].some(x => x.classList.contains("dirty"));
+  const b = document.querySelector(`[data-save="${CSS.escape(it.id)}"]`);
+  if (b) b.hidden = !any;
+  if (any) say(it.id, "не сохранено");
+}
+
+let toastTimer;
+function toast(text, err) {
+  const el = document.getElementById("toast");
+  el.textContent = text;
+  el.className = "show" + (err ? " err" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = err ? "err" : "", err ? 4000 : 1500);
 }
 
 function sayNote(k, text, err) {
@@ -448,7 +479,18 @@ async function saveNote(id) {
   } catch (e) { sayNote(id, e.message, true); }
 }
 
-document.addEventListener("input", e => { if (e.target.tagName === "TEXTAREA") grow(e.target); });
+document.addEventListener("input", e => {
+  if (e.target.tagName === "TEXTAREA") grow(e.target);
+  if (e.target.matches("textarea[data-lang]")) markDirty(e.target);
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest("button[data-save]");
+  if (!b) return;
+  document.querySelectorAll(`textarea[data-id="${CSS.escape(b.dataset.save)}"]`).forEach(t => saveText(t));
+});
+window.addEventListener("beforeunload", e => {
+  if (document.querySelector("textarea.dirty")) { e.preventDefault(); e.returnValue = ""; }
+});
 document.addEventListener("focusout", e => {
   const t = e.target;
   if (t.matches("textarea[data-lang]")) saveText(t);
@@ -495,5 +537,6 @@ $("#onlyTodo").addEventListener("change", route);
 window.addEventListener("hashchange", route);
 load().catch(e => { $("#main").innerHTML = `<div class="empty">Не удалось загрузить: ${esc(e.message)}. Запущен ли server.py?</div>`; });
 </script>
+<div id="toast"></div>
 </body>
 </html>
