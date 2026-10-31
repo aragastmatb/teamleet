@@ -830,6 +830,10 @@ func convo_label(c: String) -> String:
 func convo_choose(choice: String) -> void:
 	if not choice in convo_choices():
 		return
+	if choice != "end" and convo["kind"] == "talk":
+		if not can_afford(cost("reply")):
+			return
+		spend_attention(cost("reply"))
 	if choice == "end":
 		_convo_close()
 	elif convo["kind"] == "interview":
@@ -842,7 +846,15 @@ func _convo_close() -> void:
 	var who: String = convo["who"]
 	if not convo.get("done", false) and not convo.get("shut", false):
 		_convo_line("you", "convo.end." + convo["kind"])
-	history.append({"who": "", "key": "convo.log." + convo["kind"], "args": [], "names": {"who": "@name.%s.ins" % who}, "day": day})
+	# A talk stays in the conversation with them, line by line.
+	if convo["kind"] == "talk":
+		for e in convo["log"]:
+			var line := {"who": e["who"], "key": e.get("key", "convo.line"), "args": [], "names": e.get("names", {}), "thread": who, "day": day}
+			if e.has("ru"):
+				line["ru"] = e["ru"]
+				line["en"] = e["en"]
+			history.append(line)
+	history.append({"who": "", "key": "convo.log." + convo["kind"], "args": [], "names": {"who": "@name.%s.ins" % who}, "thread": who, "day": day})
 	convo = {}
 
 
@@ -1670,6 +1682,9 @@ func resolve_event(choice: String) -> void:
 		return
 	# Remembered like story answers (<event>:<choice>), so a later scene can quote what was said back then.
 	flags["%s:%s" % [events[0]["id"], choice]] = true
+	# What you say at Irina's is a reply like any other.
+	if endless() and _visit_event(events[0]):
+		spend_attention(choice_cost(events[0], choice))
 	scenes.resolve(self, events.pop_front(), choice)
 	_weight_check()
 	if events.is_empty():
@@ -2501,12 +2516,17 @@ func start_talk(p: String) -> void:
 
 # Going to Irina: one visit a day, one topic per visit.
 func visit_boss() -> void:
-	if phase != "plan" or not pending.is_empty() or visited_today or not can_afford(cost("boss")):
+	if not can_visit():
 		return
 	visited_today = true
 	spend_attention(cost("boss"))
 	history.append({"who": "you", "key": "visit.open", "args": [], "names": {}, "day": day})
 	_open_conversation(scenes.boss_visit(self))
+
+
+# Going in is free in the endless run, but there's no point without a word to say.
+func can_visit() -> bool:
+	return phase == "plan" and pending.is_empty() and not visited_today and can_afford(maxi(cost("boss"), cost("reply")))
 
 
 func _open_conversation(ev: Dictionary) -> void:
@@ -2543,8 +2563,14 @@ func choice_costs(ev: Dictionary, choice: String) -> bool:
 const EVENING_COSTS := {"stayed_late/send_home": 1, "stayed_late/stay_with": 2, "conflict/mediate": 2, "conflict/split": 1, "complaint/apologize": 1}
 
 
+func _visit_event(ev: Dictionary) -> bool:
+	return ev["id"].begins_with("boss_visit") or ev["id"] == "boss_show"
+
+
 func choice_cost(ev: Dictionary, choice: String) -> int:
 	var key: String = ev["id"] + "/" + choice
+	if endless() and _visit_event(ev):
+		return 0 if choice == "leave" else cost("reply")
 	if EVENING_COSTS.has(key):
 		return EVENING_COSTS[key]
 	return 1 if _old_choice_costs(ev, choice) else 0
@@ -2572,8 +2598,9 @@ func spend_attention(n: int = 1) -> void:
 
 # What each action takes in the endless run. The story keeps its old prices: one point for managing,
 # and handing out work is free.
-const COSTS := {"buy": 1, "assign": 1, "pair": 1, "decline": 1, "react": 1, "sit": 2, "talk": 2, "intervene": 1, "boss": 2, "people": 2, "interview": 2, "fire": 2}
-const FREE_IN_STORY := ["assign", "pair", "decline"]
+# Opening a conversation (a one-on-one, Irina's door) is free in the endless run; each thing you say in it is a reply.
+const COSTS := {"buy": 1, "assign": 1, "pair": 1, "decline": 1, "react": 1, "sit": 2, "talk": 0, "intervene": 1, "boss": 0, "reply": 1, "people": 2, "interview": 2, "fire": 2}
+const FREE_IN_STORY := ["assign", "pair", "decline", "reply"]
 
 
 func cost(kind: String) -> int:

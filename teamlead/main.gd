@@ -353,8 +353,11 @@ func _unassign() -> void:
 
 func _talk_to(p: String) -> void:
 	window = "" # what it opens is a conversation, which the window would cover
-	_clear_selection()
+	selected = -1
 	rules.start_talk(p)
+	chat_thread = p
+	if mobile:
+		tab = "chat"
 	_render()
 
 
@@ -690,6 +693,8 @@ func _render() -> void:
 		_restore_scrolls()
 		return
 	_sort_threads()
+	if not rules.convo.is_empty() and rules.convo["kind"] == "talk":
+		chat_thread = rules.convo["who"]
 	# A new question opens its conversation once; closing it leaves it closed.
 	var asked := _asked_thread()
 	var asked_key := ""
@@ -702,7 +707,8 @@ func _render() -> void:
 		_build_phone()
 	else:
 		_build_office()
-	if not rules.convo.is_empty():
+	# A talk plays out in the messenger; only an interview keeps its own window.
+	if not rules.convo.is_empty() and rules.convo["kind"] != "talk":
 		_build_convo()
 	else:
 		match rules.phase:
@@ -2057,7 +2063,7 @@ func _nav_button(name: String, text_value: String, badge: String, badge_color: C
 
 # Irina's door: her face and how she sees you; point at it and it says you can go in, and a click does.
 func _boss_button() -> Control:
-	var can_go: bool = rules.phase == "plan" and rules.pending.is_empty() and not rules.visited_today and rules.can_afford(rules.cost("boss"))
+	var can_go: bool = rules.can_visit()
 	var word := rules.boss_word()
 	var resting := Loc.t("boss_label", ["@weight." + word])
 	var hover := Loc.t("visit_short") + _cost_mark(rules.cost("boss")) if can_go else Loc.t("nav.boss_seen" if rules.visited_today else "nav.boss_later")
@@ -2356,7 +2362,7 @@ func _boss_card() -> Control:
 	names.add_child(_label(Loc.person("boss"), 15, COL_TEXT, true, true))
 	names.add_child(_label(Loc.t("boss_role"), 12, COL_MUTED))
 	var visit := _button(Loc.t("visit_short") + _cost_mark(rules.cost("boss")), _visit_boss, 0, "subtle")
-	visit.disabled = rules.phase != "plan" or rules.visited_today or not rules.pending.is_empty() or not rules.can_afford(rules.cost("boss"))
+	visit.disabled = not rules.can_visit()
 	visit.custom_minimum_size.y = 30
 	v.add_child(visit)
 	# After the first time (a story scene in chapter three), you can go and ask for people yourself.
@@ -3330,6 +3336,9 @@ func _thread_view(th: String) -> Control:
 
 # Under a conversation: the question waiting there, an offer, or what you can start yourself.
 func _thread_prompt(list: VBoxContainer, th: String) -> void:
+	if not rules.convo.is_empty() and rules.convo["kind"] == "talk" and rules.convo["who"] == th:
+		_talk_in_thread(list)
+		return
 	if _asked_thread() == th:
 		if rules.phase == "event":
 			_event_prompt(list, rules.events[0])
@@ -3347,8 +3356,30 @@ func _thread_prompt(list: VBoxContainer, th: String) -> void:
 	elif th == "boss" and rules.phase == "plan":
 		list.add_child(_spacer(8))
 		var go := _button(Loc.t("visit_button") + _cost_mark(rules.cost("boss")), _visit_boss, 0, "")
-		go.disabled = go.disabled or rules.visited_today or not rules.can_afford(rules.cost("boss")) or not rules.pending.is_empty()
+		go.disabled = go.disabled or not rules.can_visit()
 		list.add_child(go)
+
+
+# A one-on-one going on right now: what's been said, then what you can say, each line a reply that costs.
+func _talk_in_thread(list: VBoxContainer) -> void:
+	for e in rules.convo["log"]:
+		var line: Dictionary = e.duplicate()
+		line["key"] = e.get("key", "convo.line")
+		line["args"] = []
+		_append_entry(list, line)
+	var v := _prompt_box(list, Loc.t("convo.left", [rules.convo["left"]]) if rules.convo["left"] > 0 else "")
+	var group := ""
+	for c in rules.convo_choices():
+		var kind: String = "act" if c.begins_with("a:") else ("ask" if c.begins_with("q:") else "")
+		if kind != group and kind != "":
+			v.add_child(_label(Loc.t("convo.group." + kind), 12, COL_MUTED))
+		group = kind
+		var text_value := rules.convo_label(c)
+		if c != "end":
+			text_value += _cost_mark(rules.cost("reply"))
+		var b := _answer_button(text_value, _convo_choose.bind(c))
+		b.disabled = c != "end" and not rules.can_afford(rules.cost("reply"))
+		v.add_child(b)
 
 
 # The phone's chat tab: the contact list, or the conversation picked from it.
@@ -3405,7 +3436,7 @@ func _append_entry(list: VBoxContainer, e: Dictionary) -> void:
 		list.add_child(sep)
 		chat_last = ""
 		return
-	var body := Loc.render(key, e.get("args", []), e.get("names", {}))
+	var body := Loc.fill(e["ru"], e["en"], e.get("names", {})) if e.has("ru") else Loc.render(key, e.get("args", []), e.get("names", {}))
 	if e["who"] == "":
 		if chat_last != "":
 			list.add_child(_spacer(4))
