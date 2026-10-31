@@ -342,8 +342,11 @@ func _start_work() -> void:
 	_render()
 
 
-# The board's main button: "get to work" on an endless morning, "end the day" otherwise.
+# The board's main button: "get to work" on an endless morning, "end the day" otherwise, and on to the
+# next day in the evening.
 func _day_button(width: int) -> Button:
+	if rules.phase == "evening":
+		return _button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, width, "primary")
 	var morning := rules.endless() and rules.step == "triage"
 	var b := _button(Loc.t("start_work" if morning else "end_day"), _start_work if morning else _end_day, width, "primary")
 	b.disabled = rules.phase != "plan" or not rules.pending.is_empty()
@@ -1868,10 +1871,9 @@ func _board_area() -> Control:
 	if not rules.queue_of("me").is_empty():
 		hint = Loc.t("you.busy", [rules.own_task_cost()])
 	titles.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
-	if rules.phase == "evening":
-		head.add_child(_button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 200, "primary"))
-	else:
-		head.add_child(_day_button(200))
+	var day_button := _day_button(200)
+	day_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(day_button)
 	var columns := HBoxContainer.new()
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	columns.add_theme_constant_override("separation", 8)
@@ -2292,10 +2294,7 @@ func _phone_board() -> Control:
 		list.add_child(_task_card(t, lane))
 	if lane == "inbox":
 		_backlog_section(list)
-	if rules.phase == "evening":
-		v.add_child(_button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, 0, "primary"))
-	else:
-		v.add_child(_day_button(0))
+	v.add_child(_day_button(0))
 	return _padded(v, 10, 10)
 
 
