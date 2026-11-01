@@ -1854,7 +1854,11 @@ func _build_window() -> void:
 			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			grid.add_child(card)
 	elif window == "company":
-		_modal(Loc.t("nav.clients_title"), "", minf(560.0, view.x - 16.0), false, true).add_child(_chainer_card())
+		var body := _modal(Loc.t("nav.clients_title"), _attention_text() if rules.endless() else "", minf(560.0, view.x - 16.0), false, true)
+		if rules.endless():
+			_clients(body)
+		else:
+			body.add_child(_chainer_card())
 	elif window == "more":
 		var body := _modal(Loc.t("tab.more"), "", minf(460.0, view.x - 16.0), false, true)
 		var waiting := rules.candidates.size()
@@ -2497,6 +2501,46 @@ func _chainer_card() -> Control:
 	for id in rules.improved:
 		v.add_child(_label("✓ " + Loc.t("imp.%s.effect" % id), 13, COL_GOOD, true))
 	return card
+
+
+# The endless run's clients: who pays the company what, whether the team has room for more, and the
+# banks you could go and win over.
+func _clients(v: VBoxContainer) -> void:
+	v.add_child(_label(Loc.t("clients.load", [_days(rules.daily_load()), _days(rules.team_capacity())]), 14, COL_TEXT, true))
+	v.add_child(_section(Loc.t("chainer.banks")))
+	for b in rules.banks:
+		var word := rules.bank_word(b)
+		var row := _flow(6, 0)
+		row.add_child(_label(Loc.t("bank." + b), 15, COL_TEXT, false, true))
+		row.add_child(_label("· " + Loc.t("bank_mood." + word), 14, BANK_COLORS[word]))
+		v.add_child(row)
+		v.add_child(_label(Loc.t("clients.fee", [_rub(rules.bank_fee(b))]), 13, COL_MUTED, true))
+	v.add_child(_label(Loc.t("clients.revenue", [_rub(rules.revenue())]), 13, COL_TEXT, true))
+	var open := rules.prospects()
+	if open.is_empty():
+		return
+	v.add_child(_spacer(4))
+	v.add_child(_section(Loc.t("clients.prospects")))
+	if rules.pitched_this_week():
+		v.add_child(_label(Loc.t("clients.pitched"), 13, COL_MUTED, true))
+	for b in open:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		v.add_child(row)
+		var info := _vbox(0)
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(info)
+		info.add_child(_label(Loc.t("bank." + b), 15, COL_TEXT, false, true))
+		info.add_child(_label(Loc.t("clients.prospect", [_days(rules.BANK_WORK), _rub(rules.BANK_FEE)]), 13, COL_MUTED, true))
+		var go := _button(Loc.t("clients.pitch") + _cost_mark(rules.cost("pitch")), _pitch.bind(b), 0, "subtle")
+		go.disabled = not rules.can_pitch(b)
+		go.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(go)
+
+
+func _pitch(b: String) -> void:
+	rules.pitch_bank(b)
+	_render()
 
 
 func _ask_people() -> void:

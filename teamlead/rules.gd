@@ -514,10 +514,12 @@ func _arrivals() -> Array:
 	# More banks than chapter one's three bring more work.
 	var ramp := ramp_now()
 	var target: float = C.DAILY_LOAD * ramp["load"] * (RUSH_LOAD if flags.has("rush") else 1.0) + C.BANK_LOAD * maxi(0, banks.size() - 3)
+	if endless():
+		target = C.DAILY_LOAD * ramp["load"] + BANK_WORK * extra_banks()
 	if flags.get("relief", false):
 		flags["relief"] = false
 		target -= 1.5
-	var cards: int = ramp["cards"] + (RUSH_CARDS if flags.has("rush") else 0)
+	var cards: int = ramp["cards"] + (RUSH_CARDS if flags.has("rush") else 0) + (extra_banks() if endless() else 0)
 	while load < target and out.size() < cards:
 		if deck.size() < 4:
 			_refill_deck()
@@ -1559,9 +1561,79 @@ func ask_people() -> void:
 		_say("boss", "people.later")
 
 
+# ---------- clients (endless run) ----------
+
+# Every bank past the first brings this much more work a day, and one more card a day at most.
+const BANK_WORK := 1.2
+# What a bank pays the company a week (thousands), by how it feels about us. It isn't your money: it's
+# what you show Irina when the budget is split.
+const BANK_FEE := 150
+const FEE_SHARE := {"happy": 1.0, "fine": 1.0, "unhappy": 0.5, "leaving": 0.0}
+
+
+func extra_banks() -> int:
+	return maxi(0, banks.size() - C.START_BANKS.size())
+
+
+func bank_fee(b: String) -> int:
+	return int(BANK_FEE * FEE_SHARE[bank_word(b)])
+
+
+func revenue() -> int:
+	var sum := 0
+	for b in banks:
+		sum += bank_fee(b)
+	return sum
+
+
+# Banks you could go and win over: not with us yet, and not ones that left us.
+func prospects() -> Array:
+	return C.BANKS.keys().filter(func(b): return not banks.has(b) and not flags.has("bank_lost_" + b))
+
+
+func pitched_this_week() -> bool:
+	return flags.get("pitched_week", -1) == int((day - 1) / 5.0)
+
+
+func can_pitch(b: String) -> bool:
+	return endless() and phase == "plan" and pending.is_empty() and prospects().has(b) and not pitched_this_week() and can_afford(cost("pitch"))
+
+
+# You go and talk a bank into our stands. They come on right away, with their first delivery.
+func pitch_bank(b: String) -> void:
+	if not can_pitch(b):
+		return
+	spend_attention(cost("pitch"))
+	flags["pitched_week"] = int((day - 1) / 5.0)
+	history.append({"who": "you", "key": "bank.pitch", "args": [], "names": {"bank": "@bankphrase." + b}, "to": "boss", "day": day})
+	_join_bank(b)
+	if C.TASKS.has("bank_delivery@" + b):
+		add_task("bank_delivery@" + b)
+	boss += 0.5
+
+
+# Roughly how much work comes in a day, and how much the team gets through: what tells you whether
+# to go after another client.
+func daily_load() -> float:
+	return C.DAILY_LOAD * ramp_now()["load"] + BANK_WORK * extra_banks()
+
+
+func team_capacity() -> float:
+	var sum := 0.0
+	for p in team:
+		if available(p):
+			var skills: Dictionary = people[p]["skills"]
+			var avg := 0.0
+			for cat in skills:
+				avg += skills[cat]
+			sum += SPEED_BASE + SPEED_PER_SKILL * avg / maxf(1.0, skills.size())
+	return sum
+
+
 # On a Monday sales may close a deal with the next bank of the chapter; good deliveries make it likelier.
 func _maybe_sell() -> void:
-	if day % 5 != 1 or day == first_day():
+	# In the endless run you go and get clients yourself (pitch_bank).
+	if endless() or day % 5 != 1 or day == first_day():
 		return
 	var pool: Array = []
 	for ch in range(1, (C.CHAPTERS.size() if endless() else chapter) + 1):
@@ -2716,7 +2788,7 @@ func spend_attention(n: int = 1) -> void:
 # What each action takes in the endless run. The story keeps its old prices: one point for managing,
 # and handing out work is free.
 # Opening a conversation (a one-on-one, Irina's door) is free in the endless run; each thing you say in it is a reply.
-const COSTS := {"buy": 1, "assign": 1, "pair": 1, "decline": 1, "react": 1, "sit": 2, "talk": 0, "intervene": 1, "boss": 0, "reply": 1, "people": 2, "interview": 2, "fire": 2}
+const COSTS := {"pitch": 2, "buy": 1, "assign": 1, "pair": 1, "decline": 1, "react": 1, "sit": 2, "talk": 0, "intervene": 1, "boss": 0, "reply": 1, "people": 2, "interview": 2, "fire": 2}
 const FREE_IN_STORY := ["assign", "pair", "decline", "reply"]
 
 
@@ -4634,6 +4706,7 @@ func _payday() -> void:
 	if done >= 5 and not tasks.any(func(t): return t["late"] and t.get("late_day", 0) > day - 5):
 		flags["clean_week"] = true
 	var pay := payroll()
+	flags["revenue_p%d" % period] = flags.get("revenue_p%d" % period, 0) + revenue()
 	money -= pay
 	_narrate("money.payday", [cash_arg(pay), cash_arg(money)])
 	if money < 0:
