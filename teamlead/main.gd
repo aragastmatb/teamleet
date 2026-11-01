@@ -3591,24 +3591,20 @@ func _contact_of(p: String) -> String:
 const QUIET_PREFIXES := ["assign.say", "object.", "react.", "pace.", "stuck.found_", "standup.log", "result.any.good",
 	"result.any.ok", "result.mine", "init.yes"]
 const QUIET_KEYS := ["stayed_late"]
-# Endless: the chat holds only what asks for an answer or is a conversation. News that changes
-# nothing you'd do right now lives where it shows: penalties on the board and at Friday's review,
-# skills and moods on the person, money in the top bar.
-const ENDLESS_QUIET := ["penalty.", "log.", "letter.unanswered", "know.skill", "grew", "role.emerged",
-	"hire.gone", "money.payday", "deck.", "weight.", "incident.counted", "late.escalated", "boss.vouched_late",
-	"absent.", "sick.", "tired.", "style.", "unhappy.", "idle.", "quit.", "bank.left",
-	# Echoes of what you did on the board: already paid for and visible there.
-	"standup.say.", "standup.reply.", "sit.", "prioritize.", "helper.join", "stay.ask", "stay.yes", "stay.glad", "stay.grudging",
-	"up.", "decline."]
+# Endless: the chat holds only what asks for an answer or is a conversation, nothing else. Whatever
+# you did on the board, and news that changes nothing you'd do right now, shows on the board itself.
+const ENDLESS_SHOWN := ["event.", "review.", "budget.", "money.budget", "money.split", "boss.clean_week", "hire.cv",
+	"convo.", "talk.open", "visit.open", "fire.open", "people.", "intervene.open", "decline.open"]
 
 
 func _quiet(key: String) -> bool:
 	if QUIET_KEYS.has(key):
 		return true
 	if rules.endless():
-		for prefix in ENDLESS_QUIET:
+		for prefix in ENDLESS_SHOWN:
 			if key.begins_with(prefix):
-				return true
+				return false
+		return true
 	for prefix in QUIET_PREFIXES:
 		if key.begins_with(prefix):
 			return true
