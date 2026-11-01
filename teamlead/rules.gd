@@ -1713,13 +1713,15 @@ func answer_letter(i: int, choice: String) -> void:
 # What silence means for each question: the answer it amounts to.
 const SILENCE := {"chaos_meeting": "later", "boss_deadline": "yes", "boss_details": "dodge", "boris_drunk": "refuse",
 	"friday_deploy": "allow", "marina_warns": "dismiss", "stayed_late": "ignore", "conflict": "ignore", "complaint": "shrug",
-	"boss_dump": "take", "taras_brag": "noted"}
+	"boss_dump": "take", "taras_brag": "noted", "offer": "not_now"}
 const SILENT_WORDS := ["ignore", "stay_out", "shrug", "later", "dodge", "noted", "dismiss", "not_yet", "ok"]
 
 
 func _silent_choice(ev: Dictionary) -> String:
 	if SILENCE.has(ev["id"]) and ev["choices"].has(SILENCE[ev["id"]]):
 		return SILENCE[ev["id"]]
+	if ev.has("comp") and C.COMPLICATIONS[ev["comp"]]["who"] == "owner":
+		return _own_call(ev)
 	for c in ev["choices"]:
 		if c in SILENT_WORDS:
 			return c
@@ -1728,6 +1730,26 @@ func _silent_choice(ev: Dictionary) -> String:
 			if C.COMPLICATIONS[ev["comp"]]["choices"].get(c, {}).get("hours", 0) == 0:
 				return c
 	return ""
+
+
+# Left to themselves with a snag in their task, people do what they're able to: someone strong takes
+# it on properly, someone weaker cuts the corner or tries and stalls. Never the option that needs you.
+const STRONG_ENOUGH := 3
+
+
+func _own_call(ev: Dictionary) -> String:
+	var t := task(ev.get("uid", -1))
+	var opts: Dictionary = C.COMPLICATIONS[ev["comp"]]["choices"]
+	var mine: Array = ev["choices"].filter(func(c): return opts.get(c, {}).get("hours", 0) == 0 and opts.get(c, {}).get("special", "") == "")
+	if mine.is_empty():
+		return ""
+	var skill: int = people[t["owner"]]["skills"][t["cat"]] if not t.is_empty() and people.has(t["owner"]) else 2
+	var checked: Array = mine.filter(func(c): return opts[c].has("check"))
+	var corner: Array = mine.filter(func(c): return opts[c].get("quality", 0.0) < 0.0)
+	if skill >= STRONG_ENOUGH:
+		var clean: Array = mine.filter(func(c): return opts[c].get("quality", 0.0) >= 0.0)
+		return checked[0] if not checked.is_empty() else (clean[0] if not clean.is_empty() else mine[0])
+	return corner[0] if not corner.is_empty() else (checked[0] if not checked.is_empty() else mine[0])
 
 
 # The day (or the evening) is over: what's still unanswered settles as silence.
@@ -1743,7 +1765,8 @@ func _expire_letters(sent: Array) -> void:
 	for ev in due:
 		_narrate("letter.unanswered", [], {"who": "@name.%s.dat" % ev["who"]} if ev["who"] != "" else {})
 		history[-1]["thread"] = ev["who"]
-		if team.has(ev["who"]) and available(ev["who"]):
+		# An idea nobody answered just doesn't happen; a question left hanging stings a little.
+		if team.has(ev["who"]) and available(ev["who"]) and ev["id"] != "offer":
 			people[ev["who"]]["mood"] -= 0.3
 		var c := _silent_choice(ev)
 		if c != "":

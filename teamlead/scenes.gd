@@ -51,14 +51,14 @@ const COMP_STYLE := {
 const ORDER := [
 	"probation", "chapter_intro", "layoff_order", "weekend_fire", "chaos_meeting", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
 	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "dima_question", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow", "boris_drunk", "friday_deploy",
-	"complaint", "stayed_late", "conflict",
+	"complaint", "stayed_late", "conflict", "offer",
 ]
 
 
 # When in the endless run's day each scene comes up; anything not listed is a morning one.
 # The story keeps them all in the morning.
 const WHEN := {
-	"chaos_meeting": "midday", "boss_deadline": "midday", "boss_details": "midday", "complication": "midday", "boris_drunk": "midday",
+	"chaos_meeting": "midday", "boss_deadline": "midday", "boss_details": "midday", "complication": "midday", "boris_drunk": "midday", "offer": "midday",
 	"friday_deploy": "evening", "marina_warns": "evening", "stayed_late": "evening", "conflict": "evening", "complaint": "evening",
 }
 
@@ -335,6 +335,30 @@ func _check_complication(r) -> Dictionary:
 		return {"id": "comp_" + cid, "comp": cid, "who": who, "uid": t["uid"], "names": task_names(r, t),
 			"lines": [{"who": who, "key": "event.comp_%s.ask" % cid}], "choices": choices}
 	return {}
+
+
+# Someone sees a way to do their task better and asks if they may. Say yes and it's smaller or better;
+# say nothing and it just goes on as it was. Only in the endless run.
+const OFFER_CHANCE := 0.3
+const OFFER_SHRINK := 0.7
+const OFFER_QUALITY := 0.6
+
+
+func _check_offer(r) -> Dictionary:
+	if not r.endless() or r.rng.randf() > OFFER_CHANCE:
+		return {}
+	var picks: Array = []
+	for p in r.team:
+		var q: Array = r.queue_of(p)
+		if here(r, p) and not q.is_empty() and not q[0].get("offered", false) and q[0]["progress"] < q[0]["size"] * 0.6 and not q[0]["id"].begins_with("init_"):
+			picks.append(q[0])
+	if picks.is_empty():
+		return {}
+	var t: Dictionary = picks[r.rng.randi() % picks.size()]
+	t["offered"] = true
+	var kind := "shortcut" if r.rng.randf() < 0.5 else "polish"
+	return {"id": "offer", "kind": kind, "who": t["owner"], "uid": t["uid"], "names": task_names(r, t),
+		"lines": [{"who": t["owner"], "key": "event.offer_%s.ask" % kind}], "choices": ["go", "not_now"]}
 
 
 # Someone unhappy went to HR; Marina passes it on.
@@ -1242,6 +1266,23 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.flags["complaints_" + who] = r.flags.get("complaints_" + who, 0) + 1
 			if r.flags["complaints_" + who] >= 2:
 				r.boss -= 0.5
+			# Nobody answered them at all: they went over your head, and Irina wants it explained.
+			if ev.get("silent", false):
+				r.boss -= 0.5
+				r.weight_cause = t.get("id", "")
+				r.add_task_raw("escalation_boss", "support", r.CALL_SIZE, r.day + 1, true, "boss")
+				r.say("boss", "event.complaint.escalated", [], names)
+
+		"offer/go":
+			if not t.is_empty() and t["status"] == "active":
+				if ev["kind"] == "shortcut":
+					t["size"] = maxf(t["progress"] + 0.2, t["size"] * OFFER_SHRINK)
+				else:
+					t["q_bonus"] += OFFER_QUALITY
+					r.learn(t["owner"], t["cat"], 1.0)
+				r.people[t["owner"]]["mood"] += 0.3
+		"offer/not_now":
+			pass
 
 		"boris_drunk/take":
 			_add_tagged(r, "boris_promise")

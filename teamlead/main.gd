@@ -2764,6 +2764,8 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 		tags.add_child(_pill("★", COL_STAR, Color("fff7e6")))
 	if t["blocked"] > 0:
 		tags.add_child(_pill(Loc.t("chip_blocked"), COL_DANGER, Color("ffebe6")))
+	if not _letter_for(t).is_empty():
+		tags.add_child(_pill(Loc.t("chip_letter"), COL_WARN, Color("fff0b3")))
 	if t["involved"] and t["owner"] != "me":
 		tags.add_child(_pill(Loc.t("chip_involved").trim_prefix("· "), COL_PRIMARY, COL_SELECTED))
 	v.add_child(_label(Loc.t("taskname." + t["id"]), 14, COL_TEXT, true))
@@ -2865,6 +2867,14 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 		facts.add_child(_pill(Loc.t("chip_key"), COL_WARN, Color("fff7e6")))
 	elif t["public"]:
 		facts.add_child(_pill(Loc.t("public"), COL_WARN, Color("fff7e6")))
+	var waiting := _letter_for(t)
+	if not waiting.is_empty():
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		v.add_child(row)
+		var note := _label(Loc.render("letter.waits", [], {"who": "@name.%s.nom" % waiting["who"]}), 14, COL_WARN, true)
+		row.add_child(note)
+		row.add_child(_button(Loc.t("letter.go"), _go_to_letter.bind(_contact_of(waiting["who"])), 0, "subtle"))
 	var bare: String = t["id"].trim_prefix("init_")
 	if C.IMPROVEMENTS.has(bare):
 		v.add_child(_label(Loc.t("imp.%s.about" % bare), 14, COL_MUTED, true))
@@ -3415,6 +3425,25 @@ func _thread_offer(th: String) -> String:
 
 func _open_thread(th: String) -> void:
 	chat_thread = "" if chat_thread == th and not mobile else th
+	_render()
+
+
+# A message about this card that's still waiting for an answer, if any.
+func _letter_for(t: Dictionary) -> Dictionary:
+	for ev in rules.letters:
+		if ev.get("uid", -1) == t["uid"]:
+			return ev
+	return {}
+
+
+func _go_to_letter(th: String) -> void:
+	if not rules.pending.is_empty():
+		return
+	window = ""
+	selected = -1
+	chat_thread = th
+	if mobile:
+		tab = "chat"
 	_render()
 
 
