@@ -3584,7 +3584,10 @@ const QUIET_KEYS := ["stayed_late"]
 # skills and moods on the person, money in the top bar.
 const ENDLESS_QUIET := ["penalty.", "log.", "letter.unanswered", "know.skill", "grew", "role.emerged",
 	"hire.gone", "money.payday", "deck.", "weight.", "incident.counted", "late.escalated", "boss.vouched_late",
-	"absent.", "sick.", "tired.", "style.", "unhappy.", "idle.", "quit.", "bank.left"]
+	"absent.", "sick.", "tired.", "style.", "unhappy.", "idle.", "quit.", "bank.left",
+	# Echoes of what you did on the board: already paid for and visible there.
+	"standup.say.", "standup.reply.", "sit.", "prioritize.", "helper.join", "stay.ask", "stay.yes", "stay.glad", "stay.grudging",
+	"up.", "decline."]
 
 
 func _quiet(key: String) -> bool:
