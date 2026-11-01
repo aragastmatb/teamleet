@@ -3201,6 +3201,11 @@ func _level_stars(level: int) -> String:
 	return "★".repeat(level) + "☆".repeat(4 - level)
 
 
+# Good at it reads green, weak reads as a warning, the middle stays plain.
+func _level_color(level: int) -> Color:
+	return COL_WARN if level <= 1 else (COL_TEXT if level == 2 else COL_GOOD)
+
+
 # One person as a choice: their level at this kind of work, what's on them, how they are, and how long.
 func _pick_tile(t: Dictionary, p: String, best: bool) -> Control:
 	var me: bool = p == "me"
@@ -3242,10 +3247,9 @@ func _pick_tile(t: Dictionary, p: String, best: bool) -> Control:
 		v.add_child(_label(Loc.t("pick.best"), 12, COL_PRIMARY, true, true))
 	elif owner:
 		v.add_child(_label(Loc.t("pick.owner"), 12, COL_PRIMARY, true, true))
-	var colors: Array = CAT_COLORS[t["cat"]]
 	var known: bool = me or rules.people[p]["known"].has("skill." + t["cat"])
 	var level: int = rules.my_skill(t["cat"]) if me else rules.people[p]["skills"][t["cat"]]
-	var skill := _label(_level_stars(level) + "  " + Loc.t("level.%d" % level) if known else "?  " + Loc.t("pick.unknown"), 14, colors[0] if known else COL_FAINT, true, true)
+	var skill := _label(_level_stars(level) + "  " + Loc.t("level.%d" % level) if known else "?  " + Loc.t("pick.unknown"), 14, _level_color(level) if known else COL_FAINT, true, true)
 	v.add_child(skill)
 	if not me:
 		var st: Dictionary = rules.people[p]
