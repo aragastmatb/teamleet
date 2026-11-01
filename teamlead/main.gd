@@ -1315,6 +1315,12 @@ func _money_text() -> String:
 	return Loc.t("money.bar", [_rub(rules.money), Rules.cash(rules.payroll())])
 
 
+# When the month closes: Irina splits the budget, and the race with Taras is counted.
+func _budget_text() -> String:
+	var left: int = rules.last_day() - rules.day + 1
+	return Loc.t("money.budget_tomorrow") if left <= 1 else Loc.t("money.budget_in", [left])
+
+
 func _money_color() -> Color:
 	return COL_ON_TOP_DANGER if rules.weeks_left() < 2 else COL_ON_TOP
 
@@ -1497,6 +1503,7 @@ func _top_bar() -> Control:
 		var race := _race_label(15)
 		juice_nodes["race"] = race
 		top.add_child(race)
+		top.add_child(_label(_budget_text(), 13, COL_ON_TOP_MUTED))
 	else:
 		var k := rules.key_status()
 		top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
@@ -3134,6 +3141,7 @@ func _phone_top() -> Control:
 		var race := _race_label(14)
 		juice_nodes["race"] = race
 		chips.add_child(_chip(race))
+		chips.add_child(_chip(_label(_budget_text(), 13, COL_ON_TOP, false, true)))
 	else:
 		var k := rules.key_status()
 		chips.add_child(_chip(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 14, COL_ON_TOP, false, true)))

@@ -3197,6 +3197,11 @@ func _automation_credit(id: String) -> void:
 	var key := "auto_points_%d" % period
 	flags[key] = flags.get(key, 0.0) + C.TASKS[id]["size"] * QUALITY_POINTS["ok"]
 	flags["auto_today"] = flags.get("auto_today", 0) + 1
+	# Taras counts these as work that came in.
+	if flags.get("auto_day", -1) != day:
+		flags["auto_day"] = day
+		flags["auto_size"] = 0.0
+	flags["auto_size"] += C.TASKS[id]["size"]
 
 
 # ---------- the run's record ----------
@@ -4454,8 +4459,11 @@ func salary(p: String) -> int:
 # Points for work delivered this period: its size, by how well it was done; a slipped deadline costs.
 const QUALITY_POINTS := {"good": 1.0, "ok": 0.7, "bad": 0.3}
 const LATE_PENALTY := 0.5
-const TARAS_BASE := 80.0
-const TARAS_GROWTH := 0.1 # a period
+# Taras's department gets about as much work as yours; he scores a share of what came to you each day.
+# Close all of it decently and on time ("ok" quality is 0.7) and you're ahead; let it slip and he is.
+const TARAS_RATE := 0.7
+const TARAS_GROWTH := 0.02 # a period, up to TARAS_RATE_MAX
+const TARAS_RATE_MAX := 0.9
 const BUDGET_POT := 2000 # both departments' budget together
 const SHARE_MIN := 0.3
 const SHARE_MAX := 0.7
@@ -4484,11 +4492,17 @@ func taras_total() -> float:
 
 func _taras_period() -> void:
 	taras_points = 0.0
-	taras_target = TARAS_BASE * pow(1.0 + TARAS_GROWTH, period - 1)
+	taras_target = minf(TARAS_RATE_MAX, TARAS_RATE + TARAS_GROWTH * (period - 1))
 
 
 func _taras_day() -> void:
-	taras_points += taras_target / PERIOD_DAYS * rng.randf_range(0.6, 1.4)
+	var came := 0.0
+	for t in tasks:
+		if t.get("day", -1) == day and t["owner"] != "taras" and not t.get("backlog", false):
+			came += t["size"]
+	if flags.get("auto_day", -1) == day:
+		came += flags.get("auto_size", 0.0)
+	taras_points += came * taras_target * rng.randf_range(0.8, 1.2)
 
 
 # The month is over: the pot is split by how the two departments did.
