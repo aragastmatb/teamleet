@@ -52,7 +52,6 @@ const COL_STICKY_DONE := Color("c6efce")
 const COL_THREAD := Color("c0392b")
 const COL_THREAD_OK := Color("2e7d32")
 const COL_GAIN := Color("2f9a4a") # today's part of a progress bar
-const COL_EARLIER := Color("8fcf9c") # the part done before today
 const COL_STAR := Color("e0a21b")
 # On the graphite bars.
 const COL_ON_TOP := Color("f4f4f2")
@@ -165,7 +164,6 @@ var pick_profile: String = C.DEFAULT_PROFILE
 var pick_tips := true
 # "endless" for everyone; the story runs only in a dev build (the editor, tools/test.sh).
 var pick_mode := "endless"
-# The last of Marina's tips the phone banner was closed on.
 # The open conversation's list and scroll, and who spoke last in it (to group their lines).
 var chat_list: VBoxContainer
 var chat_scroll: ScrollContainer
@@ -483,12 +481,6 @@ func _pick_option(kind: String, value: String) -> void:
 	else:
 		pick_profile = value
 	_render()
-
-
-func _process(delta: float) -> void:
-	if rules.phase == "title":
-		_pan_title(delta)
-		return
 
 
 # Back to where the last session stopped, chat and all, without replaying its sounds.
@@ -918,7 +910,13 @@ func _flash(card: Control, color: Color) -> void:
 		glow.set_border_width_all(3)
 		card.add_theme_stylebox_override("panel", glow)
 		t.chain().tween_interval(0.6)
-		t.chain().tween_callback(func(): if is_instance_valid(card): card.add_theme_stylebox_override("panel", calm))
+		t.chain().tween_callback(_unflash.bind(card, calm))
+
+
+# (untyped: the card may be gone by the time the tween ends)
+func _unflash(card, calm: StyleBox) -> void:
+	if is_instance_valid(card):
+		card.add_theme_stylebox_override("panel", calm)
 
 
 # Panels, buttons and rich text stop presses by default, so a finger that lands on them can't scroll
@@ -947,16 +945,7 @@ func _looking() -> bool:
 
 
 # The key art fills the screen and darkens towards the bottom, where the menu sits straight on it.
-# An upright phone sees a third of the picture, so the view looks round the room like the player would:
-# Taras in the doorway and Gena, then Alex and Dima, then Irina and Vika, and slowly back. It never
-# stops dead (a little drift while it rests on each pair), so it doesn't feel like a slideshow.
 const KEY_ART := "res://art/key_art.png"
-const PAN_STOPS := [0.17, 0.55, 0.83] # where each pair is, as a fraction of the picture's width
-const PAN_REST := 5.0 # seconds on each pair
-const PAN_MOVE := 3.5 # seconds between neighbours; the way back takes twice that
-const PAN_DRIFT := 0.025
-var pan_cut: AtlasTexture
-var pan_time := 0.0
 const COL_NIGHT := Color("0b1a33")
 
 
@@ -966,17 +955,8 @@ func _build_title() -> void:
 		_build_title_plain()
 		return
 	var view := get_viewport().get_visible_rect().size
-	var tex: Texture2D = art
-	var w := art.get_height() * view.x / view.y
-	pan_cut = null
-	if w < art.get_width() * 0.8:
-		pan_cut = AtlasTexture.new()
-		pan_cut.atlas = art
-		pan_cut.region = Rect2(0, 0, w, art.get_height())
-		_pan_title(0.0)
-		tex = pan_cut
 	var pic := TextureRect.new()
-	pic.texture = tex
+	pic.texture = art
 	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -1003,51 +983,6 @@ func _build_title() -> void:
 		sticker.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		v.add_child(sticker)
 	_menu_page(v, false)
-
-
-# Where the view is pan_time seconds in: rest, move, rest, move, rest, then the long way back. The path is
-# continuous: a rest drifts from where the view arrived to where it leaves, and at either end, where it
-# turns round, it eases out a little and back. lo..hi is how far the view can go without hitting an edge.
-func _pan_focus(t: float, lo: float, hi: float) -> float:
-	var stops: Array = []
-	for x in PAN_STOPS:
-		stops.append(clampf(x, lo + PAN_DRIFT, hi - PAN_DRIFT))
-	var n := stops.size()
-	var loop := 0.0
-	for i in n:
-		loop += PAN_REST + PAN_MOVE * (2.0 if i == n - 1 else 1.0)
-	t = fmod(t, loop)
-	var half := PAN_DRIFT * 0.5
-	for i in n:
-		var here: float = stops[i]
-		var dir_in := signf(here - stops[(i - 1 + n) % n])
-		var dir_out := signf(stops[(i + 1) % n] - here)
-		var u := t / PAN_REST
-		if t < PAN_REST:
-			if dir_in == dir_out:
-				return here + dir_out * half * (2.0 * u - 1.0)
-			return here - dir_out * half + dir_in * PAN_DRIFT * sin(PI * u) * 0.5
-		t -= PAN_REST
-		var move := PAN_MOVE * (2.0 if i == n - 1 else 1.0)
-		if t < move:
-			var next: float = stops[(i + 1) % n]
-			var dir_next := signf(stops[(i + 2) % n] - next)
-			var from := here + dir_out * half if dir_in == dir_out else here - dir_out * half
-			# Passing through, it arrives just short of the pair; turning round there, just past it.
-			var to := next - dir_out * half if dir_out == dir_next else next + dir_out * half
-			return lerpf(from, to, smoothstep(0.0, 1.0, t / move))
-		t -= move
-	return stops[0]
-
-
-func _pan_title(delta: float) -> void:
-	if pan_cut == null:
-		return
-	pan_time += delta
-	var full := float(pan_cut.atlas.get_width())
-	var w := pan_cut.region.size.x
-	var half := w / 2.0 / full
-	pan_cut.region.position.x = clampf(full * _pan_focus(pan_time, half, 1.0 - half) - w / 2.0, 0.0, full - w)
 
 
 # The menu itself, on the title screen or over the game: the list, or one of its pages.
@@ -1911,16 +1846,19 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 	right.add_child(_spacer(12))
 	if fit:
 		# Once laid out, shrink the panel around its content, keeping it centred.
-		var shrink := func():
-			if not is_instance_valid(panel):
-				return
-			var want := head_box.get_combined_minimum_size().y + pad.get_combined_minimum_size().y + 12.0
-			var ph := minf(h, want)
-			panel.offset_top = -ph / 2.0
-			panel.offset_bottom = ph / 2.0
+		var shrink := _fit_modal.bind(panel, head_box, pad, h)
 		pad.minimum_size_changed.connect(shrink)
 		shrink.call_deferred()
 	return body
+
+
+# (untyped: the window may be gone by the time its size settles)
+func _fit_modal(panel, head_box, pad, h: float) -> void:
+	if not (is_instance_valid(panel) and is_instance_valid(head_box) and is_instance_valid(pad)):
+		return
+	var ph: float = minf(h, head_box.get_combined_minimum_size().y + pad.get_combined_minimum_size().y + 12.0)
+	panel.offset_top = -ph / 2.0
+	panel.offset_bottom = ph / 2.0
 
 
 # Upgrades that came within reach since you last looked at the tree; what you could already afford
@@ -2923,6 +2861,10 @@ func _sticky(t: Dictionary, where: String) -> Control:
 		marks.append("★")
 	if t.get("again", false) and C.TASKS.get(t["id"], {}).get("kind", "") != "weekly":
 		marks.append(Loc.t("chip_again"))
+	if C.TASKS.get(t["id"], {}).get("kind", "") == "chain":
+		marks.append(Loc.t("chip_chain"))
+	if t["involved"] and t["owner"] != "me":
+		marks.append(Loc.t("chip_involved").trim_prefix("· "))
 	var mark := _label(" ".join(marks), 10, ink, false, true)
 	mark.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mark.clip_text = true
@@ -2981,7 +2923,7 @@ func _paper(fill: Color, picked: bool) -> StyleBoxFlat:
 
 
 # Stickies and photos tilt round their middle.
-func _center_pivot(c: Control) -> void:
+func _center_pivot(c) -> void:
 	if is_instance_valid(c):
 		c.pivot_offset = c.size / 2.0
 
