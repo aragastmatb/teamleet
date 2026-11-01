@@ -298,7 +298,7 @@ func _start_day() -> void:
 
 
 func _open_morning() -> void:
-	# The cards are on the table before the stand-up, so people can grab some.
+	# Today's cards land before the stand-up; people grab only what's been left over from earlier days.
 	if step == "triage" and flags.get("delivered_day", -1) != day:
 		_deliver_arrivals()
 		_team_pulls()
@@ -365,14 +365,16 @@ func _nudge_pull(p: String, by: float) -> void:
 
 # Which waiting card this person would grab, by their kind: the strong take what they're good at, the
 # keen beginner takes the biggest, the faker and the ones who'd rather not take the smallest.
-func _pull_choice(p: String) -> Dictionary:
+# Only what's been waiting since an earlier day: a card that came in this morning is still yours to hand out,
+# unless you're not here to do it (fresh_too).
+func _pull_choice(p: String, fresh_too: bool = false) -> Dictionary:
 	var best: Dictionary = {}
 	# A newcomer doesn't pick work for themselves: they don't know yet what's what.
 	if newbie(p):
 		return best
 	var best_score := -INF
 	for t in inbox():
-		if t.get("midday", -1) == day or only_me(t):
+		if t.get("midday", -1) == day or only_me(t) or (t["day"] >= day and not fresh_too):
 			continue
 		var skill: int = people[p]["skills"][t["cat"]]
 		var score: float
@@ -436,7 +438,7 @@ func _team_picks() -> void:
 			if inbox().is_empty():
 				return
 			if _will_pull(p, PULL_ALONE):
-				var t := _pull_choice(p)
+				var t := _pull_choice(p, true)
 				if not t.is_empty():
 					_take(p, t)
 					_say(p, _own_key("pulled.alone", p), [], {"task": "@taskname." + t["id"]})
