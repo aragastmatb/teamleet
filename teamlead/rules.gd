@@ -519,7 +519,7 @@ func _arrivals() -> Array:
 	if flags.get("relief", false):
 		flags["relief"] = false
 		target -= 1.5
-	var cards: int = ramp["cards"] + (RUSH_CARDS if flags.has("rush") else 0) + (extra_banks() if endless() else 0)
+	var cards: int = ramp["cards"] + (RUSH_CARDS if flags.has("rush") else 0)
 	while load < target and out.size() < cards:
 		if deck.size() < 4:
 			_refill_deck()
@@ -1563,7 +1563,8 @@ func ask_people() -> void:
 
 # ---------- clients (endless run) ----------
 
-# Every bank past the first brings this much more work a day, and one more card a day at most.
+# Every bank past the first brings this much more work a day. Not more cards: each card costs you a point
+# to hand out, so more of them would burn you out rather than keep the team busy.
 const BANK_WORK := 1.2
 # What a bank pays the company a week (thousands), by how it feels about us. It isn't your money: it's
 # what you show Irina when the budget is split.
@@ -4198,6 +4199,14 @@ func review_choices(item: Dictionary) -> Array:
 # but they're hurt and the others see you hand people over. Then it's yours to deal with them.
 const REVIEW_HIT := 0.5
 const REVIEW_OWN := 0.5
+# Blaming your people again and again makes her wonder whether you can lead them at all: each time
+# within the last BLAME_MEMORY days costs this much more.
+const BLAME_GROWS := 0.4
+const BLAME_MEMORY := 20
+
+
+func blamed_lately() -> int:
+	return flags.get("blames", []).filter(func(d): return d > day - BLAME_MEMORY).size()
 
 
 func _review_failure(t: Dictionary, choice: String, names: Dictionary) -> void:
@@ -4211,12 +4220,17 @@ func _review_failure(t: Dictionary, choice: String, names: Dictionary) -> void:
 				people[q]["mood"] += 0.2
 		_say("boss", "review.boss.own", [], names)
 	else:
+		var before: int = blamed_lately()
+		var blames: Array = flags.get("blames", [])
+		blames.append(day)
+		flags["blames"] = blames
+		boss -= BLAME_GROWS * before
 		people[p]["mood"] -= 1.0
 		people[p]["trust"] -= 1
 		for q in team:
 			if available(q) and q != p:
 				people[q]["mood"] -= 0.3
-		_say("boss", "review.boss.named", [], names)
+		_say("boss", "review.boss.named" if before == 0 else ("review.boss.named_again" if before == 1 else "review.boss.named_doubt"), [], names)
 	# Now it's between you and them, in their conversation.
 	events.append({"id": "deal", "who": p, "uid": t["uid"], "names": names, "choices": ["scold", "talk", "let_go"],
 		"lines": [{"who": p, "key": "event.deal.ask." + choice}]})
@@ -4678,11 +4692,11 @@ func _split_budget() -> void:
 # What Irina offers at the end of a month: a base, half of what your clients paid the company, the
 # race with Taras, and what she thinks of you. You can take it or argue for more; what you have to
 # show for the month is your argument.
-const BUDGET_BASE := 400
+const BUDGET_BASE := 300
 const BUDGET_MIN := 200
 const REVENUE_SHARE := 0.5
 const RACE_BUDGET := 300
-const OPINION_BUDGET := [-200, 0, 150, 300]
+const OPINION_BUDGET := [-200, 0, 100, 200]
 const ASK_MORE := 0.2
 const ASK_LOTS := 0.5
 
