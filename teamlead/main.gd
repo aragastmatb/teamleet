@@ -19,21 +19,26 @@ const PHONE_WIDE_SIZE := Vector2i(860, 430) # a phone on its side
 # Below this (in CSS pixels on the web, window pixels elsewhere) the desktop layout gets too small to read.
 const DESKTOP_MIN := Vector2(900, 560)
 
-const COL_BG := Color("f4f5f7")
+# The office: a whiteboard on a grey wall, graphite bars round it like a laptop's, stickies on the board.
+const COL_BG := Color("d9dcd8") # the wall behind the board
 const COL_SURFACE := Color("ffffff")
-const COL_COLUMN := Color("ebecf0")
-const COL_BORDER := Color("dfe1e6")
-const COL_TEXT := Color("172b4d")
-const COL_MUTED := Color("5e6c84")
-const COL_FAINT := Color("a5adba")
-const COL_PRIMARY := Color("0052cc")
-const COL_PRIMARY_HOVER := Color("0065ff")
-const COL_SELECTED := Color("deebff")
-const COL_FOCUS := Color("4c9aff")
-const COL_TOPBAR := Color("0747a6")
-const COL_DANGER := Color("de350b")
-const COL_WARN := Color("b65c02")
-const COL_GOOD := Color("00875a")
+const COL_BOARD := Color("fbfbf8") # the whiteboard
+const COL_FRAME := Color("b9bec4") # its aluminium frame
+const COL_COLUMN := Color("eceee9")
+const COL_BORDER := Color("c9cdd2")
+const COL_TEXT := Color("2b2f36")
+const COL_MUTED := Color("555b63")
+const COL_FAINT := Color("8c939b")
+const COL_PRIMARY := Color("1f4fa3") # blue marker
+const COL_PRIMARY_HOVER := Color("2a5fbd")
+const COL_ACCENT := Color("ffd54a") # the main button, the points
+const COL_ACCENT_HOVER := Color("ffdf70")
+const COL_SELECTED := Color("e3ecfa")
+const COL_FOCUS := Color("1f4fa3")
+const COL_TOPBAR := Color("2d3138")
+const COL_DANGER := Color("c0392b") # red marker
+const COL_WARN := Color("a86200")
+const COL_GOOD := Color("2f7a3a")
 # The upgrade tree's cork board.
 const COL_CORK := Color("dcc29a")
 const COL_CORK_LINE := Color("c7a878")
@@ -45,45 +50,48 @@ const COL_STICKY_BUILD := Color("c4e1ff")
 const COL_STICKY_DONE := Color("c6efce")
 const COL_THREAD := Color("c0392b")
 const COL_THREAD_OK := Color("2e7d32")
-const COL_GAIN := Color("36b37e") # today's part of a progress bar
-const COL_EARLIER := Color("abf5d1") # the part done before today
-const COL_STAR := Color("ff991f")
-# On the dark top bar.
-const COL_ON_TOP := Color("ffffff")
-const COL_ON_TOP_MUTED := Color("b3d4ff")
-const COL_ON_TOP_GOOD := Color("79f2c0")
-const COL_ON_TOP_DANGER := Color("ffbdad")
+const COL_GAIN := Color("2f9a4a") # today's part of a progress bar
+const COL_EARLIER := Color("8fcf9c") # the part done before today
+const COL_STAR := Color("e0a21b")
+# On the graphite bars.
+const COL_ON_TOP := Color("f4f4f2")
+const COL_ON_TOP_MUTED := Color("c3c8cf")
+const COL_ON_TOP_GOOD := Color("8fe3a7")
+const COL_ON_TOP_DANGER := Color("ff9e8f")
 # How someone feels in a story conversation: the ring around their portrait and the tag under it.
 const EMO_COLORS := {
-	"happy": Color("00875a"), "excited": Color("ff991f"), "annoyed": Color("de350b"), "angry": Color("bf2600"),
-	"tired": Color("5e6c84"), "sad": Color("0065ff"), "worried": Color("b65c02"), "embarrassed": Color("e774bb"),
+	"happy": Color("2f7a3a"), "excited": Color("e0a21b"), "annoyed": Color("c0392b"), "angry": Color("9b2a1e"),
+	"tired": Color("555b63"), "sad": Color("1f4fa3"), "worried": Color("a86200"), "embarrassed": Color("c45a8c"),
 	"sarcastic": Color("6554c0"),
 }
 
 const MOOD_COLORS := {"happy": COL_GOOD, "good": COL_GOOD, "neutral": COL_MUTED, "down": COL_WARN, "angry": COL_DANGER}
 const ENERGY_COLORS := {"fresh": COL_GOOD, "ok": COL_MUTED, "tired": COL_WARN, "drained": COL_DANGER}
-# Category labels: text colour and fill, like tracker labels.
+# Each kind of work has its sticky paper: the ink for its icon and marks, then the paper.
 const CAT_COLORS := {
-	"pipelines": [Color("006644"), Color("e3fcef")],
-	"infra": [Color("0747a6"), Color("deebff")],
-	"portal": [Color("403294"), Color("eae6ff")],
-	"support": [Color("a3195b"), Color("ffe3f1")],
+	"pipelines": [Color("2e7a33"), Color("c3efb6")],
+	"infra": [Color("2858a8"), Color("b9dcff")],
+	"portal": [Color("7a5d00"), Color("fff07a")],
+	"support": [Color("a8335a"), Color("ffc2d4")],
 }
-# Category icons, drawn white in art/icons/cat_<cat>.svg and tinted with the label's text colour.
+# Category icons, drawn white in art/icons/cat_<cat>.svg and tinted with the sticky's ink.
 const ICON_DIR := "res://art/icons/"
 const AVATAR_COLORS := {
-	"alex": Color("0065ff"), "vika": Color("ff5630"), "gena": Color("36b37e"), "dima": Color("6554c0"),
-	"boss": Color("7a2048"), "marina": Color("00a3bf"), "taras": Color("ff8b00"), "me": Color("0747a6"), "palych": Color("8777d9"), "oleg": Color("5e6c84"), "buyer": Color("403294"),
-	"contractor": Color("7a869a"), "stas": Color("de350b"), "olga": Color("8777d9"), "boris": Color("5e6c84"),
+	"alex": Color("3d7fc4"), "vika": Color("c8603f"), "gena": Color("2f8f5b"), "dima": Color("6554c0"),
+	"boss": Color("8a3f5f"), "marina": Color("a8781f"), "taras": Color("55606e"), "me": Color("5a4a8c"), "palych": Color("8777d9"), "oleg": Color("5e6c84"), "buyer": Color("403294"),
+	"contractor": Color("7a869a"), "stas": Color("c0392b"), "olga": Color("8777d9"), "boris": Color("5e6c84"),
 }
+# The magnet a person's photo hangs on.
+const MAGNETS := [Color("d6402b"), Color("2a6fd1"), Color("e0a21b"), Color("2f9a4a"), Color("8e44ad"), Color("e67e22")]
 
-const HIRE_COLORS := [Color("00b8d9"), Color("ff7452"), Color("57d9a3"), Color("998dd9"), Color("ffab00"), Color("2684ff")]
-const BANK_COLORS := {"happy": Color("00875a"), "fine": Color("5e6c84"), "unhappy": Color("b65c02"), "leaving": Color("de350b")}
+const HIRE_COLORS := [Color("2a8fa8"), Color("d9673f"), Color("3f9e6a"), Color("7a6fc4"), Color("c48a1f"), Color("3d7fc4")]
+const BANK_COLORS := {"happy": COL_GOOD, "fine": COL_MUTED, "unhappy": COL_WARN, "leaving": COL_DANGER}
 
 var rules := Rules.new()
 var ui: Control
 var selected := -1
 var font_bold: Font
+var font_hand: Font
 # Scroll positions survive a re-render; the chat always jumps to the newest line.
 var scroll_memory := {}
 var scrolls := {}
@@ -164,9 +172,10 @@ var chat_last := ""
 
 func _ready() -> void:
 	Loc.lang = "ru" if OS.get_locale_language() == "ru" else "en"
-	# Bundled fonts: the web build has no system fonts.
-	var regular: Font = load("res://fonts/Inter-Regular.ttf")
-	font_bold = load("res://fonts/Inter-Bold.ttf")
+	# Bundled fonts (the web build has no system fonts): Nunito for reading, Caveat for marker on the board.
+	var regular := _weight(load("res://fonts/Nunito.ttf"), 600)
+	font_bold = _weight(load("res://fonts/Nunito.ttf"), 800)
+	font_hand = _weight(load("res://fonts/Caveat.ttf"), 700)
 	var ui_theme := Theme.new()
 	ui_theme.default_font = regular
 	ui_theme.default_font_size = _fs(BASE_FONT)
@@ -209,6 +218,14 @@ func _ready() -> void:
 	var at := args.find("--start")
 	if at >= 0 and at + 1 < args.size():
 		_start_test(args[at + 1])
+
+
+# One weight of a variable font.
+func _weight(base: Font, wght: int) -> FontVariation:
+	var f := FontVariation.new()
+	f.base_font = base
+	f.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): wght}
+	return f
 
 
 # tools/test.sh <point>: a fresh run, played up to where the test starts (teamlead/devtest.gd).
@@ -755,13 +772,13 @@ func _achievement_toast(id: String, order: int) -> void:
 
 # ---------- the day's moments ----------
 
-# The top bar takes the colour of the time of day: morning blue, brighter at midday, dusk in the evening.
+# The top bar is graphite, a touch warmer at midday and towards dusk in the evening.
 func _sky() -> Color:
 	match _moment():
 		"midday":
-			return Color("0c66e4")
+			return Color("33383f")
 		"evening":
-			return Color("2d2a6e")
+			return Color("2a2836")
 	return COL_TOPBAR
 
 
@@ -1818,7 +1835,7 @@ func _build_window() -> void:
 # A dimmed screen and a panel with a title, a line under it and a close button; returns where the content goes.
 func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool = false) -> VBoxContainer:
 	var dim := ColorRect.new()
-	dim.color = Color(0.035, 0.118, 0.259, 0.7)
+	dim.color = Color(0.12, 0.13, 0.15, 0.6)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.gui_input.connect(func(event: InputEvent):
 		if _tapped(event):
@@ -2488,7 +2505,7 @@ func _coach() -> void:
 	if target != null:
 		var g := target.get_global_rect().grow(6.0)
 		hole = Rect2(g.position.floor(), g.size.ceil())
-	var dim := Color(0.035, 0.118, 0.259, 0.55)
+	var dim := Color(0.12, 0.13, 0.15, 0.5)
 	for r in [Rect2(0, 0, view.x, hole.position.y), Rect2(0, hole.end.y, view.x, view.y - hole.end.y),
 			Rect2(0, hole.position.y, hole.position.x, hole.size.y), Rect2(hole.end.x, hole.position.y, view.x - hole.end.x, hole.size.y)]:
 		if r.size.x <= 0.0 or r.size.y <= 0.0:
@@ -2775,7 +2792,7 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var chosen: bool = selected == t["uid"]
 	var style := _box(COL_SELECTED if chosen else COL_SURFACE, COL_FOCUS if chosen else COL_BORDER, 2 if chosen else 1, 8)
-	style.shadow_color = Color(0.035, 0.118, 0.259, 0.12)
+	style.shadow_color = Color(0, 0, 0, 0.18)
 	style.shadow_size = 1
 	style.shadow_offset = Vector2(0, 1)
 	card.add_theme_stylebox_override("panel", style)
@@ -3919,7 +3936,7 @@ func _scroll_to_end(scroll: ScrollContainer) -> void:
 # A sheet that takes the height of the window and scrolls if it has to.
 func _document(width: int) -> VBoxContainer:
 	var dim := ColorRect.new()
-	dim.color = Color(0.035, 0.118, 0.259, 0.55)
+	dim.color = Color(0.12, 0.13, 0.15, 0.5)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
 	var panel := PanelContainer.new()
@@ -3948,7 +3965,7 @@ func _document(width: int) -> VBoxContainer:
 # Its own screen: whoever is talking, big, with how they feel; the talk so far; "next" or your answers.
 func _build_story() -> void:
 	var dim := ColorRect.new()
-	dim.color = Color(0.035, 0.118, 0.259, 0.7)
+	dim.color = Color(0.12, 0.13, 0.15, 0.6)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
 	var view := get_viewport().get_visible_rect().size
@@ -4016,7 +4033,7 @@ func _build_story() -> void:
 # in any order, and how many questions are left is shown under them.
 func _build_convo() -> void:
 	var dim := ColorRect.new()
-	dim.color = Color(0.035, 0.118, 0.259, 0.7)
+	dim.color = Color(0.12, 0.13, 0.15, 0.6)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
 	var view := get_viewport().get_visible_rect().size
@@ -4081,7 +4098,7 @@ func _convo_choose(c: String) -> void:
 # The morning call: a tile per person, the one line they say, and what you can answer.
 func _build_standup() -> void:
 	var dim := ColorRect.new()
-	dim.color = Color(0.035, 0.118, 0.259, 0.7)
+	dim.color = Color(0.12, 0.13, 0.15, 0.6)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
 	var view := get_viewport().get_visible_rect().size
@@ -4846,12 +4863,12 @@ func _button(text_value: String, action: Callable, min_width: int, look: String 
 	b.add_theme_font_size_override("font_size", _fs(14))
 	var fill := COL_COLUMN
 	var hover := COL_BORDER
-	var text_color := Color("42526e")
+	var text_color := COL_TEXT
 	match look:
 		"primary":
-			fill = COL_PRIMARY
-			hover = COL_PRIMARY_HOVER
-			text_color = COL_SURFACE
+			fill = COL_ACCENT
+			hover = COL_ACCENT_HOVER
+			text_color = COL_TEXT
 			b.add_theme_font_override("font", font_bold)
 		"subtle":
 			fill = COL_BG
