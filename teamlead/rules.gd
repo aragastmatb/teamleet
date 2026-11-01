@@ -4736,15 +4736,14 @@ func _split_budget() -> void:
 
 # ---------- client bonuses and SLA (endless run) ----------
 
-# Clients pay for what they get: a card of theirs done well brings the department a bonus at once, done
+# Banks pay for what they get: a card of theirs done well brings the department a bonus at once, done
 # passably half of it. Done badly or late breaks the SLA, and the fine comes off the month's budget.
-const BONUS_PER_DAY := 10
-# Work for clients: a bank's own cards and what the product teams ask for their banks.
-const CLIENT_LEADS := ["stas", "olga", "boris", "product"]
+const BONUS_PER_DAY := 40
 
 
+# Only the banks pay: our own product and process work never brings money straight in.
 func paid_card(t: Dictionary) -> bool:
-	return endless() and (C.TASKS.get(t["id"], {}).get("bank", "") != "" or CLIENT_LEADS.has(t["from"]))
+	return endless() and C.TASKS.get(t["id"], {}).get("bank", "") != ""
 
 
 func card_bonus(t: Dictionary) -> int:
@@ -4784,9 +4783,9 @@ func _sla_fine(t: Dictionary) -> void:
 # What Irina offers at the end of a month: a base, half of what your clients paid the company, the
 # race with Taras, and what she thinks of you. You can take it or argue for more; what you have to
 # show for the month is your argument.
-const BUDGET_BASE := 50
-const BUDGET_MIN := 100
-const REVENUE_SHARE := 0.25
+const BUDGET_BASE := 200
+const BUDGET_MIN := 150
+const REVENUE_SHARE := 0.5
 const RACE_BUDGET := 300
 const OPINION_BUDGET := [-200, 0, 100, 200]
 const ASK_MORE := 0.2
