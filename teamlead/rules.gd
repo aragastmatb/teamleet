@@ -4105,7 +4105,7 @@ func answer_review(choice: String) -> void:
 	var names := _review_names(t)
 	var truth := review_true(item, choice)
 	weight_cause = t["id"]
-	history.append({"who": "you", "key": "review.a." + choice, "args": [], "names": names, "day": day})
+	history.append({"who": "you", "key": "review.a." + choice, "args": [], "names": names, "to": "boss", "day": day})
 	for pair in REVIEW_STYLE[choice]:
 		lead(pair[0], pair[1])
 	match choice:

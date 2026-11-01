@@ -3225,7 +3225,7 @@ func _asked_thread() -> String:
 	if rules.phase == "event" and not rules.events.is_empty():
 		return _contact_of(rules.events[0]["who"])
 	if rules.phase == "review" and not rules.review.is_empty():
-		return GENERAL
+		return "boss"
 	return ""
 
 
