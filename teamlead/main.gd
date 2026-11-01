@@ -138,6 +138,8 @@ var deal_from := -1
 var deal_who := ""
 # Upgrades you could afford when you last looked at the tree; the counter only shows ones new since.
 var upgrades_seen := {}
+# Places on screen the first month's coach can point at, by name; rebuilt with every render.
+var anchors := {}
 var up_branch := "" # the upgrade branch shown on the phone
 # Where the chat was left. Anything new in it (a message, a question, answer buttons) brings it to the
 # bottom; otherwise it stays where you scrolled it.
@@ -398,10 +400,11 @@ func _start_work() -> void:
 # next day in the evening.
 func _day_button(width: int) -> Button:
 	if rules.phase == "evening":
-		return _button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, width, "primary")
+		return _anchor(_button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, width, "primary"), "day_button")
 	var morning := rules.endless() and rules.step == "triage"
 	var b := _button(Loc.t("start_work" if morning else "end_day"), _start_work if morning else _end_day, width, "primary")
 	b.disabled = rules.phase != "plan" or not rules.pending.is_empty()
+	_anchor(b, "day_button")
 	_lit(b, "end_day")
 	return b
 
@@ -677,6 +680,7 @@ func _render() -> void:
 	elif rules.phase != "title":
 		rules.save_game()
 	cue = ""
+	anchors.clear()
 	if is_instance_valid(chat_scroll):
 		chat_pos = 1 << 30 if chat_to_end else chat_scroll.scroll_vertical
 	for key in scrolls:
@@ -743,6 +747,7 @@ func _render() -> void:
 		_build_menu_overlay()
 	_let_touches_through(ui)
 	_restore_scrolls()
+	_coach.call_deferred()
 	_juice.call_deferred(before, juice_before)
 	_check_progress()
 
@@ -1550,6 +1555,7 @@ func _logo(size: int) -> Control:
 
 func _attention_label(size: int) -> Label:
 	var l := _label(_attention_text(), size, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER)
+	_anchor(l, "points")
 	l.tooltip_text = Loc.t("attention_tip")
 	l.mouse_filter = Control.MOUSE_FILTER_PASS
 	return l
@@ -2019,6 +2025,7 @@ func _badge(n: int) -> String:
 
 func _nav_button(name: String, text_value: String, badge: String, badge_color: Color) -> Control:
 	var b := _button(text_value, _open_upgrades if name == "upgrades" else _open_window.bind("company" if name == "clients" else name), 0, "subtle")
+	_anchor(b, "nav_" + name)
 	b.add_theme_font_size_override("font_size", _fs(14))
 	b.custom_minimum_size.y = 34
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -2549,6 +2556,183 @@ func _ask_people() -> void:
 	_render()
 
 
+# ---------- the first month's coach (endless run) ----------
+
+# The first time something in the loop comes up, Marina points at it: the screen dims around it and
+# her note sits beside it. The core actions have to be done by hand (the dim lets clicks through only
+# where she points); the rest closes with "Got it". Only with tips on, only in the first month.
+func _anchor(c: Control, name: String) -> Control:
+	if not anchors.has(name):
+		anchors[name] = c
+	return c
+
+
+func _coach_steps() -> Array:
+	var r := rules
+	var plan: bool = r.phase == "plan" and r.pending.is_empty() and window == ""
+	var team_busy := func() -> bool:
+		return r.tasks.any(func(t): return t["status"] == "active" and r.team.has(t["owner"]))
+	var letter_th: String = _contact_of(r.letters[0]["who"]) if not r.letters.is_empty() else ""
+	return [
+		{"id": "assign", "forced": true, "targets": ["inbox_first"],
+			"when": plan and r.step == "triage" and r.inbox().any(func(t): return r.can_assign(t)) and not team_busy.call(),
+			"done": window == "task"},
+		{"id": "pick", "forced": true, "targets": ["pick_grid"],
+			"when": window == "task" and r.pending.is_empty() and not team_busy.call(),
+			"done": team_busy.call()},
+		{"id": "haggle", "forced": true, "targets": ["deal"],
+			"when": not r.pending.is_empty(), "done": r.pending.is_empty()},
+		# Not forced: there may be more cards to hand out first.
+		{"id": "start_work", "forced": false, "targets": ["day_button"],
+			"when": plan and r.step == "triage" and r.flags.has("coach_assign"), "done": r.step == "work"},
+		{"id": "midday", "forced": false, "targets": ["team_zone"], "when": plan and r.step == "work"},
+		{"id": "letter", "forced": true, "targets": ["contact_" + letter_th, "chat_tab"],
+			"when": letter_th != "" and r.phase in ["plan", "evening"] and window == "" and chat_thread != letter_th and not (mobile and tab == "chat"),
+			"done": chat_thread == letter_th or (mobile and tab == "chat")},
+		{"id": "answer", "forced": false, "targets": ["prompt"],
+			"when": letter_th != "" and chat_thread != "" and r.letters.any(func(ev): return _contact_of(ev["who"]) == chat_thread)},
+		{"id": "points", "forced": false, "targets": ["points"], "when": plan and r.attention <= 0},
+		{"id": "end_day", "forced": false, "targets": ["day_button"], "when": plan and r.step == "work" and r.flags.has("coach_midday")},
+		{"id": "evening", "forced": false, "targets": ["day_button"], "when": r.phase == "evening" and window == ""},
+		{"id": "standup", "forced": false, "targets": ["standup"], "when": r.phase == "standup"},
+		{"id": "late", "forced": false, "targets": ["late_card"], "when": plan and r.tasks.any(func(t): return t["late"] and t["status"] in ["inbox", "active"])},
+		{"id": "review", "forced": false, "targets": ["prompt"], "when": r.phase == "review" and chat_thread == "boss"},
+		{"id": "candidates", "forced": false, "targets": ["nav_hire", "tab_more"], "when": plan and r.day >= 2 and not r.candidates.is_empty()},
+		{"id": "upgrades", "forced": false, "targets": ["nav_upgrades", "tab_more"], "when": plan and r.day >= 3 and _fresh_upgrades() > 0},
+		{"id": "clients", "forced": false, "targets": ["nav_clients", "tab_more"],
+			"when": plan and r.step == "work" and r.day >= 6 and r.team.any(func(p): return r.available(p) and r.queue_of(p).is_empty())},
+		{"id": "budget", "forced": false, "targets": ["budget"], "when": r.phase == "chapter_end" and r.can_defend()},
+	]
+
+
+func _coach_on() -> bool:
+	return rules.endless() and rules.tips and rules.period == 1 and not menu_open and not rules.phase in ["title", "draft", "end"]
+
+
+# What to point at now, if anything: the first step that's due and not yet seen. A forced step that's
+# been done is marked seen on the way.
+func _coach_step() -> Dictionary:
+	if not _coach_on():
+		return {}
+	for step in _coach_steps():
+		var key: String = "coach_" + step["id"]
+		if rules.flags.has(key):
+			continue
+		# Done counts only once it's been shown: before that "done" can be true just because nothing's there.
+		if step["forced"] and step.get("done", false) and rules.flags.has("coach_shown_" + step["id"]):
+			rules.flags[key] = true
+			continue
+		if step["when"]:
+			rules.flags["coach_shown_" + step["id"]] = true
+			return step
+	return {}
+
+
+func _coach() -> void:
+	var step := _coach_step()
+	if step.is_empty():
+		return
+	# Layout settles a frame after the screen is built.
+	await get_tree().process_frame
+	if not is_instance_valid(ui):
+		return
+	var target: Control = null
+	for name in step["targets"]:
+		var c: Control = anchors.get(name)
+		if is_instance_valid(c) and c.is_visible_in_tree() and c.size.x > 0.0:
+			target = c
+			break
+	# Nothing to point at (another screen layout): a plain note, never a lock.
+	var forced: bool = step["forced"] and target != null
+	var layer := Control.new()
+	layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(layer)
+	var view := get_viewport().get_visible_rect().size
+	var hole := Rect2(view / 2.0, Vector2.ZERO)
+	if target != null:
+		var g := target.get_global_rect().grow(6.0)
+		hole = Rect2(g.position.floor(), g.size.ceil())
+	var dim := Color(0.035, 0.118, 0.259, 0.55)
+	for r in [Rect2(0, 0, view.x, hole.position.y), Rect2(0, hole.end.y, view.x, view.y - hole.end.y),
+			Rect2(0, hole.position.y, hole.position.x, hole.size.y), Rect2(hole.end.x, hole.position.y, view.x - hole.end.x, hole.size.y)]:
+		if r.size.x <= 0.0 or r.size.y <= 0.0:
+			continue
+		var shade := ColorRect.new()
+		shade.color = dim
+		shade.position = r.position
+		shade.size = r.size
+		shade.mouse_filter = Control.MOUSE_FILTER_STOP
+		if not forced:
+			shade.gui_input.connect(func(event: InputEvent):
+				if event is InputEventMouseButton and event.pressed:
+					_coach_seen.call_deferred(step["id"]))
+		layer.add_child(shade)
+	if target != null:
+		var ring := Panel.new()
+		var rs := StyleBoxFlat.new()
+		rs.bg_color = Color(0, 0, 0, 0)
+		rs.border_color = COL_STAR
+		rs.set_border_width_all(3)
+		rs.set_corner_radius_all(10)
+		ring.add_theme_stylebox_override("panel", rs)
+		ring.position = hole.position
+		ring.size = hole.size
+		ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.add_child(ring)
+	layer.add_child(_coach_bubble(step, forced, hole, view))
+
+
+func _coach_bubble(step: Dictionary, forced: bool, hole: Rect2, view: Vector2) -> Control:
+	var bubble := PanelContainer.new()
+	var style := _box(COL_SURFACE, COL_STAR, 2, 14)
+	style.set_corner_radius_all(14)
+	style.shadow_color = Color(0, 0, 0, 0.25)
+	style.shadow_size = 8
+	bubble.add_theme_stylebox_override("panel", style)
+	var w := minf(380.0, view.x - 24.0)
+	bubble.custom_minimum_size.x = w
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	bubble.add_child(row)
+	var face := _avatar("marina", 40)
+	face.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	row.add_child(face)
+	var v := _vbox(8)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(v)
+	v.add_child(_label(Loc.person("marina"), 13, COL_MUTED, false, true))
+	v.add_child(_label(Loc.t("coach." + step["id"]), 15, COL_TEXT, true))
+	bubble.modulate.a = 0.0
+	if not forced:
+		var ok := _button(Loc.t("coach.ok"), _coach_seen.bind(step["id"]), 0, "primary")
+		ok.size_flags_horizontal = Control.SIZE_SHRINK_END
+		v.add_child(ok)
+	# Below what it points at if there's room, else above; kept on screen.
+	await_size(bubble, func(sz: Vector2):
+		var x := clampf(hole.position.x, 12.0, view.x - sz.x - 12.0)
+		var y := hole.end.y + 12.0
+		if y + sz.y > view.y - 12.0:
+			y = hole.position.y - sz.y - 12.0
+		if y < 12.0:
+			y = clampf(view.y - sz.y - 24.0, 12.0, view.y)
+		bubble.position = Vector2(x, y)
+		bubble.modulate.a = 1.0)
+	return bubble
+
+
+func await_size(c: Control, place: Callable) -> void:
+	c.ready.connect(func():
+		await get_tree().process_frame
+		if is_instance_valid(c):
+			place.call(c.size))
+
+
+func _coach_seen(id: String) -> void:
+	rules.flags["coach_" + id] = true
+	_render()
+
+
 # ---------- the board ----------
 
 func _board_area() -> Control:
@@ -2599,6 +2783,7 @@ const LANE_CARD_W := 220
 # The team: one lane per person, their face and state on the left and what's on their plate to the right.
 func _team_zone() -> Control:
 	var panel := PanelContainer.new()
+	_anchor(panel, "team_zone")
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.add_theme_stylebox_override("panel", _box(COL_COLUMN, COL_COLUMN, 0, 8))
 	var v := _vbox(8)
@@ -2777,6 +2962,10 @@ func _backlog_section(list: VBoxContainer) -> void:
 
 func _task_card(t: Dictionary, lane: String) -> Control:
 	var card := PanelContainer.new()
+	if lane == "inbox" and rules.can_assign(t):
+		_anchor(card, "inbox_first")
+	if t["late"] and lane != "done":
+		_anchor(card, "late_card")
 	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var chosen: bool = selected == t["uid"]
 	var style := _box(COL_SELECTED if chosen else COL_SURFACE, COL_FOCUS if chosen else COL_BORDER, 2 if chosen else 1, 8)
@@ -2938,6 +3127,7 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 		grid.add_theme_constant_override("h_separation", 8)
 		grid.add_theme_constant_override("v_separation", 8)
 		v.add_child(grid)
+		_anchor(grid, "pick_grid")
 		var best := _best_pick(t)
 		for p in _pick_order(t):
 			grid.add_child(_pick_tile(t, p, p == best))
@@ -3017,6 +3207,8 @@ func _pick_tile(t: Dictionary, p: String, best: bool) -> Control:
 	var owner: bool = t["owner"] == p
 	var can: bool = rules.can_assign(t) and not owner and rules.can_afford(rules.cost("assign")) and (me or not rules.people[p]["absent"])
 	var tile := PanelContainer.new()
+	if best:
+		_anchor(tile, "pick_best")
 	tile.custom_minimum_size.x = 170
 	tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var fill := COL_SELECTED if owner else (Color("f4f8ff") if best else COL_SURFACE)
@@ -3102,6 +3294,7 @@ func _deal_block(v: VBoxContainer, t: Dictionary) -> void:
 		grid.add_theme_constant_override("h_separation", 8)
 		grid.add_theme_constant_override("v_separation", 8)
 		v.add_child(grid)
+		_anchor(grid, "deal")
 		for intent in C.INTENTS + ["back_off"]:
 			grid.add_child(_answer_button(Loc.t("intent." + intent), _persuade.bind(intent)))
 		v.add_child(_label(Loc.t("objection_hint"), 12, COL_MUTED, true))
@@ -3237,8 +3430,8 @@ func _phone_tabs() -> Control:
 		unread += _unread(th)
 		asks = asks or _letters_in(th) > 0 or _asked_thread() == th
 	row.add_child(_tab_item(_icon("nav_board"), Loc.t("tab.board"), "", tab == "board", _go_tab.bind("board")))
-	row.add_child(_tab_item(_icon("nav_chat"), Loc.t("tab.chat"), "!" if asks else _badge(unread), tab == "chat", _go_tab.bind("chat"), asks))
-	row.add_child(_tab_item(_icon("nav_more"), Loc.t("tab.more"), _badge(_more_count()), window == "more", _open_window.bind("more")))
+	row.add_child(_anchor(_tab_item(_icon("nav_chat"), Loc.t("tab.chat"), "!" if asks else _badge(unread), tab == "chat", _go_tab.bind("chat"), asks), "chat_tab"))
+	row.add_child(_anchor(_tab_item(_icon("nav_more"), Loc.t("tab.more"), _badge(_more_count()), window == "more", _open_window.bind("more")), "tab_more"))
 	return bar
 
 
@@ -3573,6 +3766,7 @@ func _messenger() -> Control:
 
 func _contact_dot(th: String) -> Control:
 	var holder := CenterContainer.new()
+	_anchor(holder, "contact_" + th)
 	# A plain box under the ring, so the counter can hang off its corner instead of being laid out.
 	var spot := Control.new()
 	spot.custom_minimum_size = Vector2(56, 60)
@@ -3757,6 +3951,7 @@ func _phone_messenger() -> Control:
 	scroll.add_child(_padded(v, 10, 10))
 	for th in _contacts():
 		var row := PanelContainer.new()
+		_anchor(row, "contact_" + th)
 		row.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 10))
 		row.gui_input.connect(func(event: InputEvent):
 			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
@@ -3845,6 +4040,7 @@ func _prompt_box(list: VBoxContainer, title: String) -> VBoxContainer:
 	var box := PanelContainer.new()
 	box.add_theme_stylebox_override("panel", _box(Color("f4f8ff"), COL_FOCUS, 1, 10))
 	list.add_child(box)
+	_anchor(box, "prompt")
 	var v := _vbox(6)
 	box.add_child(v)
 	if title != "":
@@ -4148,6 +4344,7 @@ func _build_standup() -> void:
 	style.set_corner_radius_all(16)
 	panel.add_theme_stylebox_override("panel", style)
 	ui.add_child(panel)
+	_anchor(panel, "standup")
 	var right := _vbox(0)
 	panel.add_child(right)
 	var head := _vbox(4)
@@ -4538,6 +4735,7 @@ func _budget_block(v: VBoxContainer) -> void:
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 16))
 	v.add_child(card)
+	_anchor(card, "budget")
 	var box := _vbox(8)
 	card.add_child(box)
 	var head := HBoxContainer.new()

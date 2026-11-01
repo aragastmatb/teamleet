@@ -4362,7 +4362,8 @@ const TIP_TARGETS := {"assign": "inbox", "end_day": "end_day", "talk": "talk", "
 
 
 func update_tips() -> void:
-	if not tips or (period if endless() else chapter) != 1:
+	# The endless run teaches by pointing at things instead (main.gd, the coach).
+	if not tips or endless() or chapter != 1:
 		return
 	var id := _next_tip()
 	if id == "":
