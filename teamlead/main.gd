@@ -4461,7 +4461,11 @@ func _build_end() -> void:
 		v.add_child(_label(Loc.t("period.survived", [rules.done_periods()]), 18, COL_TEXT, true, true))
 		if not rules.last_race.is_empty() and rules.phase == "chapter_end":
 			var race: Dictionary = rules.last_race
-			v.add_child(_label(Loc.t("race.summary", [race["mine"], race["taras"], _rub(race["budget"])]), 16, COL_GOOD if race["mine"] >= race["taras"] else COL_DANGER, true))
+			if race.has("offer"):
+				v.add_child(_label(Loc.t("race.result", [race["mine"], race["taras"]]), 16, COL_GOOD if race["mine"] >= race["taras"] else COL_DANGER, true))
+				_budget_block(v)
+			else:
+				v.add_child(_label(Loc.t("race.summary", [race["mine"], race["taras"], _rub(race["budget"])]), 16, COL_GOOD if race["mine"] >= race["taras"] else COL_DANGER, true))
 		if rules.phase == "end":
 			_run_record(v)
 	else:
@@ -4517,13 +4521,52 @@ func _build_end() -> void:
 	buttons.add_theme_constant_override("separation", 12)
 	if rules.phase == "chapter_end":
 		_next_chapter_block(v)
-		if rules.next_chapter_ready():
+		if rules.can_defend():
+			pass
+		elif rules.next_chapter_ready():
 			buttons.add_child(_button(Loc.t("period.start" if rules.endless() else "chapter.start", [(rules.period if rules.endless() else rules.chapter) + 1]), _start_next_chapter, 260, "primary"))
 		else:
 			buttons.add_child(_button(Loc.t("to_menu"), _to_title.bind(false), 260, "primary"))
 	else:
 		buttons.add_child(_button(Loc.t("again"), _to_title.bind(true), 260, "primary"))
 	v.add_child(buttons)
+
+
+# The month's budget at Irina's: what she offers, what you can point to, and whether to argue.
+func _budget_block(v: VBoxContainer) -> void:
+	var race: Dictionary = rules.last_race
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 16))
+	v.add_child(card)
+	var box := _vbox(8)
+	card.add_child(box)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
+	box.add_child(head)
+	head.add_child(_avatar("boss", 40))
+	var said := _vbox(2)
+	said.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(said)
+	said.add_child(_label(Loc.person("boss") + " · " + Loc.t("weight." + rules.boss_word()), 13, COL_MUTED))
+	said.add_child(_label(Loc.t("budget.offer", [_rub(race["offer"])]), 16, COL_TEXT, true))
+	var args := PackedStringArray()
+	for a in race["args"]:
+		args.append(Loc.t("budget.arg." + a))
+	box.add_child(_label(Loc.t("budget.args", [", ".join(args)]) if not args.is_empty() else Loc.t("budget.no_args"), 14, COL_TEXT if not args.is_empty() else COL_MUTED, true))
+	if race["defended"] == "":
+		box.add_child(_label(Loc.t("budget.hint"), 13, COL_MUTED, true))
+		var row := _flow(8, 8)
+		box.add_child(row)
+		for choice in ["take", "more", "lots"]:
+			row.add_child(_button(Loc.t("budget.ask." + choice), _defend.bind(choice), 0, "primary" if choice == "take" else ""))
+	else:
+		var ok: bool = not race["defended"].ends_with("_no")
+		box.add_child(_label(Loc.t("budget." + race["defended"], [_rub(race["budget"])]), 15, COL_TEXT if ok else COL_DANGER, true))
+
+
+func _defend(choice: String) -> void:
+	rules.defend_budget(choice)
+	_render()
 
 
 # What the next chapter is about, or that it's still being made.

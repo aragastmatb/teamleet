@@ -1607,6 +1607,7 @@ func pitch_bank(b: String) -> void:
 	flags["pitched_week"] = int((day - 1) / 5.0)
 	history.append({"who": "you", "key": "bank.pitch", "args": [], "names": {"bank": "@bankphrase." + b}, "to": "boss", "day": day})
 	_join_bank(b)
+	flags["bank_won_p%d" % period] = true
 	if C.TASKS.has("bank_delivery@" + b):
 		add_task("bank_delivery@" + b)
 	boss += 0.5
@@ -1653,7 +1654,10 @@ func _settle_bank(t: Dictionary, outcome: String) -> void:
 	if b == "" or not banks.has(b) or not BANK_MOOD.has(outcome):
 		return
 	var info: Dictionary = C.TASKS[t["id"]]
+	var was := bank_word(b)
 	banks[b]["mood"] += BANK_MOOD[outcome]
+	if endless() and was != "happy" and bank_word(b) == "happy":
+		boss += 0.3
 	if outcome == "good" and info["tags"].has("client"):
 		banks[b]["shipped"] = true
 	reputation += 1.0 if outcome == "good" else -0.5
@@ -3236,6 +3240,8 @@ func _complete_upgrade(id: String) -> void:
 	var up: Dictionary = C.UPGRADES[id]
 	upgrades[id]["state"] = "done"
 	_apply_effects(up["final"])
+	flags["up_done_p%d" % period] = true
+	boss += 0.3
 	var old: String = up["replaces"]
 	if old != "" and C.UPGRADES.has(old):
 		for card in C.UPGRADES[old]["maint"]:
@@ -3974,6 +3980,9 @@ func _finish(p: String, t: Dictionary) -> void:
 			boss += boss_like("P", 1.0)
 			lead("P", 1.0)
 			weight_cause = t["id"]
+	# What she asked for herself, done on time: she sees that.
+	if endless() and t["from"] == "boss" and day <= t["due"] and t["quality"] != "bad":
+		boss += 0.2
 	t["status"] = "done"
 	t["done_day"] = day
 	people[p]["last_done"] = day
@@ -4492,6 +4501,8 @@ func next() -> void:
 func start_next_chapter() -> void:
 	if phase != "chapter_end" or not next_chapter_ready():
 		return
+	if can_defend():
+		defend_budget("take")
 	day += 1
 	if endless():
 		period += 1
@@ -4609,7 +4620,10 @@ func _split_budget() -> void:
 	var mine := maxf(0.0, my_points())
 	var his := maxf(0.0, taras_total())
 	var share := 0.5 if mine + his <= 0.0 else clampf(mine / (mine + his), SHARE_MIN, SHARE_MAX)
-	last_race = {"mine": int(round(my_points())), "taras": int(round(taras_total())), "budget": int(round(BUDGET_POT * share / 10.0)) * 10}
+	var offer: float = BUDGET_BASE + REVENUE_SHARE * flags.get("revenue_p%d" % period, 0) + RACE_BUDGET * (share - 0.5) * 2.0 + OPINION_BUDGET[_level_of(boss)]
+	offer = maxf(BUDGET_MIN, roundf(offer / 10.0) * 10.0)
+	last_race = {"mine": int(round(my_points())), "taras": int(round(taras_total())), "budget": int(offer), "offer": int(offer),
+		"args": budget_args(), "defended": ""}
 	# For the run's record and achievements.
 	if last_race["mine"] > last_race["taras"]:
 		flags["race_wins"] = flags.get("race_wins", 0) + 1
@@ -4618,6 +4632,70 @@ func _split_budget() -> void:
 		flags["race_streak"] = 0
 	if not flags.has("borrowed_p%d" % period):
 		flags["clean_period"] = true
+
+
+# ---------- defending the budget (endless run) ----------
+
+# What Irina offers at the end of a month: a base, half of what your clients paid the company, the
+# race with Taras, and what she thinks of you. You can take it or argue for more; what you have to
+# show for the month is your argument.
+const BUDGET_BASE := 400
+const BUDGET_MIN := 200
+const REVENUE_SHARE := 0.5
+const RACE_BUDGET := 300
+const OPINION_BUDGET := [-200, 0, 150, 300]
+const ASK_MORE := 0.2
+const ASK_LOTS := 0.5
+
+
+# What you can point to: beating Taras, a bank you brought in, an upgrade rolled out, a month without misses.
+func budget_args() -> Array:
+	var out: Array = []
+	if my_points() > taras_total():
+		out.append("race")
+	if flags.has("bank_won_p%d" % period):
+		out.append("bank")
+	if flags.has("up_done_p%d" % period):
+		out.append("upgrade")
+	if not tasks.any(func(t): return t["late"] and t.get("late_day", 0) >= first_day()):
+		out.append("clean")
+	return out
+
+
+func can_defend() -> bool:
+	return endless() and phase == "chapter_end" and not last_race.is_empty() and last_race.get("defended", "x") == ""
+
+
+# "take", "more" (one argument and she listens to you at least half-way) or "lots" (two arguments and
+# she listens to you). Asking without the grounds annoys her and she cuts instead.
+func defend_budget(choice: String) -> void:
+	if not can_defend() or not choice in ["take", "more", "lots"]:
+		return
+	var offer: int = last_race["offer"]
+	var args: int = last_race["args"].size()
+	var level := _level_of(boss)
+	var result := "take"
+	var budget := offer
+	match choice:
+		"more":
+			if args >= 1 and level >= 1:
+				result = "more_yes"
+				budget = int(roundf(offer * (1.0 + ASK_MORE) / 10.0) * 10.0)
+			else:
+				result = "more_no"
+				boss -= 0.5
+		"lots":
+			if args >= 2 and level >= 2:
+				result = "lots_yes"
+				budget = int(roundf(offer * (1.0 + ASK_LOTS) / 10.0) * 10.0)
+			else:
+				result = "lots_no"
+				boss -= 1.0
+				budget = int(roundf(offer * 0.9 / 10.0) * 10.0)
+	last_race["defended"] = result
+	last_race["budget"] = budget
+	history.append({"who": "you", "key": "budget.ask." + choice, "args": [], "names": {}, "to": "boss", "day": day})
+	_say("boss", "budget." + result, [cash_arg(budget)])
 
 
 func weekly_pay(p: String) -> int:
@@ -4703,8 +4781,13 @@ func _period_budget() -> void:
 func _payday() -> void:
 	# A week with five or more cards done and none missed.
 	var done := tasks.filter(func(t): return t["status"] == "done" and t.get("done_day", 0) > day - 5).size()
-	if done >= 5 and not tasks.any(func(t): return t["late"] and t.get("late_day", 0) > day - 5):
+	var missed := tasks.any(func(t): return t["late"] and t.get("late_day", 0) > day - 5)
+	if done >= 5 and not missed:
 		flags["clean_week"] = true
+	# Irina notices a week where nothing slipped and things got done, whoever did them.
+	if done >= 3 and not missed:
+		boss += 0.6
+		_say("boss", "boss.clean_week", [done])
 	var pay := payroll()
 	flags["revenue_p%d" % period] = flags.get("revenue_p%d" % period, 0) + revenue()
 	money -= pay
