@@ -2995,6 +2995,11 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 		tags.add_child(_pill(Loc.t("chip_chain"), COL_PRIMARY, COL_SELECTED))
 	if t["key"]:
 		tags.add_child(_pill("★", COL_STAR, Color("fff7e6")))
+	if rules.paid_card(t) and t["status"] != "done":
+		if t.get("sla_fined", false):
+			tags.add_child(_pill(Loc.t("chip_sla"), COL_DANGER, Color("ffebe6")))
+		else:
+			tags.add_child(_pill("+" + _rub(rules.card_bonus(t)), COL_GOOD, Color("e3fcef")))
 	if t["blocked"] > 0:
 		tags.add_child(_pill(Loc.t("chip_blocked"), COL_DANGER, Color("ffebe6")))
 	if not _letter_for(t).is_empty():
@@ -3119,6 +3124,11 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 	var pen: Dictionary = rules.penalty_of(t)
 	if not pen.is_empty() and t["status"] != "done" and not t["late"]:
 		v.add_child(_label(Loc.t("penalty.%s.card" % pen["kind"], [_rub(pen["amount"])] if pen["kind"] == "money" else []), 14, COL_DANGER, true))
+	if rules.paid_card(t) and t["status"] != "done":
+		if t.get("sla_fined", false):
+			v.add_child(_label(Loc.t("sla.fined", [_rub(rules.card_sla(t))]), 14, COL_DANGER, true))
+		else:
+			v.add_child(_label(Loc.t("sla.terms", [_rub(rules.card_bonus(t)), _rub(rules.card_bonus_ok(t)), _rub(rules.card_sla(t))]), 14, COL_GOOD, true))
 	if deal_from >= 0:
 		_deal_block(v, t)
 		return
@@ -4771,6 +4781,8 @@ func _budget_block(v: VBoxContainer) -> void:
 	head.add_child(said)
 	said.add_child(_label(Loc.person("boss") + " · " + Loc.t("weight." + rules.boss_word()), 13, COL_MUTED))
 	said.add_child(_label(Loc.t("budget.offer", [_rub(race["offer"])]), 16, COL_TEXT, true))
+	if race.get("sla", 0) > 0:
+		said.add_child(_label(Loc.t("budget.sla", [_rub(race["sla"])]), 14, COL_DANGER, true))
 	var args := PackedStringArray()
 	for a in race["args"]:
 		args.append(Loc.t("budget.arg." + a))

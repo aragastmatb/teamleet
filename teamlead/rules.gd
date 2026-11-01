@@ -3112,6 +3112,7 @@ func end_day() -> void:
 			_late(t)
 			if endless():
 				_penalty(t)
+				_sla_fine(t)
 			if t["vouched"]:
 				boss -= 1
 				_say("boss", "boss.vouched_late", [], {"task": "@taskname." + t["id"]})
@@ -4026,6 +4027,7 @@ func _finish(p: String, t: Dictionary) -> void:
 		boss += 0.2
 	t["status"] = "done"
 	t["done_day"] = day
+	_client_card_done(t)
 	people[p]["last_done"] = day
 	people[p]["week_done"][week()] += 1
 	var before := role_of(p)
@@ -4094,6 +4096,7 @@ func _work_myself(part: float = 1.0, upkeep: bool = true) -> void:
 		t["status"] = "done"
 		t["done_day"] = day
 		t["quality"] = _quality_of(t)
+		_client_card_done(t)
 		_narrate("result.mine", [], {"task": "@taskname." + t["id"]})
 
 
@@ -4716,8 +4719,11 @@ func _split_budget() -> void:
 	var share := 0.5 if mine + his <= 0.0 else clampf(mine / (mine + his), SHARE_MIN, SHARE_MAX)
 	var offer: float = BUDGET_BASE + REVENUE_SHARE * flags.get("revenue_p%d" % period, 0) + RACE_BUDGET * (share - 0.5) * 2.0 + OPINION_BUDGET[_level_of(boss)]
 	offer = maxf(BUDGET_MIN, roundf(offer / 10.0) * 10.0)
+	# The banks' SLA fines for the month come off the top, below the floor if they have to.
+	var sla: int = flags.get("sla_p%d" % period, 0)
+	offer = maxf(0.0, offer - sla)
 	last_race = {"mine": int(round(my_points())), "taras": int(round(taras_total())), "budget": int(offer), "offer": int(offer),
-		"args": budget_args(), "defended": ""}
+		"args": budget_args(), "defended": "", "sla": sla}
 	# For the run's record and achievements.
 	if last_race["mine"] > last_race["taras"]:
 		flags["race_wins"] = flags.get("race_wins", 0) + 1
@@ -4728,14 +4734,59 @@ func _split_budget() -> void:
 		flags["clean_period"] = true
 
 
+# ---------- client bonuses and SLA (endless run) ----------
+
+# Clients pay for what they get: a card of theirs done well brings the department a bonus at once, done
+# passably half of it. Done badly or late breaks the SLA, and the fine comes off the month's budget.
+const BONUS_PER_DAY := 10
+# Work for clients: a bank's own cards and what the product teams ask for their banks.
+const CLIENT_LEADS := ["stas", "olga", "boris", "product"]
+
+
+func paid_card(t: Dictionary) -> bool:
+	return endless() and (C.TASKS.get(t["id"], {}).get("bank", "") != "" or CLIENT_LEADS.has(t["from"]))
+
+
+func card_bonus(t: Dictionary) -> int:
+	return BONUS_PER_DAY * ceili(t["size"])
+
+
+# Passable work earns half, in whole coonics.
+func card_bonus_ok(t: Dictionary) -> int:
+	return card_bonus(t) / 20 * 10
+
+
+# Broken SLA costs what doing it well would have brought.
+func card_sla(t: Dictionary) -> int:
+	return card_bonus(t)
+
+
+func _client_card_done(t: Dictionary) -> void:
+	if not paid_card(t):
+		return
+	if t["late"] or t["quality"] == "bad":
+		_sla_fine(t)
+		return
+	var pay := card_bonus(t) if t["quality"] == "good" else card_bonus_ok(t)
+	money += pay
+	flags["bonus_p%d" % period] = flags.get("bonus_p%d" % period, 0) + pay
+
+
+func _sla_fine(t: Dictionary) -> void:
+	if not paid_card(t) or t.get("sla_fined", false):
+		return
+	t["sla_fined"] = true
+	flags["sla_p%d" % period] = flags.get("sla_p%d" % period, 0) + card_sla(t)
+
+
 # ---------- defending the budget (endless run) ----------
 
 # What Irina offers at the end of a month: a base, half of what your clients paid the company, the
 # race with Taras, and what she thinks of you. You can take it or argue for more; what you have to
 # show for the month is your argument.
-const BUDGET_BASE := 300
-const BUDGET_MIN := 200
-const REVENUE_SHARE := 0.5
+const BUDGET_BASE := 50
+const BUDGET_MIN := 100
+const REVENUE_SHARE := 0.25
 const RACE_BUDGET := 300
 const OPINION_BUDGET := [-200, 0, 100, 200]
 const ASK_MORE := 0.2
