@@ -454,7 +454,7 @@ func _team_picks() -> void:
 
 # The endless run's actions belong to steps of the day; the story lets you do anything on the board.
 const TRIAGE_ACTIONS := ["assign", "decline", "prioritize", "unassign", "react", "initiative"]
-const WORK_ACTIONS := ["sit", "intervene", "pair", "talk", "stay"]
+const WORK_ACTIONS := ["sit", "intervene", "talk", "stay"]
 
 
 func allowed(kind: String) -> bool:
