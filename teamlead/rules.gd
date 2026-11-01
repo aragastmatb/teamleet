@@ -86,8 +86,6 @@ var hours := 0
 var my_week_hours := []
 # Hours you spent helping the team through their problems: managing, not doing.
 var my_week_mgmt := []
-# Marina's latest team survey: {"day", "quotes": [locale keys], "verdict": "for" / "wary" / "against"}.
-var survey := {}
 var quits := 0
 # Who you've already talked to today.
 var talked := {}
@@ -221,7 +219,6 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	hours = 0
 	my_week_hours = _zeros()
 	my_week_mgmt = _zeros()
-	survey = {}
 	quits = 0
 	events.clear()
 	letters.clear()
@@ -239,6 +236,7 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 
 
 func _start_day() -> void:
+	_grow_weeks()
 	_narrate("log.morning", [day_key()])
 	for t in tasks:
 		t["gain_today"] = 0.0
@@ -2154,12 +2152,6 @@ func _own_key(key: String, p: String) -> String:
 	return key + "." + p if L.has_key(key + "." + p) else key
 
 
-# What you can say to this line, or "" if there's nothing to do about it.
-func standup_reaction(i: int) -> String:
-	var all := standup_reactions(i)
-	return all[0] if not all.is_empty() else ""
-
-
 # Someone who grabbed a card can be thanked for it or have it taken back; saying nothing lets it stand.
 func standup_reactions(i: int) -> Array:
 	if phase != "standup" or i < 0 or i >= standup["lines"].size():
@@ -3193,14 +3185,28 @@ func day_key() -> String:
 
 
 func week() -> int:
-	return clampi(int((day - 1) / 5.0), 0, C.WEEKS - 1)
+	return int((day - 1) / 5.0)
 
 
+# Per-week counters, one slot for every week so far; _grow_weeks() adds this week's on Mondays.
 func _zeros() -> Array:
 	var a := []
-	a.resize(C.WEEKS)
+	a.resize(week() + 1)
 	a.fill(0)
 	return a
+
+
+const WEEK_COUNTERS := ["week_hours", "week_overtime", "week_extra", "week_absent", "week_done"]
+
+
+func _grow_weeks() -> void:
+	var lists: Array = [my_week_hours, my_week_mgmt]
+	for p in people:
+		for k in WEEK_COUNTERS:
+			lists.append(people[p][k])
+	for a in lists:
+		while a.size() <= week():
+			a.append(0)
 
 
 func add_mgmt_hours(n: int) -> void:
@@ -4026,7 +4032,7 @@ static func _read_save():
 	if f == null:
 		return null
 	var state = f.get_var()
-	if not state is Dictionary or state.get("version") != SAVE_VERSION or state.get("phase", "end") in ["title", "end"] or (state.get("phase") == "chapter_end" and state.get("mode") != "endless" and not C.CHAPTERS[state.get("chapter", 1)]["ready"]):
+	if not state is Dictionary or state.get("version") != SAVE_VERSION or state.get("phase", "end") in ["title", "end"] or (state.get("phase") == "chapter_end" and state.get("chapter", 0) > 0 and (state["chapter"] >= C.CHAPTERS.size() or not C.CHAPTERS[state["chapter"]]["ready"])):
 		return null
 	if not C.BOSSES.has(state.get("boss_type", "")) or not C.PROFILES.has(state.get("profile", "")):
 		return null
@@ -4597,55 +4603,6 @@ func team_score() -> float:
 		var st: Dictionary = people[p]
 		sum += -3.0 if st["gone"] else st["trust"] + clampf(st["mood"], -3.0, 3.0) / 3.0
 	return sum / team.size()
-
-
-# Marina asks everyone anonymously. Each answer comes from what actually happened to that person.
-func _run_survey() -> void:
-	var quotes: Array = []
-	for p in team:
-		if not people[p]["gone"]:
-			var q := _survey_quote(p)
-			# The same answer twice reads as a copy-paste; people phrase things differently.
-			for variant in [q, q + ".2", q + ".3"]:
-				if not quotes.has(variant) and L.has_key(variant):
-					q = variant
-					break
-			quotes.append(q)
-	shuffle(quotes)
-	var team := team_score()
-	survey = {"day": day, "quotes": quotes, "verdict": "for" if team >= TEAM_OK else ("wary" if team >= 0.0 else "against")}
-
-
-func _survey_quote(p: String) -> String:
-	var st: Dictionary = people[p]
-	var credit_taken := false
-	for c in flags.get("credit_taken", []):
-		if c["owner"] == p:
-			credit_taken = true
-	var extra := 0
-	for x in st["week_extra"]:
-		extra += x
-	if credit_taken and st["trust"] < 0:
-		return "survey.credit"
-	if flags.has("lied_" + p):
-		return "survey.lies"
-	if st["trust"] <= -2:
-		return "survey.distrust"
-	if st["debts"] > 0 or (st["promised"] and day - st["promised_day"] >= 5):
-		return "survey.promises"
-	if extra >= 12 or st["energy"] <= TIRED_ENERGY:
-		return "survey.overworked"
-	if st["idle_days"] >= 2:
-		return "survey.idle"
-	if not skills_grown(p).is_empty():
-		return "survey.growth"
-	if st["trust"] >= 1:
-		return "survey.trust"
-	if st["mood"] >= 2.0:
-		return "survey.happy"
-	if st["mood"] <= -2.0:
-		return "survey.unhappy"
-	return "survey.neutral"
 
 
 func broken_promises() -> Array[String]:

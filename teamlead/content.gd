@@ -1,13 +1,13 @@
 extends RefCounted
-# Content for the team lead prototype: two working weeks. All text lives in locale.gd.
+# Content for Team1337. All text lives in locale.gd.
 #
 # Every number here is hidden. The player sees moods, energy and progress in words and bars,
 # and learns skills and motives through results and one-on-ones.
 
-# The run is four chapters, a month (four working weeks) each; days are counted through the whole run.
+# The story is four chapters, one period (four working weeks) each; days are counted through the whole run.
 # Each chapter has its own key projects and deck (the `chapter` column in data/tasks.tsv); Irina names the
-# key projects on its first day, Marina surveys the team halfway and at the end, and the chapter closes
-# with a verdict. ready: playable already; the others are announced and come later.
+# key projects on its first day, and the chapter closes with a verdict. ready: playable already; the others
+# are announced and come later.
 # goals (chapter 2 on): what the company needs this month. "flags": that many of these flags set (a card
 # tagged sets:<flag> done well sets it); "banks_shipped": that many banks with us that got a good delivery;
 # "max_incidents": no more than that many serious incidents (cards tagged incident) this month.
@@ -29,8 +29,6 @@ const CHAPTERS := [
 		{"id": "final_release", "kind": "flags", "flags": ["final_release"], "need": 1},
 	]},
 ]
-const SURVEY_AT := [10, 20] # days into the chapter
-const WEEKS := 16 # in the whole run
 
 
 const TEAM := ["alex", "vika", "dima", "gena"]

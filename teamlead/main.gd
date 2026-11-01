@@ -1531,45 +1531,6 @@ func _cost_mark(n: int = 1) -> String:
 
 # ---------- the team ----------
 
-func _team_sidebar() -> Control:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = 0 if mobile else SIDEBAR_W
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL if mobile else Control.SIZE_FILL
-	var style := _flat(COL_SURFACE)
-	style.border_color = COL_BORDER
-	style.border_width_right = 1
-	panel.add_theme_stylebox_override("panel", style)
-	var scroll := _scroll("team")
-	panel.add_child(scroll)
-	var v := _vbox(8)
-	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_padded(v, 12, 12))
-	v.add_child(_me_card())
-	v.add_child(_section(Loc.t("team_header")))
-	var gone := PackedStringArray()
-	for p in rules.team:
-		if rules.people[p]["gone"]:
-			gone.append(Loc.person(p))
-		else:
-			v.add_child(_person_card(p))
-	if not gone.is_empty():
-		v.add_child(_label(Loc.t("gone_list", [", ".join(gone)]), 12, COL_FAINT, true))
-	if not rules.candidates.is_empty():
-		v.add_child(_spacer(4))
-		v.add_child(_section(Loc.t("hire.section") + " · " + Loc.t("money.fee", [_rub(rules.HIRE_FEE)])))
-		for c in rules.candidates:
-			v.add_child(_candidate_card(c))
-	v.add_child(_spacer(4))
-	v.add_child(_section(Loc.t("up.section")))
-	v.add_child(_upgrades_card())
-	if mobile:
-		v.add_child(_spacer(4))
-		var menu := _button(Loc.t("menu.button"), _open_menu, 0)
-		menu.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		v.add_child(menu)
-	return panel
-
-
 # You against Taras this month, in the top bar; what it means is in the tooltip.
 func _race_label(size: int) -> Label:
 	var mine := int(round(rules.my_points()))
@@ -1982,32 +1943,6 @@ func _nav_button(name: String, text_value: String, badge: String, badge_color: C
 	return b
 
 
-# The left column on a desktop: you, then the team, one line each; a click opens the whole card.
-func _team_strip() -> Control:
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = SIDEBAR_W
-	var style := _flat(COL_SURFACE)
-	style.border_color = COL_BORDER
-	style.border_width_right = 1
-	panel.add_theme_stylebox_override("panel", style)
-	var scroll := _scroll("team")
-	panel.add_child(scroll)
-	var v := _vbox(6)
-	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_padded(v, 10, 12))
-	v.add_child(_me_card())
-	v.add_child(_section(Loc.t("team_header")))
-	var gone := PackedStringArray()
-	for p in rules.team:
-		if rules.people[p]["gone"]:
-			gone.append(Loc.person(p))
-		else:
-			v.add_child(_person_row(p))
-	if not gone.is_empty():
-		v.add_child(_label(Loc.t("gone_list", [", ".join(gone)]), 12, COL_FAINT, true))
-	return panel
-
-
 func _person_row(p: String) -> Control:
 	var st: Dictionary = rules.people[p]
 	var card := PanelContainer.new()
@@ -2052,34 +1987,11 @@ func _person_row(p: String) -> Control:
 
 # ---------- the upgrade tree ----------
 
-# The sidebar's short view: what's being rolled out, and the way into the tree.
-func _upgrades_card() -> Control:
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 10))
-	var v := _vbox(4)
-	card.add_child(v)
-	var building := 0
-	for id in C.UPGRADES:
-		if rules.upgrade_state(id) == "building":
-			building += 1
-			v.add_child(_label(Loc.t("up.building_line", [Loc.t("up.%s.name" % id), rules.upgrade_done_count(id), C.UPGRADES[id]["cards"].size()]), 13, COL_TEXT, true))
-	if building == 0:
-		v.add_child(_label(Loc.t("up.none"), 13, COL_MUTED, true))
-	var b := _button(Loc.t("up.button"), _open_upgrades, 0, "subtle")
-	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	v.add_child(b)
-	return card
-
-
 func _open_upgrades() -> void:
 	for id in C.UPGRADES:
 		if _upgrade_affordable(id):
 			upgrades_seen[id] = true
 	_open_window("upgrades")
-
-
-func _close_upgrades() -> void:
-	_close_window()
 
 
 func _buy_upgrade(id: String) -> void:
@@ -4424,15 +4336,6 @@ func _keys_text() -> String:
 	return Loc.render("report.keys", [], {"parts": ", ".join(parts)})
 
 
-func _survey_block(v: VBoxContainer) -> void:
-	v.add_child(_spacer(4))
-	v.add_child(_section(Loc.t("survey_title")))
-	for q in rules.survey["quotes"]:
-		v.add_child(_label("— " + Loc.t("quote", [Loc.t(q)]), 15, COL_TEXT, true))
-	var verdict: String = rules.survey["verdict"]
-	v.add_child(_label(Loc.t("survey.verdict." + verdict), 15, COL_GOOD if verdict == "for" else (COL_WARN if verdict == "wary" else COL_DANGER), true, true))
-
-
 # The end of an endless run: the record, the run in numbers, and what it earned.
 func _run_record(v: VBoxContainer) -> void:
 	var n := rules.done_periods()
@@ -4626,18 +4529,6 @@ func _trust_word(p: String) -> String:
 	if t >= 1:
 		return "trusts"
 	return ""
-
-
-func _entry_text(entry: Dictionary) -> String:
-	var body := Loc.render(entry["key"], entry.get("args", []), entry.get("names", {}))
-	match entry["who"]:
-		"":
-			return body
-		"you":
-			if entry.has("to"):
-				return "%s → %s: %s" % [Loc.t("you"), Loc.t("name.%s.dat" % entry["to"]), Loc.t("quote", [body])]
-			return "%s: %s" % [Loc.t("you"), Loc.t("quote", [body])]
-	return "%s: %s" % [Loc.person(entry["who"]), body if body.begins_with("(") or body.begins_with("«") or body.begins_with("\"") else Loc.t("quote", [body])]
 
 
 # ---------- widget helpers ----------
