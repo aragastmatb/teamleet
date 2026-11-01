@@ -36,6 +36,17 @@ const COL_TOPBAR := Color("0747a6")
 const COL_DANGER := Color("de350b")
 const COL_WARN := Color("b65c02")
 const COL_GOOD := Color("00875a")
+# The upgrade tree's cork board.
+const COL_CORK := Color("dcc29a")
+const COL_CORK_LINE := Color("c7a878")
+const COL_CORK_TEXT := Color("5b4630")
+const COL_STICKY := Color("ffe46b")
+const COL_STICKY_PALE := Color("fff3b8")
+const COL_STICKY_LOCKED := Color("efeae0")
+const COL_STICKY_BUILD := Color("c4e1ff")
+const COL_STICKY_DONE := Color("c6efce")
+const COL_THREAD := Color("c0392b")
+const COL_THREAD_OK := Color("2e7d32")
 const COL_GAIN := Color("36b37e") # today's part of a progress bar
 const COL_EARLIER := Color("abf5d1") # the part done before today
 const COL_STAR := Color("ff991f")
@@ -127,6 +138,7 @@ var deal_from := -1
 var deal_who := ""
 # Upgrades you could afford when you last looked at the tree; the counter only shows ones new since.
 var upgrades_seen := {}
+var up_branch := "" # the upgrade branch shown on the phone
 # Where the chat was left. Anything new in it (a message, a question, answer buttons) brings it to the
 # bottom; otherwise it stays where you scrolled it.
 var chat_pos := 0
@@ -1790,7 +1802,8 @@ func _open_window(name: String) -> void:
 func _close_window() -> void:
 	if not rules.pending.is_empty():
 		return
-	window = ""
+	# A single upgrade's card goes back to the tree.
+	window = "upgrades" if window.begins_with("upgrade:") else ""
 	if selected >= 0:
 		selected = -1
 		deal_from = -1
@@ -1798,9 +1811,13 @@ func _close_window() -> void:
 
 
 func _build_window() -> void:
-	if window == "upgrades":
-		if rules.endless():
+	if window == "upgrades" or window.begins_with("upgrade:"):
+		if not rules.endless():
+			return
+		if window == "upgrades":
 			_build_upgrades()
+		elif C.UPGRADES.has(window.substr(8)):
+			_upgrade_window(window.substr(8))
 		return
 	var view := get_viewport().get_visible_rect().size
 	if window == "task":
@@ -2176,68 +2193,273 @@ func _close_upgrades() -> void:
 
 func _buy_upgrade(id: String) -> void:
 	rules.buy_upgrade(id)
+	window = "upgrades"
 	_render()
 
 
 func _build_upgrades() -> void:
 	var view := get_viewport().get_visible_rect().size
 	var w := view.x - (16.0 if mobile else 64.0)
-	var side_by_side := not mobile and w >= 1100.0
-	var body := _modal(Loc.t("up.title"), Loc.t("up.hint") + "   " + _money_text() + "   " + _attention_text(), w, side_by_side)
-	var columns: Container = HBoxContainer.new() if not mobile else _vbox(16)
-	if not mobile:
-		columns.add_theme_constant_override("separation", 12)
-	columns.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	body.add_child(columns)
-	for branch in C.UPGRADE_BRANCHES:
-		var col := _vbox(10)
-		col.custom_minimum_size.x = 0.0 if mobile or side_by_side else 240.0
-		col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		col.size_flags_stretch_ratio = 1.0
-		col.add_child(_section(Loc.t("up.branch." + branch)))
-		var ids: Array = C.UPGRADES.keys().filter(func(id): return C.UPGRADES[id]["branch"] == branch)
-		ids.sort_custom(func(a, b): return C.UPGRADES[a]["order"] < C.UPGRADES[b]["order"])
-		for id in ids:
-			col.add_child(_upgrade_tile(id))
-		columns.add_child(col)
+	var body := _modal(Loc.t("up.title"), Loc.t("up.hint") + "   " + _money_text() + "   " + _attention_text(), w, mobile)
+	var ids: Array = C.UPGRADES.keys()
+	if mobile:
+		if not C.UPGRADE_BRANCHES.has(up_branch):
+			up_branch = C.UPGRADE_BRANCHES[0]
+		var tabs := _flow(4, 4)
+		body.add_child(tabs)
+		for branch in C.UPGRADE_BRANCHES:
+			var b := _button(Loc.t("up.branch." + branch), _pick_branch.bind(branch), 0, "chosen" if up_branch == branch else "subtle")
+			tabs.add_child(b)
+		ids = ids.filter(func(id): return C.UPGRADES[id]["branch"] == up_branch)
+	body.add_child(_cork_board(ids, w - (40.0 if mobile else 80.0)))
 
 
-func _upgrade_tile(id: String) -> Control:
+func _pick_branch(branch: String) -> void:
+	up_branch = branch
+	_render()
+
+
+# How deep in the tree an upgrade sits: 0 for one you can start with, one more than its deepest requirement.
+func _up_tier(id: String, memo: Dictionary = {}) -> int:
+	if memo.has(id):
+		return memo[id]
+	var t := 0
+	for r in C.UPGRADES[id]["requires"]:
+		t = maxi(t, _up_tier(r, memo) + 1)
+	memo[id] = t
+	return t
+
+
+# Siblings sorted to sit near what they hang from (axis 0: across, 1: down), so threads cross less.
+func _by_parents(ids: Array, places: Dictionary, axis: int) -> Array:
+	var key := {}
+	for id in ids:
+		var sum := 0.0
+		var n := 0
+		for r in C.UPGRADES[id]["requires"]:
+			if places.has(r):
+				sum += places[r].get_center()[axis]
+				n += 1
+		key[id] = (sum / n if n > 0 else 1e6) + C.UPGRADES[id]["order"] * 0.001
+	var out := ids.duplicate()
+	out.sort_custom(func(a, b): return key[a] < key[b])
+	return out
+
+
+# The tree as stickers pinned to a cork board, tied with threads to what they need: green once that's
+# done, red while it isn't. On a computer each branch is a strip, the tree grows left to right; on the
+# phone it's one branch, growing downwards.
+func _cork_board(ids: Array, width: float) -> Control:
+	var board := PanelContainer.new()
+	board.add_theme_stylebox_override("panel", _box(COL_CORK, COL_CORK_LINE, 1, 0))
+	var canvas := Control.new()
+	canvas.mouse_filter = Control.MOUSE_FILTER_PASS
+	board.add_child(canvas)
+	var places := {}
+	var tiers := {}
+	for id in ids:
+		tiers[id] = _up_tier(id)
+	var size := Vector2.ZERO
+	if mobile:
+		var gap := 14.0
+		var sw := floorf((width - gap * 3.0) / 2.0)
+		var sh := 128.0
+		var y := gap
+		for tier in range(0, 6):
+			# Each sticker goes under the column its requirement is in, then the two columns are evened out.
+			var cols := [[], []]
+			for id in _by_parents(ids.filter(func(id): return tiers[id] == tier), places, 0):
+				var side := 0
+				for r in C.UPGRADES[id]["requires"]:
+					if places.has(r) and places[r].position.x > gap:
+						side = 1
+				cols[side].append(id)
+			while absi(cols[0].size() - cols[1].size()) > 1:
+				var big: int = 0 if cols[0].size() > cols[1].size() else 1
+				cols[1 - big].append(cols[big].pop_back())
+			for c in 2:
+				for i in cols[c].size():
+					places[cols[c][i]] = Rect2(gap + c * (sw + gap), y + i * (sh + gap * 2.0), sw, sh)
+			var rows := maxi(cols[0].size(), cols[1].size())
+			y += rows * (sh + gap * 2.0)
+		size = Vector2(width, y)
+	else:
+		var label_w := 170.0
+		var col_gap := 56.0
+		var sw := clampf(floorf((width - label_w - 3.0 * col_gap - 12.0) / 4.0), 180.0, 240.0)
+		var sh := 112.0
+		var row_gap := 18.0
+		var y := 0.0
+		for branch in C.UPGRADE_BRANCHES:
+			var mine: Array = ids.filter(func(id): return C.UPGRADES[id]["branch"] == branch)
+			var stack := 1
+			for tier in range(0, 6):
+				var cell: Array = _by_parents(mine.filter(func(id): return tiers[id] == tier), places, 1)
+				stack = maxi(stack, cell.size())
+				for i in cell.size():
+					places[cell[i]] = Rect2(label_w + tier * (sw + col_gap), y + row_gap + i * (sh + row_gap), sw, sh)
+			var lane_h := row_gap + stack * (sh + row_gap)
+			var head := _label(Loc.t("up.branch." + branch).to_upper(), 13, COL_CORK_TEXT, true, true)
+			head.position = Vector2(16, y + row_gap)
+			head.size = Vector2(label_w - 20, 40)
+			canvas.add_child(head)
+			if y > 0.0:
+				var line := ColorRect.new()
+				line.color = COL_CORK_LINE
+				line.position = Vector2(0, y)
+				line.size = Vector2(maxf(width, label_w + 4.0 * sw + 3.0 * col_gap + 12.0), 1)
+				line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				canvas.add_child(line)
+			y += lane_h
+		size = Vector2(maxf(width, label_w + 4.0 * sw + 3.0 * col_gap + 12.0), y)
+	canvas.custom_minimum_size = size
+	# Threads run under the stickers so the text stays readable; the pins sit on top.
+	var threads := Control.new()
+	threads.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	threads.custom_minimum_size = size
+	canvas.add_child(threads)
+	for id in places:
+		var sticker := _sticker(id, places[id].size)
+		sticker.position = places[id].position
+		canvas.add_child(sticker)
+	var pins := Control.new()
+	pins.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pins.custom_minimum_size = size
+	canvas.add_child(pins)
+	# Where a thread is pinned at both ends. On the phone, one that would pass under another sticker goes
+	# round the board's edge instead, pinned at the stickers' sides (the third value says which edge).
+	var ends := func(id: String, r: String) -> Array:
+		var to: Rect2 = places[id]
+		var from: Rect2 = places[r]
+		if not mobile:
+			return [Vector2(from.end.x - 6, from.get_center().y), Vector2(to.position.x + 6, to.get_center().y), 0.0]
+		var a := Vector2(from.get_center().x, from.end.y - 6)
+		var b := Vector2(to.get_center().x, to.position.y + 6)
+		var blocked := false
+		for other in places:
+			if other != id and other != r and places[other].grow(-4).intersects(Rect2(a, Vector2.ZERO).expand(b)):
+				blocked = true
+		if not blocked or absf(from.position.x - to.position.x) > 1.0:
+			return [a, b, 0.0]
+		var left: bool = from.position.x < size.x / 2.0
+		var x: float = from.position.x + 6 if left else from.end.x - 6
+		return [Vector2(x, from.get_center().y), Vector2(x, to.get_center().y), 3.0 if left else size.x - 3.0]
+	pins.draw.connect(func():
+		for id in places:
+			for r in C.UPGRADES[id]["requires"]:
+				if places.has(r):
+					var color := COL_THREAD_OK if rules.upgrade_state(r) == "done" else COL_THREAD
+					for pin in ends.call(id, r).slice(0, 2):
+						pins.draw_circle(pin, 5.0, color)
+						pins.draw_circle(pin + Vector2(-1.5, -1.5), 1.6, Color(1, 1, 1, 0.6)))
+	threads.draw.connect(func():
+		for id in places:
+			for r in C.UPGRADES[id]["requires"]:
+				if not places.has(r):
+					continue
+				var pair: Array = ends.call(id, r)
+				var a: Vector2 = pair[0]
+				var b: Vector2 = pair[1]
+				var color := COL_THREAD_OK if rules.upgrade_state(r) == "done" else COL_THREAD
+				var edge: float = pair[2]
+				var sag := 10.0 + a.distance_to(b) * 0.06
+				var pts := PackedVector2Array()
+				for i in 25:
+					var k := i / 24.0
+					if edge > 0.0:
+						pts.append(a.bezier_interpolate(Vector2(edge, a.y), Vector2(edge, b.y), b, k))
+					else:
+						pts.append(a.lerp(b, k) + Vector2(0, sag * 4.0 * k * (1.0 - k)))
+				threads.draw_polyline(pts, color, 2.0, true))
+	return board
+
+
+# One sticker: the name, a line about it, and the price or how far along it is. A click opens the rest.
+func _sticker(id: String, sz: Vector2) -> Control:
+	var state := rules.upgrade_state(id)
+	var fill: Color = COL_STICKY_LOCKED
+	match state:
+		"open":
+			fill = COL_STICKY if rules.money >= rules.upgrade_price(id) else COL_STICKY_PALE
+		"building":
+			fill = COL_STICKY_BUILD
+		"done":
+			fill = COL_STICKY_DONE
+	var tile := PanelContainer.new()
+	var style := _box(fill, fill.darkened(0.08), 1, 10)
+	style.set_corner_radius_all(2)
+	style.shadow_color = Color(0.25, 0.15, 0.05, 0.25)
+	style.shadow_size = 3
+	style.shadow_offset = Vector2(2, 3)
+	tile.add_theme_stylebox_override("panel", style)
+	tile.custom_minimum_size = sz
+	tile.size = sz
+	tile.pivot_offset = sz / 2.0
+	# A slight tilt each, always the same for the same sticker.
+	tile.rotation = deg_to_rad(float(hash(id) % 5 - 2) * 0.6)
+	tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	tile.tooltip_text = Loc.t("up.%s.name" % id)
+	tile.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_open_window.call_deferred("upgrade:" + id))
+	var v := _vbox(3)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tile.add_child(v)
+	var faint: bool = state == "locked"
+	var name := _label(Loc.t("up.%s.name" % id), 13 if mobile else 14, COL_FAINT if faint else COL_TEXT, true, true)
+	name.max_lines_visible = 2
+	v.add_child(name)
+	var about := _label(Loc.t("up.%s.about" % id), 12, COL_FAINT if faint else COL_MUTED, true)
+	about.max_lines_visible = 2
+	about.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	about.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(about)
+	match state:
+		"building":
+			v.add_child(_label(Loc.t("up.progress", [rules.upgrade_done_count(id), C.UPGRADES[id]["cards"].size()]), 12, COL_PRIMARY, false, true))
+		"done":
+			v.add_child(_label("✓ " + Loc.t("up.state.done"), 12, COL_GOOD, false, true))
+		_:
+			var short := rules.money < rules.upgrade_price(id)
+			v.add_child(_label(_rub(rules.upgrade_price(id)), 13, COL_DANGER if short and not faint else (COL_FAINT if faint else COL_TEXT), false, true))
+	return tile
+
+
+# The full card of one upgrade, opened from its sticker: what it does now and when rolled out, what it
+# brings into the deck, what it needs, and the buy button.
+func _upgrade_window(id: String) -> void:
+	var view := get_viewport().get_visible_rect().size
 	var up: Dictionary = C.UPGRADES[id]
 	var state := rules.upgrade_state(id)
-	var tile := PanelContainer.new()
-	var fill := COL_BG if state == "locked" else (COL_SELECTED if state == "building" else COL_SURFACE)
-	var style := _box(fill, COL_GOOD if state == "done" else (COL_FOCUS if state == "open" else COL_BORDER), 1, 12)
-	style.set_corner_radius_all(10)
-	tile.add_theme_stylebox_override("panel", style)
-	var v := _vbox(5)
-	tile.add_child(v)
-	v.add_child(_label(Loc.t("up.%s.name" % id), 15, COL_FAINT if state == "locked" else COL_TEXT, true, true))
+	var v := _modal(Loc.t("up.%s.name" % id), _money_text() + "   " + _attention_text(), minf(560.0, view.x - 16.0), true, true)
 	if state == "building":
-		v.add_child(_label(Loc.t("up.progress", [rules.upgrade_done_count(id), up["cards"].size()]), 12, COL_PRIMARY, true, true))
+		v.add_child(_label(Loc.t("up.progress", [rules.upgrade_done_count(id), up["cards"].size()]), 13, COL_PRIMARY, true, true))
 	elif state == "done":
-		v.add_child(_label(Loc.t("up.state.done"), 12, COL_GOOD, true, true))
-	v.add_child(_label(Loc.t("up.%s.about" % id), 12, COL_MUTED, true))
+		v.add_child(_label(Loc.t("up.state.done"), 13, COL_GOOD, true, true))
+	v.add_child(_label(Loc.t("up.%s.about" % id), 14, COL_MUTED, true))
 	if not up["start"].is_empty():
-		v.add_child(_label(Loc.t("up.start", [_fx_list(up["start"])]), 12, COL_TEXT, true))
+		v.add_child(_label(Loc.t("up.start", [_fx_list(up["start"])]), 14, COL_TEXT, true))
 	if not up["final"].is_empty():
-		v.add_child(_label(Loc.t("up.final", [_fx_list(up["final"])]), 12, COL_TEXT, true))
-	v.add_child(_label(Loc.t("up.cards", [up["cards"].size()]), 12, COL_MUTED, true))
+		v.add_child(_label(Loc.t("up.final", [_fx_list(up["final"])]), 14, COL_TEXT, true))
+	v.add_child(_label(Loc.t("up.cards", [up["cards"].size()]), 13, COL_MUTED, true))
 	if not up["maint"].is_empty():
-		v.add_child(_label(Loc.t("up.maint", [up["maint"].size()]), 12, COL_WARN, true))
+		v.add_child(_label(Loc.t("up.maint", [up["maint"].size()]), 13, COL_WARN, true))
 	if up["replaces"] != "":
-		v.add_child(_label(Loc.t("up.replaces", [Loc.t("up.%s.name" % up["replaces"])]), 12, COL_GOOD, true))
+		v.add_child(_label(Loc.t("up.replaces", [Loc.t("up.%s.name" % up["replaces"])]), 13, COL_GOOD, true))
 	if state == "locked":
 		var names := PackedStringArray()
 		for r in up["requires"]:
 			if rules.upgrade_state(r) != "done":
 				names.append("«%s»" % Loc.t("up.%s.name" % r))
-		v.add_child(_label(Loc.t("up.needs", [", ".join(names)]), 12, COL_FAINT, true))
+		v.add_child(_label(Loc.t("up.needs", [", ".join(names)]), 13, COL_WARN, true))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
 	if state in ["open", "locked"]:
 		var b := _button(Loc.t("up.buy", [_rub(rules.upgrade_price(id))]) + _cost_mark(rules.cost("buy")), _buy_upgrade.bind(id), 0, "primary" if rules.can_buy(id) else "")
 		b.disabled = not rules.can_buy(id)
-		v.add_child(b)
-	return tile
+		row.add_child(b)
+	row.add_child(_button(Loc.t("up.back"), _open_window.bind("upgrades"), 0, "subtle"))
 
 
 func _fx_list(effects: Array) -> String:
