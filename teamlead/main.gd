@@ -3579,11 +3579,21 @@ func _contact_of(p: String) -> String:
 const QUIET_PREFIXES := ["assign.say", "object.", "react.", "pace.", "stuck.found_", "standup.log", "result.any.good",
 	"result.any.ok", "result.mine", "init.yes"]
 const QUIET_KEYS := ["stayed_late"]
+# Endless: the chat holds only what asks for an answer or is a conversation. News that changes
+# nothing you'd do right now lives where it shows: penalties on the board and at Friday's review,
+# skills and moods on the person, money in the top bar.
+const ENDLESS_QUIET := ["penalty.", "log.", "letter.unanswered", "know.skill", "grew", "role.emerged",
+	"hire.gone", "money.payday", "deck.", "weight.", "incident.counted", "late.escalated", "boss.vouched_late",
+	"absent.", "sick.", "tired.", "style.", "unhappy.", "idle.", "quit.", "bank.left"]
 
 
 func _quiet(key: String) -> bool:
 	if QUIET_KEYS.has(key):
 		return true
+	if rules.endless():
+		for prefix in ENDLESS_QUIET:
+			if key.begins_with(prefix):
+				return true
 	for prefix in QUIET_PREFIXES:
 		if key.begins_with(prefix):
 			return true
