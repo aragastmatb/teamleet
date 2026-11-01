@@ -998,7 +998,8 @@ func _talk_topics(p: String) -> Array:
 			break
 	if st["energy"] <= 4.0:
 		found.append("tired")
-	if _stuck_task(p) >= 0:
+	# Endless: how a task is going is asked on the task itself; a one-on-one is about the person.
+	if _stuck_task(p) >= 0 and not endless():
 		found.append("stuck")
 	var q := queue_of(p)
 	if q.size() >= 3:
@@ -1015,7 +1016,7 @@ func _talk_topics(p: String) -> Array:
 		found.append("grow")
 	if day - st["last_done"] <= 2 and scenes._last_good(self, p) >= 0:
 		found.append("proud")
-	if not q.is_empty():
+	if not q.is_empty() and not endless():
 		found.append("work")
 	found.append("how")
 	found.sort_custom(func(a, b): return Dialogue.TOPICS[a]["heat"] > Dialogue.TOPICS[b]["heat"])
@@ -1898,7 +1899,9 @@ func resolve_event(choice: String) -> void:
 	# Remembered like story answers (<event>:<choice>), so a later scene can quote what was said back then.
 	flags["%s:%s" % [events[0]["id"], choice]] = true
 	# What you say at Irina's is a reply like any other.
-	if endless() and _visit_event(events[0]):
+	if endless() and (_visit_event(events[0]) or events[0]["id"] == "intervene"):
+		if not can_afford(choice_cost(events[0], choice)):
+			return
 		spend_attention(choice_cost(events[0], choice))
 	scenes.resolve(self, events.pop_front(), choice)
 	_weight_check()
@@ -2797,6 +2800,8 @@ func choice_cost(ev: Dictionary, choice: String) -> int:
 	var key: String = ev["id"] + "/" + choice
 	if endless() and _visit_event(ev):
 		return 0 if choice == "leave" else cost("reply")
+	if endless() and ev["id"] == "intervene":
+		return cost("sit") if choice.begins_with("help_") else 0
 	if EVENING_COSTS.has(key):
 		return EVENING_COSTS[key]
 	return 1 if _old_choice_costs(ev, choice) else 0

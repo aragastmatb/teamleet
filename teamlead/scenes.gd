@@ -720,6 +720,8 @@ func _last_good(r, p: String) -> int:
 
 # They tell you how it's going. Most say it straight; Alex won't admit he's behind until it's obvious.
 func intervene_event(r, t: Dictionary) -> Dictionary:
+	if r.endless():
+		return _ask_task_event(r, t)
 	var p: String = t["owner"]
 	var state := "on_track"
 	if t.get("stuck", 0) > 0:
@@ -738,7 +740,82 @@ func intervene_event(r, t: Dictionary) -> Dictionary:
 		"choices": ["trust", "faster", "careful", "cut", "my_way", "take_over"]}
 
 
+# Endless: they say what's actually wrong with it, and you leave it, help with that very thing, or hand it to
+# someone else. Most say it straight; a workaholic won't admit being a little behind.
+func _ask_task_event(r, t: Dictionary) -> Dictionary:
+	var p: String = t["owner"]
+	var reason := "on_track"
+	if r.needs_pair(t):
+		reason = "no_pair"
+	elif t["blocked"] > 0:
+		reason = "blocked"
+	elif t.get("stuck", 0) > 0:
+		reason = "stuck"
+	elif r.people[p]["skills"][t["cat"]] <= 1:
+		reason = "not_mine"
+	elif r._feels_tired(p):
+		reason = "tired"
+	elif r.queue_of(p).size() >= r.OVERLOAD_AT:
+		reason = "swamped"
+	elif t["progress"] >= 0.75 * t["size"]:
+		reason = "almost"
+	elif r.days_needed(t) > t["due"] - r.day + 1.3 and not (r.info(p).get("workaholic", false) and r.days_needed(t) < t["due"] - r.day + 3.0):
+		reason = "behind"
+	var choices: Array = ["leave"]
+	if not reason in ["on_track", "almost"]:
+		choices.append("help_" + reason)
+	choices.append("reassign")
+	return {"id": "intervene", "who": p, "target": p, "uid": t["uid"], "state": reason, "names": task_names(r, t),
+		"lines": [{"who": p, "key": "event.intervene.why." + reason}], "choices": choices}
+
+
+const HELP_HOURS := 2
+
+
+func _resolve_ask_task(r, ev: Dictionary, c: String) -> String:
+	var t: Dictionary = r.task(ev["uid"])
+	var p: String = ev["target"]
+	var st: Dictionary = r.people[p]
+	if c == "leave":
+		return "event.intervene.trust.reply"
+	if c == "reassign":
+		# Someone else picks it up today; whoever takes over someone's half-done work loses half of it.
+		var relieved: bool = ev["state"] in ["no_pair", "stuck", "not_mine", "tired", "swamped", "behind"]
+		t["progress"] *= 0.5
+		r.unassign_now(t)
+		t["midday"] = r.day
+		if relieved:
+			st["mood"] += 0.3
+			return "event.intervene.take_over.relief"
+		st["mood"] -= 1.0
+		st["trust"] -= 1
+		return "event.intervene.take_over.hurt"
+	# Help: the cure for what they named. It takes your time, too.
+	r.add_my_hours(HELP_HOURS)
+	t["involved"] = true
+	match ev["state"]:
+		"no_pair", "behind":
+			t["sit_today"] = true
+			r.learn(p, t["cat"], 0.5)
+		"blocked":
+			t["blocked"] = 0
+		"stuck", "not_mine":
+			t["stuck"] = 0
+			t["sit_today"] = true
+			r.learn(p, t["cat"], 1.0)
+		"tired":
+			r.give_day_off(p)
+			st["mood"] += 0.5
+		"swamped":
+			if not r.lighten(p):
+				t["sit_today"] = true
+	return "event.intervene.helped." + ev["state"]
+
+
 func _resolve_intervene(r, ev: Dictionary, c: String) -> String:
+	if r.endless():
+		var said := _resolve_ask_task(r, ev, c)
+		return r._first_key(["%s.%s" % [said, ev["target"]], said])
 	var t: Dictionary = r.task(ev["uid"])
 	var p: String = ev["target"]
 	var st: Dictionary = r.people[p]

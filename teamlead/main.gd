@@ -3155,7 +3155,7 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 			var stay := _button(Loc.t("stay_button"), _ask_stay, 0, "subtle")
 			stay.disabled = stay.disabled or t.get("stay_asked", -1) == rules.day
 			acts.add_child(stay)
-			var step := _button(Loc.t("intervene_button") + _cost_mark(rules.cost("intervene")), _intervene, 0, "subtle")
+			var step := _button(Loc.t("intervene_button.ask" if rules.endless() else "intervene_button") + _cost_mark(rules.cost("intervene")), _intervene, 0, "subtle")
 			step.disabled = step.disabled or not rules.can_intervene(t)
 			acts.add_child(step)
 	if t["status"] == "active" and rules.team.has(t["owner"]) and rules.allowed("pair"):
@@ -4115,7 +4115,9 @@ func _event_prompt(list: VBoxContainer, ev: Dictionary) -> void:
 			text += _cost_mark(rules.choice_cost(ev, choice))
 		if ev["id"] == "boss_visit" and (parts[0] == "delay" or parts[0] == "contractor") and not rules.has_weight():
 			text += " " + Loc.t("needs_weight")
-		v.add_child(_answer_button(text, _event.bind(choice)))
+		var answer := _answer_button(text, _event.bind(choice))
+		answer.disabled = answer.disabled or not rules.can_afford(rules.choice_cost(ev, choice))
+		v.add_child(answer)
 
 
 func _review_prompt(list: VBoxContainer) -> void:
