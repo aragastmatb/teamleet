@@ -2072,6 +2072,10 @@ func _boss_button() -> Control:
 	row.add_child(_avatar("boss", 26))
 	var text := _label(resting, 14, {"w3": COL_GOOD, "w2": COL_GOOD, "w1": COL_TEXT, "w0": COL_DANGER}[word])
 	text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	# As wide as the longer of the two texts, or the card shrinks from under the cursor and flickers.
+	var font := text.get_theme_font("font")
+	var fs := text.get_theme_font_size("font_size")
+	text.custom_minimum_size.x = ceilf(maxf(font.get_string_size(resting, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x, font.get_string_size(hover, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x))
 	row.add_child(text)
 	card.mouse_entered.connect(func():
 		text.text = hover
