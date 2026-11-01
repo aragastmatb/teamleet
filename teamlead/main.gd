@@ -12,10 +12,11 @@ const DevTest = preload("res://teamlead/devtest.gd")
 const BASE_FONT := 15
 const CHAT_W := 350
 const TOP_H := 50
-# Base sizes the screen is laid out for: a landscape desktop, or a phone held upright.
+# Base sizes the screen is laid out for: a desktop, or a phone on its side, which gets the same board
+# drawn tighter. A phone held upright only asks to be turned: the board is wide.
 const DESKTOP_SIZE := Vector2i(1280, 800)
-const PHONE_SIZE := Vector2i(430, 860)
-const PHONE_WIDE_SIZE := Vector2i(860, 430) # a phone on its side
+const COMPACT_SIZE := Vector2i(880, 420)
+const PORTRAIT_SIZE := Vector2i(430, 860)
 # Below this (in CSS pixels on the web, window pixels elsewhere) the desktop layout gets too small to read.
 const DESKTOP_MIN := Vector2(900, 560)
 
@@ -125,12 +126,13 @@ var menu_page := ""
 var heard := 0
 var last_phase := "title"
 var cue := ""
-# Phone layout: one screen at a time (board, team or chat) with tabs at the bottom.
-var mobile := false
-var tab := "board"
-var lane := "inbox"
-# The step of the day the board was last drawn in: when it changes, the phone turns to what matters now.
-var lane_step := ""
+# A small screen (a phone on its side): the same board, tighter, and the messenger slides over it.
+var compact := false
+var chat_open := false
+# A phone held upright: only the note to turn it.
+var portrait := false
+# A sticky picked on the board waits for a column to go to: its new owner, or (pairing) the helper.
+var pairing := false
 # The messenger: a column of contacts, and the one conversation that's open ("" for none).
 var chat_thread := ""
 # How far each conversation has been read, as an index into the history.
@@ -264,16 +266,17 @@ func _fit_window() -> void:
 	w.move_to_center()
 
 
-# An upright window (a phone) gets the phone layout; the base size changes with it so text stays readable.
-# Upright or small (a phone, also held sideways): the one-column layout. Windows and the web canvas
-# are in device pixels, so a 3x phone or a Retina laptop is measured in points.
+# Upright: the note to turn the phone. Small (a phone on its side): the compact board. Windows and the
+# web canvas are in device pixels, so a 3x phone or a Retina laptop is measured in points.
 func _apply_layout_mode() -> bool:
 	var size := Vector2(get_window().size) / maxf(1.0, DisplayServer.screen_get_scale())
-	var phone := size.x < size.y or size.x < DESKTOP_MIN.x or size.y < DESKTOP_MIN.y
-	var target := DESKTOP_SIZE if not phone else (PHONE_SIZE if size.x < size.y else PHONE_WIDE_SIZE)
-	if phone == mobile and get_window().content_scale_size == target:
+	var up := size.x < size.y
+	var small := up or size.x < DESKTOP_MIN.x or size.y < DESKTOP_MIN.y
+	var target := PORTRAIT_SIZE if up else (COMPACT_SIZE if small else DESKTOP_SIZE)
+	if up == portrait and small == compact and get_window().content_scale_size == target:
 		return false
-	mobile = phone
+	portrait = up
+	compact = small
 	get_window().content_scale_size = target
 	return true
 
@@ -283,28 +286,38 @@ func _on_resize() -> void:
 		_render()
 
 
-func _go_tab(name: String) -> void:
-	# The chat tab again, from inside a conversation, goes back to the list of them.
-	if name == "chat" and tab == "chat":
-		chat_thread = ""
-	tab = name
-	if name != "board":
-		selected = -1
-	_render()
-
-
-func _pick_lane(name: String) -> void:
-	lane = name
-	_render()
-
-
 # ---------- actions ----------
 
+# A card's own window: what it is, who asked, and everything that can be done with it.
 func _select(uid: int) -> void:
 	selected = uid
+	pairing = false
 	deal_from = -1
 	window = "task"
 	_render()
+
+
+# A sticky picked off the board, to stick it on someone's column next (or, pairing, to sit a helper with its owner).
+func _pick_sticky(uid: int, pair: bool) -> void:
+	if selected == uid and window == "":
+		_clear_selection()
+		return
+	selected = uid
+	pairing = pair
+	deal_from = -1
+	window = ""
+	_render()
+
+
+# The column someone was tapped on while a sticky waits: it goes to them, or they sit in as the pair.
+func _drop_on(p: String) -> void:
+	if pairing:
+		var uid := selected
+		_clear_selection()
+		rules.set_helper(uid, p)
+		_render()
+	else:
+		_pick(p)
 
 
 # Picking someone hands them the task. If they push back, the window turns into the talk about it;
@@ -380,8 +393,7 @@ func _talk_to(p: String) -> void:
 	selected = -1
 	rules.start_talk(p)
 	chat_thread = p
-	if mobile:
-		tab = "chat"
+	chat_open = true
 	_render()
 
 
@@ -492,6 +504,7 @@ func _continue_run() -> void:
 
 func _clear_selection() -> void:
 	selected = -1
+	pairing = false
 	_render()
 
 
@@ -653,10 +666,6 @@ func _render() -> void:
 		rules.save_game()
 	cue = ""
 	anchors.clear()
-	# Once the cards are handed out, the phone shows the team at work; a new morning goes back to the inbox.
-	if rules.step != lane_step:
-		lane_step = rules.step
-		lane = "inbox" if lane_step == "triage" else "team"
 	if is_instance_valid(chat_scroll):
 		chat_pos = 1 << 30 if chat_to_end else chat_scroll.scroll_vertical
 	for key in scrolls:
@@ -669,6 +678,9 @@ func _render() -> void:
 	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(ui)
+	if portrait:
+		_build_turn_phone()
+		return
 	if rules.phase == "title":
 		if setup_open:
 			_build_setup()
@@ -694,11 +706,15 @@ func _render() -> void:
 		asked_key = "%s/%s/%d" % [asked, rules.events[0]["id"] if rules.phase == "event" else "review", rules.day]
 	if asked_key != "" and asked_key != asked_seen:
 		chat_thread = asked
+		chat_open = true
 	asked_seen = asked_key
-	if mobile:
-		_build_phone()
-	else:
-		_build_office()
+	# A pushback is answered in the task's window, a reloaded game included.
+	if not rules.pending.is_empty() and window != "task":
+		selected = rules.pending["uid"]
+		window = "task"
+		deal_from = maxi(0, rules.history.size() - 2)
+		deal_who = rules.pending["p"]
+	_build_office()
 	# A talk plays out in the messenger; only an interview keeps its own window.
 	if not rules.convo.is_empty() and rules.convo["kind"] != "talk":
 		_build_convo()
@@ -712,12 +728,6 @@ func _render() -> void:
 				_build_report()
 			"end", "chapter_end":
 				_build_end()
-	# A pushback is answered in the task's window, a reloaded game included.
-	if not rules.pending.is_empty() and window != "task":
-		selected = rules.pending["uid"]
-		window = "task"
-		deal_from = maxi(0, rules.history.size() - 2)
-		deal_who = rules.pending["p"]
 	if window != "" and rules.phase in ["plan", "event", "standup", "evening"]:
 		_build_window()
 	if menu_open:
@@ -972,11 +982,11 @@ func _build_title() -> void:
 	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	pic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(pic)
-	if mobile:
+	if compact:
 		ui.add_child(_title_fade([0.3, 0.55, 1.0], [0.0, 0.82, 0.97]))
 	else:
 		ui.add_child(_title_fade([0.35, 0.65, 1.0], [0.0, 0.8, 0.96]))
-	var margin := 24.0 if mobile else 56.0
+	var margin := 24.0 if compact else 56.0
 	var v := _vbox(14)
 	v.custom_minimum_size.x = minf(440.0, view.x - margin * 2.0)
 	v.anchor_top = 1.0
@@ -989,7 +999,7 @@ func _build_title() -> void:
 	ui.add_child(v)
 	# The logo is stuck on top of the menu, on the dark part of the picture, so it never covers a face.
 	if menu_page == "":
-		var sticker := _logo(96 if mobile else 84)
+		var sticker := _logo(96 if compact else 84)
 		sticker.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		v.add_child(sticker)
 	_menu_page(v, false)
@@ -1047,12 +1057,12 @@ func _menu_page(v: VBoxContainer, in_game: bool) -> void:
 			_menu_settings(v)
 		"about":
 			v.add_child(_menu_title(Loc.t("menu.about")))
-			v.add_child(_label(Loc.t("about.text"), 15 if mobile else 16, Color(1, 1, 1, 0.85), true))
+			v.add_child(_label(Loc.t("about.text"), 15 if compact else 16, Color(1, 1, 1, 0.85), true))
 			v.add_child(_spacer(2))
 			v.add_child(_menu_item(Loc.t("menu.back"), _menu_go.bind("")))
 		"confirm_new":
 			v.add_child(_menu_title(Loc.t("menu.new")))
-			v.add_child(_label(Loc.t("confirm.new"), 15 if mobile else 16, Color(1, 1, 1, 0.85), true))
+			v.add_child(_label(Loc.t("confirm.new"), 15 if compact else 16, Color(1, 1, 1, 0.85), true))
 			v.add_child(_spacer(2))
 			v.add_child(_menu_item(Loc.t("confirm.yes"), _menu_new_confirmed, COL_ON_TOP_DANGER))
 			v.add_child(_menu_item(Loc.t("confirm.no"), _menu_go.bind("")))
@@ -1125,7 +1135,7 @@ func _menu_settings(v: VBoxContainer) -> void:
 
 
 func _menu_title(text_value: String) -> Label:
-	return _label(text_value, 24 if mobile else 28, COL_ON_TOP, false, true)
+	return _label(text_value, 24 if compact else 28, COL_ON_TOP, false, true)
 
 
 func _menu_caption(text_value: String) -> Label:
@@ -1142,7 +1152,7 @@ func _menu_item(text_value: String, action: Callable, color: Color = COL_ON_TOP)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	b.add_theme_font_override("font", font_bold)
-	b.add_theme_font_size_override("font_size", _fs(22 if mobile else 24))
+	b.add_theme_font_size_override("font_size", _fs(22 if compact else 24))
 	for state in ["normal", "hover", "pressed", "focus"]:
 		var empty := StyleBoxEmpty.new()
 		empty.content_margin_top = 4
@@ -1167,7 +1177,7 @@ func _build_menu_overlay() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(center)
 	var card := PanelContainer.new()
-	var style := _box(COL_NIGHT, COL_NIGHT, 0, 28 if mobile else 36)
+	var style := _box(COL_NIGHT, COL_NIGHT, 0, 28 if compact else 36)
 	style.set_corner_radius_all(16)
 	card.add_theme_stylebox_override("panel", style)
 	center.add_child(card)
@@ -1265,9 +1275,9 @@ func _build_setup() -> void:
 	v.add_child(_spacer(6))
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 12)
-	buttons.add_child(_button(Loc.t("setup.start"), _start_run, 160 if mobile else 260, "primary"))
+	buttons.add_child(_button(Loc.t("setup.start"), _start_run, 160 if compact else 260, "primary"))
 	buttons.add_child(_button(Loc.t("setup.back"), _open_setup.bind(false), 0))
-	if mobile:
+	if compact:
 		# On a phone the start button stays in reach under the scrolling choices.
 		var bar := PanelContainer.new()
 		var style := _flat(COL_SURFACE)
@@ -1302,7 +1312,7 @@ func _budget_when() -> String:
 
 # The balance on the top bar turns red when the salaries still due this month don't fit in it; a click opens the money window.
 func _money_label(size: int, bold: bool) -> Label:
-	var l := _label(_money_text(), size, COL_ON_TOP_DANGER if rules.money_at_budget() < 0 else COL_ON_TOP, false, bold)
+	var l := _label(_rub(rules.money) if compact else _money_text(), size, COL_ON_TOP_DANGER if rules.money_at_budget() < 0 else COL_ON_TOP, false, bold)
 	l.tooltip_text = Loc.t("money.open")
 	l.mouse_filter = Control.MOUSE_FILTER_STOP
 	l.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -1346,13 +1356,13 @@ func _build_draft() -> void:
 	var sum := Loc.t("draft.sum", [rules.draft_picked.size(), _rub(month), _rub(rules.PERIOD_BUDGET)])
 	v.add_child(_label(sum, 16, COL_DANGER if month > rules.PERIOD_BUDGET else COL_TEXT, true, true))
 	var buttons := _flow(12, 12)
-	var go := _button(Loc.t("draft.start"), _draft_start, 160 if mobile else 260, "primary")
+	var go := _button(Loc.t("draft.start"), _draft_start, 160 if compact else 260, "primary")
 	go.disabled = rules.draft_picked.is_empty()
 	buttons.add_child(go)
 	var again := _button(Loc.t("draft.reroll", [rules.draft_rerolls]), _draft_reroll, 0)
 	again.disabled = rules.draft_rerolls <= 0
 	buttons.add_child(again)
-	if mobile:
+	if compact:
 		var bar := PanelContainer.new()
 		var style := _flat(COL_SURFACE)
 		style.border_color = COL_BORDER
@@ -1466,43 +1476,61 @@ func _build_office() -> void:
 	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(v)
 	v.add_child(_top_bar())
-	v.add_child(_nav_strip())
 	var body := HBoxContainer.new()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 0)
 	v.add_child(body)
 	body.add_child(_board_area())
-	body.add_child(_messenger())
+	if not compact:
+		body.add_child(_messenger())
+	elif chat_open:
+		_chat_drawer()
 
 
+# The graphite bar over the board: the day, what you have (points, money, the race), the ways into
+# hiring, upgrades and the clients, the chat on a small screen, and the menu.
 func _top_bar() -> Control:
 	var bar := PanelContainer.new()
-	bar.custom_minimum_size.y = TOP_H
-	var style := _box(_sky(), _sky(), 0, 0)
-	style.set_corner_radius_all(0)
-	style.content_margin_left = 16
-	style.content_margin_right = 12
+	bar.custom_minimum_size.y = 44 if compact else TOP_H
+	var style := _flat(_sky())
+	style.content_margin_left = 10 if compact else 16
+	style.content_margin_right = 8 if compact else 12
 	bar.add_theme_stylebox_override("panel", style)
 	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 14)
+	top.add_theme_constant_override("separation", 8 if compact else 12)
 	bar.add_child(top)
-	top.add_child(_logo(26))
-	top.add_child(_label(Loc.t("title"), 18, COL_ON_TOP, false, true))
-	top.add_child(_label(_day_label(), 15, COL_ON_TOP_MUTED))
+	top.add_child(_logo(22 if compact else 26))
+	top.add_child(_label(_day_label(), 14 if compact else 16, COL_ON_TOP, false, true))
 	var gap := Control.new()
 	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(gap)
-	var points := _attention_label(15)
+	var size := 13 if compact else 15
+	var points := _attention_label(size)
 	juice_nodes["points"] = points
 	top.add_child(points)
-	top.add_child(_money_label(15, false))
-	var race := _race_label(15)
+	top.add_child(_money_label(size, true))
+	var race := _race_label(size)
 	juice_nodes["race"] = race
 	top.add_child(race)
 	if not rules.chapter_keys().is_empty():
 		var k := rules.key_status()
-		top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
-	# How Irina sees you sits on her button under the bar, where there's room for it.
+		top.add_child(_label(Loc.render("keys_short" if compact else "keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), size, COL_ON_TOP))
+	# A counter means there's something to do in there, and only then: CVs waiting, upgrades you can
+	# afford, clients who are unhappy.
+	top.add_child(_nav_button("hire", Loc.t("hire.section"), _badge(rules.candidates.size())))
+	top.add_child(_nav_button("upgrades", Loc.t("up.section"), _badge(_fresh_upgrades())))
+	var unhappy := 0
+	for bank in rules.banks:
+		if rules.bank_word(bank) in ["unhappy", "leaving"]:
+			unhappy += 1
+	top.add_child(_nav_button("clients", Loc.t("nav.clients"), _badge(unhappy)))
+	if compact:
+		var unread := 0
+		var asks := false
+		for th in _contacts():
+			unread += _unread(th)
+			asks = asks or _letters_in(th) > 0 or _asked_thread() == th
+		top.add_child(_nav_button("chat", Loc.t("tab.chat"), "!" if asks else _badge(unread)))
 	top.add_child(_button(Loc.t("menu.button"), _open_menu, 0, "on_top"))
 	return bar
 
@@ -1557,6 +1585,8 @@ func _attention_text() -> String:
 	var dots := ""
 	for i in rules.max_attention():
 		dots += "●" if i < rules.attention else "○"
+	if compact:
+		return dots
 	var text := Loc.render("attention_label", [], {"dots": dots, "state": "@me." + rules.my_state()})
 	if rules.overtime_today > 0:
 		text += " " + Loc.render("overtime_label", [], {"n": rules.overtime_today, "cap": rules.borrow_cap()})
@@ -1793,7 +1823,7 @@ func _build_window() -> void:
 		if rules.candidates.is_empty():
 			body.add_child(_label(Loc.t("win.no_candidates"), 14, COL_MUTED, true))
 		var grid := GridContainer.new()
-		grid.columns = 1 if mobile else 2
+		grid.columns = 1 if compact else 2
 		grid.add_theme_constant_override("h_separation", 12)
 		grid.add_theme_constant_override("v_separation", 12)
 		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1805,31 +1835,18 @@ func _build_window() -> void:
 	elif window == "company":
 		var body := _modal(Loc.t("nav.clients_title"), _attention_text(), minf(560.0, view.x - 16.0), false, true)
 		_clients(body)
-	elif window == "more":
-		var body := _modal(Loc.t("tab.more"), "", minf(460.0, view.x - 16.0), false, true)
-		var waiting := rules.candidates.size()
-		body.add_child(_more_row(_nav_button("hire", Loc.t("hire.section"), _badge(waiting), COL_DANGER)))
-		body.add_child(_more_row(_nav_button("upgrades", Loc.t("up.section"), _badge(_fresh_upgrades()), COL_DANGER)))
-		var unhappy := 0
-		for bank in rules.banks:
-			if rules.bank_word(bank) in ["unhappy", "leaving"]:
-				unhappy += 1
-		body.add_child(_more_row(_nav_button("clients", Loc.t("nav.clients"), _badge(unhappy), COL_DANGER)))
-		var me := _button(Loc.t("me_card"), _open_window.bind("me"), 0, "subtle")
-		me.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		body.add_child(_more_row(me))
 	elif window == "me":
 		_modal(Loc.t("me_card"), "", minf(460.0, view.x - 16.0), false, true).add_child(_me_card())
 	elif window == "done":
 		var body := _modal(Loc.t("col.done"), "", minf(760.0, view.x - 16.0), true, true)
 		var grid := GridContainer.new()
-		grid.columns = 1 if mobile else 3
+		grid.columns = 1 if compact else 3
 		grid.add_theme_constant_override("h_separation", 8)
 		grid.add_theme_constant_override("v_separation", 8)
 		grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		body.add_child(grid)
 		for t in _lanes()["done"]:
-			grid.add_child(_task_card(t, "done"))
+			grid.add_child(_sticky(t, "done"))
 
 
 # A dimmed screen and a panel with a title, a line under it and a close button; returns where the content goes.
@@ -1843,7 +1860,7 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 	ui.add_child(dim)
 	var view := get_viewport().get_visible_rect().size
 	# Small windows (fit) grow to what's in them, up to the screen; big ones take the screen.
-	var h := view.y - (16.0 if mobile else 64.0)
+	var h := view.y - (16.0 if compact else 64.0)
 	var panel := PanelContainer.new()
 	panel.anchor_left = 0.5
 	panel.anchor_right = 0.5
@@ -1853,8 +1870,11 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 	panel.offset_right = w / 2.0
 	panel.offset_top = -h / 2.0
 	panel.offset_bottom = h / 2.0
-	var style := _box(COL_SURFACE, COL_BORDER, 1, 0)
-	style.set_corner_radius_all(16)
+	var style := _box(COL_BOARD, COL_FRAME, 5, 0)
+	style.set_corner_radius_all(6)
+	style.shadow_color = Color(0, 0, 0, 0.3)
+	style.shadow_size = 12
+	style.shadow_offset = Vector2(0, 4)
 	panel.add_theme_stylebox_override("panel", style)
 	ui.add_child(panel)
 	var right := _vbox(0)
@@ -1863,7 +1883,10 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 	head.add_theme_constant_override("separation", 12)
 	var titles := _vbox(4)
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	titles.add_child(_label(title, 22, COL_TEXT, true, true))
+	var big := _hand(title, 30 if compact else 36, COL_PRIMARY)
+	big.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	big.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	titles.add_child(big)
 	if hint != "":
 		titles.add_child(_label(hint, 13, COL_MUTED, true))
 	head.add_child(titles)
@@ -1871,18 +1894,18 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 	close.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	close.visible = rules.pending.is_empty()
 	head.add_child(close)
-	var head_box := _padded(head, 18 if mobile else 28, 16)
+	var head_box := _padded(head, 18 if compact else 28, 16)
 	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	right.add_child(head_box)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED if wide_scroll or mobile else ScrollContainer.SCROLL_MODE_AUTO
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED if wide_scroll or compact else ScrollContainer.SCROLL_MODE_AUTO
 	right.add_child(scroll)
 	# A window opened over another keeps its own scroll, so the one below stays where it was.
 	scrolls["window_top" if scrolls.has("window") else "window"] = scroll
 	var body := _vbox(12)
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var pad := _padded(body, 18 if mobile else 28, 4)
+	var pad := _padded(body, 18 if compact else 28, 4)
 	pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(pad)
 	right.add_child(_spacer(12))
@@ -1898,33 +1921,6 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 		pad.minimum_size_changed.connect(shrink)
 		shrink.call_deferred()
 	return body
-
-
-# Under the top bar: the way into hiring, upgrades, the clients and Irina, with a counter when something waits.
-func _nav_strip() -> Control:
-	var bar := PanelContainer.new()
-	var style := _box(COL_SURFACE, COL_BORDER, 0, 0)
-	style.set_corner_radius_all(0)
-	style.border_width_bottom = 1
-	style.content_margin_left = 12
-	style.content_margin_right = 12
-	style.content_margin_top = 6
-	style.content_margin_bottom = 6
-	bar.add_theme_stylebox_override("panel", style)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	bar.add_child(row)
-	# A counter means there's something to do in there, and only then: CVs waiting, upgrades you can
-	# afford, clients who are unhappy.
-	var waiting := rules.candidates.size()
-	row.add_child(_nav_button("hire", Loc.t("hire.section"), _badge(waiting), COL_DANGER))
-	row.add_child(_nav_button("upgrades", Loc.t("up.section"), _badge(_fresh_upgrades()), COL_DANGER))
-	var unhappy := 0
-	for bank in rules.banks:
-		if rules.bank_word(bank) in ["unhappy", "leaving"]:
-			unhappy += 1
-	row.add_child(_nav_button("clients", Loc.t("nav.clients"), _badge(unhappy), COL_DANGER))
-	return bar
 
 
 # Upgrades that came within reach since you last looked at the tree; what you could already afford
@@ -1945,103 +1941,43 @@ func _upgrade_affordable(id: String) -> bool:
 	return rules.upgrade_state(id) == "open" and rules.money >= rules.upgrade_price(id)
 
 
-func _more_row(b: Control) -> Control:
-	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.custom_minimum_size.y = 44
-	# In a window's list the counter sits inside the row, at its right end: hanging off the corner it gets cut off.
-	for dot in b.get_children():
-		if dot is PanelContainer:
-			dot.anchor_top = 0.5
-			dot.anchor_bottom = 0.5
-			dot.offset_right = -14
-			dot.offset_left = -14
-			dot.offset_top = -9
-			dot.offset_bottom = 9
-			dot.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-			dot.grow_vertical = Control.GROW_DIRECTION_BOTH
-	return b
-
-
 func _badge(n: int) -> String:
 	return str(n) if n > 0 else ""
 
 
-func _nav_button(name: String, text_value: String, badge: String, badge_color: Color) -> Control:
-	var b := _button(text_value, _open_upgrades if name == "upgrades" else _open_window.bind("company" if name == "clients" else name), 0, "subtle")
-	_anchor(b, "nav_" + name)
-	b.add_theme_font_size_override("font_size", _fs(14))
-	b.custom_minimum_size.y = 34
-	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+func _nav_button(name: String, text_value: String, badge: String) -> Control:
+	var action: Callable = _open_upgrades if name == "upgrades" else (_toggle_chat if name == "chat" else _open_window.bind("company" if name == "clients" else name))
+	var b := _button("" if compact else text_value, action, 40 if compact else 0, "on_top")
+	_anchor(b, "chat_button" if name == "chat" else "nav_" + name)
+	b.tooltip_text = text_value
+	b.custom_minimum_size.y = 40 if compact else 34
 	var path := ICON_DIR + "nav_" + name + ".svg"
 	if ResourceLoader.exists(path):
 		b.icon = load(path)
 		b.expand_icon = false
-		b.add_theme_constant_override("icon_max_width", 18)
+		b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER if compact else HORIZONTAL_ALIGNMENT_LEFT
+		b.add_theme_constant_override("icon_max_width", 20)
 		for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_focus_color"]:
-			b.add_theme_color_override(state, COL_MUTED)
+			b.add_theme_color_override(state, COL_ON_TOP)
 		b.add_theme_constant_override("h_separation", 8)
 	if badge == "":
 		return b
 	# A round counter hanging off the button's top right corner, as in games.
 	var dot := PanelContainer.new()
-	var ds := _flat(badge_color)
+	var ds := _flat(COL_STAR if badge == "!" else COL_DANGER)
 	ds.set_corner_radius_all(10)
 	ds.content_margin_left = 6
 	ds.content_margin_right = 6
-	ds.content_margin_top = 0
-	ds.content_margin_bottom = 0
 	dot.add_theme_stylebox_override("panel", ds)
 	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	dot.add_child(_label(badge, 11, COL_ON_TOP, false, true))
+	dot.add_child(_label(badge, 11, COL_SURFACE, false, true))
 	dot.anchor_left = 1.0
 	dot.anchor_right = 1.0
-	dot.offset_left = -14
-	dot.offset_top = -8
+	dot.offset_left = -12
+	dot.offset_top = -4
 	dot.grow_horizontal = Control.GROW_DIRECTION_END
 	b.add_child(dot)
 	return b
-
-
-func _person_row(p: String) -> Control:
-	var st: Dictionary = rules.people[p]
-	var card := PanelContainer.new()
-	var target: bool = rules.pending.get("p", "") == p
-	card.add_theme_stylebox_override("panel", _box(COL_SELECTED if target else COL_SURFACE, COL_FOCUS if target else COL_BORDER, 2 if target else 1, 8))
-	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	card.gui_input.connect(func(event: InputEvent):
-		if _tapped(event):
-			_open_window.call_deferred("person:" + p))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(row)
-	row.add_child(_avatar(p, 32))
-	var v := _vbox(1)
-	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(v)
-	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 6)
-	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(top)
-	top.add_child(_label(Loc.person(p), 14, COL_TEXT, false, true))
-	if rules.queue_of(p).size() >= rules.OVERLOAD_AT:
-		top.add_child(_label(Loc.t("row.overload"), 12, COL_WARN))
-	var line := _flow(4, 0)
-	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(line)
-	if st["absent"]:
-		line.add_child(_label(Loc.t("absent.%s_label" % st["absent_reason"]), 12, COL_WARN))
-	else:
-		var mood := rules.mood_word(p)
-		line.add_child(_label(Loc.t("mood." + mood), 12, MOOD_COLORS[mood]))
-		var energy := rules.energy_word(p)
-		line.add_child(_label("· " + Loc.t("energy." + energy), 12, ENERGY_COLORS[energy]))
-	if rules.newbie(p):
-		line.add_child(_label("· " + Loc.t("newbie_label.alone"), 12, COL_PRIMARY))
-	if rules.warned(p):
-		line.add_child(_label("· " + Loc.t("fire.warned_label"), 12, COL_DANGER))
-	return card
 
 
 # ---------- the upgrade tree ----------
@@ -2061,10 +1997,10 @@ func _buy_upgrade(id: String) -> void:
 
 func _build_upgrades() -> void:
 	var view := get_viewport().get_visible_rect().size
-	var w := view.x - (16.0 if mobile else 64.0)
-	var body := _modal(Loc.t("up.title"), Loc.t("up.hint") + "   " + _money_text() + "   " + _attention_text(), w, mobile)
+	var w := view.x - (16.0 if compact else 64.0)
+	var body := _modal(Loc.t("up.title"), Loc.t("up.hint") + "   " + _money_text() + "   " + _attention_text(), w, compact)
 	var ids: Array = C.UPGRADES.keys()
-	if mobile:
+	if compact:
 		if not C.UPGRADE_BRANCHES.has(up_branch):
 			up_branch = C.UPGRADE_BRANCHES[0]
 		var tabs := _flow(4, 4)
@@ -2073,7 +2009,7 @@ func _build_upgrades() -> void:
 			var b := _button(Loc.t("up.branch." + branch), _pick_branch.bind(branch), 0, "chosen" if up_branch == branch else "subtle")
 			tabs.add_child(b)
 		ids = ids.filter(func(id): return C.UPGRADES[id]["branch"] == up_branch)
-	body.add_child(_cork_board(ids, w - (40.0 if mobile else 80.0)))
+	body.add_child(_cork_board(ids, w - (40.0 if compact else 80.0)))
 
 
 func _pick_branch(branch: String) -> void:
@@ -2122,7 +2058,7 @@ func _cork_board(ids: Array, width: float) -> Control:
 	for id in ids:
 		tiers[id] = _up_tier(id)
 	var size := Vector2.ZERO
-	if mobile:
+	if compact:
 		var gap := 14.0
 		var sw := floorf((width - gap * 3.0) / 2.0)
 		var sh := 128.0
@@ -2193,7 +2129,7 @@ func _cork_board(ids: Array, width: float) -> Control:
 	var ends := func(id: String, r: String) -> Array:
 		var to: Rect2 = places[id]
 		var from: Rect2 = places[r]
-		if not mobile:
+		if not compact:
 			return [Vector2(from.end.x - 6, from.get_center().y), Vector2(to.position.x + 6, to.get_center().y), 0.0]
 		var a := Vector2(from.get_center().x, from.end.y - 6)
 		var b := Vector2(to.get_center().x, to.position.y + 6)
@@ -2268,7 +2204,7 @@ func _sticker(id: String, sz: Vector2) -> Control:
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tile.add_child(v)
 	var faint: bool = state == "locked"
-	var name := _label(Loc.t("up.%s.name" % id), 13 if mobile else 14, COL_FAINT if faint else COL_TEXT, true, true)
+	var name := _label(Loc.t("up.%s.name" % id), 13 if compact else 14, COL_FAINT if faint else COL_TEXT, true, true)
 	name.max_lines_visible = 2
 	v.add_child(name)
 	var about := _label(Loc.t("up.%s.about" % id), 12, COL_FAINT if faint else COL_MUTED, true)
@@ -2425,12 +2361,13 @@ func _coach_steps() -> Array:
 	var team_busy := func() -> bool:
 		return r.tasks.any(func(t): return t["status"] == "active" and r.team.has(t["owner"]))
 	var letter_th: String = _contact_of(r.letters[0]["who"]) if not r.letters.is_empty() else ""
+	var letter_who: String = r.letters[0]["who"] if not r.letters.is_empty() else ""
 	return [
 		{"id": "assign", "forced": true, "targets": ["inbox_first"],
 			"when": plan and r.step == "triage" and r.inbox().any(func(t): return r.can_assign(t)) and not team_busy.call(),
-			"done": window == "task"},
-		{"id": "pick", "forced": true, "targets": ["pick_grid"],
-			"when": window == "task" and r.pending.is_empty() and not team_busy.call(),
+			"done": selected >= 0},
+		{"id": "pick", "forced": true, "targets": ["team_zone"],
+			"when": _picking() and not pairing and r.pending.is_empty() and not team_busy.call(),
 			"done": team_busy.call()},
 		{"id": "haggle", "forced": true, "targets": ["deal"],
 			"when": not r.pending.is_empty(), "done": r.pending.is_empty()},
@@ -2438,9 +2375,8 @@ func _coach_steps() -> Array:
 		{"id": "start_work", "forced": false, "targets": ["day_button"],
 			"when": plan and r.step == "triage" and r.flags.has("coach_assign"), "done": r.step == "work"},
 		{"id": "midday", "forced": false, "targets": ["team_zone"], "when": plan and r.step == "work"},
-		{"id": "letter", "forced": true, "targets": ["contact_" + letter_th, "chat_tab"],
-			"when": letter_th != "" and r.phase in ["plan", "evening"] and window == "" and chat_thread != letter_th and not (mobile and tab == "chat"),
-			"done": chat_thread == letter_th or (mobile and tab == "chat")},
+		{"id": "letter", "forced": false, "targets": ["ask_" + letter_who, "contact_" + letter_th, "chat_button"],
+			"when": letter_th != "" and r.phase in ["plan", "evening"] and window == "" and chat_thread != letter_th},
 		{"id": "answer", "forced": false, "targets": ["prompt"],
 			"when": letter_th != "" and chat_thread != "" and r.letters.any(func(ev): return _contact_of(ev["who"]) == chat_thread)},
 		{"id": "points", "forced": false, "targets": ["points"], "when": plan and r.attention <= 0},
@@ -2449,9 +2385,9 @@ func _coach_steps() -> Array:
 		{"id": "standup", "forced": false, "targets": ["standup"], "when": r.phase == "standup"},
 		{"id": "late", "forced": false, "targets": ["late_card"], "when": plan and r.tasks.any(func(t): return t["late"] and t["status"] in ["inbox", "active"])},
 		{"id": "review", "forced": false, "targets": ["prompt"], "when": r.phase == "review" and chat_thread == "boss"},
-		{"id": "candidates", "forced": false, "targets": ["nav_hire", "tab_more"], "when": plan and r.day >= 2 and not r.candidates.is_empty()},
-		{"id": "upgrades", "forced": false, "targets": ["nav_upgrades", "tab_more"], "when": plan and r.day >= 3 and _fresh_upgrades() > 0},
-		{"id": "clients", "forced": false, "targets": ["nav_clients", "tab_more"],
+		{"id": "candidates", "forced": false, "targets": ["nav_hire"], "when": plan and r.day >= 2 and not r.candidates.is_empty()},
+		{"id": "upgrades", "forced": false, "targets": ["nav_upgrades"], "when": plan and r.day >= 3 and _fresh_upgrades() > 0},
+		{"id": "clients", "forced": false, "targets": ["nav_clients"],
 			"when": plan and r.step == "work" and r.day >= 6 and r.team.any(func(p): return r.available(p) and r.queue_of(p).is_empty())},
 		{"id": "budget", "forced": false, "targets": ["budget"], "when": r.phase == "chapter_end" and r.can_defend()},
 	]
@@ -2586,145 +2522,653 @@ func _coach_seen(id: String) -> void:
 
 
 # ---------- the board ----------
+# A whiteboard in its frame: the inbox's pile of stickies on the left, a column for each person with
+# their stickies under their photo, the week's done on the right. A sticky picked off the pile goes to
+# whichever column is tapped next; one that needs a pair, to the helper's.
+
+const INBOX_W := 270
+const COMPACT_INBOX_W := 200
+const COLUMN_W := 148
+const COMPACT_COLUMN_W := 126
+const DONE_W := 128
+
 
 func _board_area() -> Control:
-	var v := _vbox(10)
-	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var wrap := _padded(v, 14, 12)
-	wrap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var board := PanelContainer.new()
+	board.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	board.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var style := _box(COL_BOARD, COL_FRAME, 4 if compact else 6, 0)
+	style.set_corner_radius_all(4)
+	style.shadow_color = Color(0, 0, 0, 0.18)
+	style.shadow_size = 4
+	style.shadow_offset = Vector2(0, 2)
+	board.add_theme_stylebox_override("panel", style)
+	var v := _vbox(0)
+	board.add_child(v)
+	var row := HBoxContainer.new()
+	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	row.add_theme_constant_override("separation", 0)
+	v.add_child(row)
+	row.add_child(_inbox_column())
+	# More people than fit: the columns scroll sideways.
+	var people := ScrollContainer.new()
+	people.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	people.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_anchor(people, "team_zone")
+	row.add_child(people)
+	var cols := HBoxContainer.new()
+	cols.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cols.add_theme_constant_override("separation", 0)
+	people.add_child(cols)
+	for p in rules.team:
+		if not rules.people[p]["gone"]:
+			cols.add_child(_person_column(p))
+	cols.add_child(_person_column("me"))
+	var outside: Array = rules.tasks.filter(func(t): return t["status"] == "taras" or (t["status"] == "active" and t["owner"] == "contractor"))
+	if not outside.is_empty():
+		cols.add_child(_outside_column(outside))
+	if not compact:
+		row.add_child(_done_column())
+	if _picking():
+		v.add_child(_pick_bar())
+	return _padded(board, 6 if compact else 12, 6 if compact else 10)
+
+
+# A sticky is waiting to be stuck somewhere.
+func _picking() -> bool:
+	return selected >= 0 and window == "" and not rules.task(selected).is_empty()
+
+
+func _inbox_column() -> Control:
+	var v := _vbox(6)
+	v.custom_minimum_size.x = COMPACT_INBOX_W if compact else INBOX_W
 	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 12)
+	head.add_theme_constant_override("separation", 8)
 	v.add_child(head)
-	var titles := _vbox(0)
-	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(titles)
-	titles.add_child(_label(Loc.t("board_title"), 20, COL_TEXT, false, true))
-	var hint := Loc.t("step.%s.hint" % rules.step)
-	if not rules.queue_of("me").is_empty():
-		hint = Loc.t("you.busy", [rules.own_task_cost()])
-	titles.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
-	var day_button := _day_button(200)
-	day_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	head.add_child(day_button)
-	var columns := HBoxContainer.new()
-	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	columns.add_theme_constant_override("separation", 10)
-	v.add_child(columns)
-	var lanes := _lanes()
-	var inbox := _column("inbox", lanes["inbox"])
-	inbox.size_flags_horizontal = Control.SIZE_FILL
-	inbox.custom_minimum_size.x = INBOX_W
-	columns.add_child(inbox)
-	var team := _team_zone()
-	columns.add_child(team)
-	var done := _done_strip(lanes["done"])
-	v.add_child(done)
-	return wrap
+	var items: Array = rules.inbox()
+	items.sort_custom(func(a, b): return a["due"] < b["due"])
+	head.add_child(_hand(Loc.t("board.inbox"), 26 if compact else 32, COL_DANGER))
+	if not items.is_empty():
+		var n := _hand(str(items.size()), 20 if compact else 24, COL_FAINT)
+		n.size_flags_vertical = Control.SIZE_SHRINK_END
+		head.add_child(n)
+	var busy := not rules.queue_of("me").is_empty()
+	v.add_child(_label(Loc.t("you.busy", [rules.own_task_cost()]) if busy else Loc.t("step.%s.hint" % rules.step), 12, COL_WARN if busy else COL_MUTED, true))
+	var scroll := _scroll("col_inbox")
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(scroll)
+	var pile: Container = _vbox(8) if compact else _flow(6, 8)
+	pile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_padded(pile, 2, 6))
+	if items.is_empty():
+		pile.add_child(_hand(Loc.t("board.empty"), 22, COL_FAINT))
+	for t in items:
+		pile.add_child(_sticky(t, "inbox"))
+	if compact:
+		v.add_child(_done_line())
+	var day := _day_button(0)
+	day.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.add_child(day)
+	var column := _padded(v, 8 if compact else 12, 8)
+	column.size_flags_horizontal = Control.SIZE_FILL
+	return column
 
 
-const INBOX_W := 300
-const LANE_HEAD_W := 210
-const LANE_CARD_W := 220
-
-
-# The team: one lane per person, their face and state on the left and what's on their plate to the right.
-func _team_zone() -> Control:
-	var panel := PanelContainer.new()
-	_anchor(panel, "team_zone")
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override("panel", _box(COL_COLUMN, COL_COLUMN, 0, 8))
-	var v := _vbox(8)
-	panel.add_child(v)
-	v.add_child(_label(Loc.t("col.team"), 12, COL_MUTED, false, true))
-	var scroll := _scroll("col_team")
+# One person's column: their photo and state on top, a question of theirs if one waits, then their stickies.
+func _person_column(p: String) -> Control:
+	var col := PanelContainer.new()
+	col.custom_minimum_size.x = COMPACT_COLUMN_W if compact else COLUMN_W
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var drop := _picking() and _can_drop(p)
+	var asked: bool = rules.pending.get("p", "") == p
+	col.add_theme_stylebox_override("panel", _flat(Color(COL_PRIMARY, 0.07) if drop or asked else Color(0, 0, 0, 0)))
+	col.draw.connect(_dashed_edge.bind(col))
+	if drop:
+		col.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		col.gui_input.connect(func(event: InputEvent):
+			if _tapped(event):
+				col.accept_event()
+				cue = "assign"
+				_drop_on.call_deferred(p))
+	var v := _vbox(6)
+	col.add_child(_padded(v, 6 if compact else 8, 8))
+	v.add_child(_column_head(p))
+	var scroll := _scroll("col_" + p)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(scroll)
 	var list := _vbox(8)
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(list)
-	var gone := PackedStringArray()
-	for p in rules.team:
-		if rules.people[p]["gone"]:
-			gone.append(Loc.person(p))
-		else:
-			list.add_child(_lane_row(_person_row(p), rules.queue_of(p), Loc.t("row.free")))
-	list.add_child(_lane_row(_me_head(), rules.queue_of("me"), Loc.t("row.me_free")))
-	var outside: Array = []
-	for t in rules.tasks:
-		if t["status"] == "taras" or (t["status"] == "active" and t["owner"] == "contractor"):
-			outside.append(t)
-	if not outside.is_empty():
-		var head := _vbox(0)
-		head.add_child(_label(Loc.t("owner.outside"), 14, COL_MUTED, true, true))
-		list.add_child(_lane_row(head, outside, ""))
-	if not gone.is_empty():
-		list.add_child(_label(Loc.t("gone_list", [", ".join(gone)]), 12, COL_FAINT, true))
-	return panel
-
-
-func _lane_row(head: Control, items: Array, empty: String) -> Control:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _box(Color(1, 1, 1, 0.55), Color(0, 0, 0, 0), 0, 8))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	panel.add_child(row)
-	head.custom_minimum_size.x = LANE_HEAD_W
-	head.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	row.add_child(head)
-	var cards := HFlowContainer.new()
-	cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cards.add_theme_constant_override("h_separation", 8)
-	cards.add_theme_constant_override("v_separation", 8)
-	row.add_child(cards)
-	if items.is_empty() and empty != "":
-		var l := _label(empty, 12, COL_FAINT, true)
-		l.custom_minimum_size.y = 40
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		cards.add_child(l)
+	scroll.add_child(_padded(list, 2, 4))
+	_column_asks(list, p)
+	var items := rules.queue_of(p)
+	if items.is_empty():
+		var free := _hand(Loc.t("row.me_free" if p == "me" else "row.free"), 19, COL_FAINT)
+		free.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		free.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		list.add_child(free)
 	for t in items:
-		var card := _task_card(t, "people")
-		card.size_flags_horizontal = Control.SIZE_FILL
-		card.custom_minimum_size.x = LANE_CARD_W
-		cards.add_child(card)
-	return panel
+		list.add_child(_sticky(t, "column"))
+	return col
 
 
-# Your own lane: what you took on yourself; a click shows your strengths.
-func _me_head() -> Control:
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 8))
-	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	card.gui_input.connect(func(event: InputEvent):
-		if _tapped(event):
-			_open_window.call_deferred("me"))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(row)
-	row.add_child(_avatar("me", 32))
-	var v := _vbox(1)
-	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(v)
-	v.add_child(_label(Loc.t("me_card"), 14, COL_TEXT, false, true))
-	v.add_child(_label(Loc.t("me_profile." + rules.profile), 12, COL_MUTED, true))
-	return card
+# Who a picked sticky can go to: anyone free to take it, or, for a pair, anyone here but its owner.
+func _can_drop(p: String) -> bool:
+	var t := rules.task(selected)
+	if pairing:
+		return p != "me" and p != t["owner"] and rules.available(p) and not rules.people[p]["absent"] and rules.allowed("pair") and rules.can_afford(rules.cost("pair"))
+	if not rules.can_assign(t) or t["owner"] == p or not rules.can_afford(rules.cost("assign")):
+		return false
+	return p == "me" or (not rules.only_me(t) and rules.available(p) and not rules.people[p]["absent"])
 
 
-# What's done this week, folded into one line; a click lays the cards out.
-func _done_strip(items: Array) -> Control:
-	var late := 0
+func _column_head(p: String) -> Control:
+	var me := p == "me"
+	var v := _vbox(3)
+	v.mouse_filter = Control.MOUSE_FILTER_PASS
+	var photo := _photo(p, 40 if compact else 56, _asks_of(p) > 0)
+	photo.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	v.add_child(photo)
+	var name := _hand(Loc.t("you") if me else Loc.person(p), 21 if compact else 26, COL_PRIMARY)
+	name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(name)
+	if me:
+		var prof := _label(Loc.t("me_profile." + rules.profile), 11, COL_MUTED, true)
+		prof.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(prof)
+	else:
+		var st: Dictionary = rules.people[p]
+		var row := HBoxContainer.new()
+		row.alignment = BoxContainer.ALIGNMENT_CENTER
+		row.add_theme_constant_override("separation", 6)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(row)
+		row.add_child(_mood_face(rules.mood_word(p), 18 if compact else 22))
+		row.add_child(_battery(rules.energy_word(p)))
+		var notes := PackedStringArray()
+		if st["absent"]:
+			notes.append(Loc.t("absent.%s_label" % st["absent_reason"]))
+		if rules.newbie(p):
+			notes.append(Loc.t("newbie_label.alone"))
+		if rules.queue_of(p).size() >= rules.OVERLOAD_AT:
+			notes.append(Loc.t("row.overload"))
+		var late := rules.late_hours(p) if rules.phase == "plan" else 0
+		if late > 0:
+			notes.append(Loc.render("late_preview", [], {"n": late}))
+		if rules.warned(p):
+			notes.append(Loc.t("fire.warned_label"))
+		if not notes.is_empty():
+			var l := _label(" · ".join(notes), 11, COL_WARN, true, true)
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			v.add_child(l)
+	v.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	v.gui_input.connect(func(event: InputEvent):
+		if _tapped(event) and not _picking():
+			v.accept_event()
+			_open_window.call_deferred("me" if me else "person:" + p))
+	return v
+
+
+# Questions from this person waiting for you: the one that holds the day, and their messages.
+func _asks_of(p: String) -> int:
+	var n := 0
+	if rules.phase == "event" and not rules.events.is_empty() and rules.events[0]["who"] == p:
+		n += 1
+	for ev in rules.letters:
+		if ev["who"] == p:
+			n += 1
+	return n
+
+
+# A question shows in the asker's column as their speech bubble, with the answers right under it.
+func _column_asks(v: VBoxContainer, p: String) -> void:
+	if p == "me":
+		return
+	if rules.phase == "event" and not rules.events.is_empty() and rules.events[0]["who"] == p:
+		var box := _ask_bubble(v, p, rules.events[0])
+		_event_choices(box, rules.events[0])
+	for i in rules.letters.size():
+		var ev: Dictionary = rules.letters[i]
+		if ev["who"] == p:
+			var box := _ask_bubble(v, p, ev)
+			_letter_choices(box, i, ev)
+
+
+func _ask_bubble(v: VBoxContainer, p: String, ev: Dictionary) -> VBoxContainer:
+	var bubble := PanelContainer.new()
+	var bs := _flat(COL_TOPBAR)
+	bs.set_corner_radius_all(10)
+	bs.set_content_margin_all(8)
+	bubble.add_theme_stylebox_override("panel", bs)
+	_anchor(bubble, "ask_" + p)
+	v.add_child(bubble)
+	var said := PackedStringArray()
+	for line in ev["lines"]:
+		if line["who"] == p:
+			said.append(Loc.render(line["key"], [], ev["names"]))
+	var text := _label("\n".join(said), 12, COL_ON_TOP, true)
+	text.max_lines_visible = 4
+	text.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	text.tooltip_text = "\n".join(said)
+	text.mouse_filter = Control.MOUSE_FILTER_PASS
+	bubble.add_child(text)
+	var box := _vbox(3)
+	box.set_meta("small", true)
+	v.add_child(box)
+	return box
+
+
+func _outside_column(items: Array) -> Control:
+	var col := PanelContainer.new()
+	col.custom_minimum_size.x = COMPACT_COLUMN_W if compact else COLUMN_W
+	col.add_theme_stylebox_override("panel", _flat(Color(0, 0, 0, 0)))
+	col.draw.connect(_dashed_edge.bind(col))
+	var v := _vbox(8)
+	col.add_child(_padded(v, 6 if compact else 10, 10))
+	var head := _hand(Loc.t("owner.outside"), 22 if compact else 26, COL_MUTED)
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(head)
+	var scroll := _scroll("col_outside")
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(scroll)
+	var list := _vbox(8)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_padded(list, 2, 4))
 	for t in items:
-		if t["late"]:
-			late += 1
+		list.add_child(_sticky(t, "column"))
+	return col
+
+
+# What got done this week, stuck to the right edge of the board.
+func _done_column() -> Control:
+	var items: Array = _lanes()["done"]
+	var col := PanelContainer.new()
+	col.custom_minimum_size.x = DONE_W
+	col.add_theme_stylebox_override("panel", _flat(Color(0, 0, 0, 0)))
+	col.draw.connect(_dashed_edge.bind(col))
+	var v := _vbox(8)
+	col.add_child(_padded(v, 10, 10))
+	var head := _hand(Loc.t("board.done"), 30, COL_GOOD)
+	head.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(head)
+	var late := items.filter(func(t): return t["late"]).size()
+	if late > 0:
+		var l := _label(Loc.t("done.strip_late", [late]), 12, COL_DANGER, true)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(l)
+	var scroll := _scroll("col_done")
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	v.add_child(scroll)
+	var list := _vbox(6)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_padded(list, 2, 4))
+	for t in items:
+		list.add_child(_sticky(t, "done"))
+	return col
+
+
+# On a small screen the week's done is one line under the inbox; it opens as a window.
+func _done_line() -> Control:
+	var items: Array = _lanes()["done"]
+	var late := items.filter(func(t): return t["late"]).size()
 	var text_value := Loc.t("done.strip", [items.size()])
 	if late > 0:
 		text_value += " · " + Loc.t("done.strip_late", [late])
 	var b := _button(text_value, _open_window.bind("done"), 0, "subtle")
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.disabled = items.is_empty()
-	b.add_theme_font_size_override("font_size", _fs(13))
+	b.custom_minimum_size.y = 30
+	b.add_theme_font_size_override("font_size", _fs(12))
 	return b
+
+
+func _dashed_edge(c: Control) -> void:
+	var y := 8.0
+	while y < c.size.y - 8.0:
+		c.draw_line(Vector2(0, y), Vector2(0, minf(y + 7.0, c.size.y - 8.0)), Color("b4bac1"), 2.0)
+		y += 13.0
+
+
+# Under the board while a sticky is picked: what to do with it now, and the way out.
+func _pick_bar() -> Control:
+	var t := rules.task(selected)
+	var bar := PanelContainer.new()
+	var style := _flat(COL_TOPBAR)
+	style.content_margin_left = 12
+	style.content_margin_right = 8
+	style.content_margin_top = 4
+	style.content_margin_bottom = 4
+	bar.add_theme_stylebox_override("panel", style)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	bar.add_child(row)
+	var text_value := Loc.t("pick_bar.pair", [Loc.t("name.%s.dat" % t["owner"])]) if pairing else Loc.t("pick_bar.assign", [Loc.t("taskname." + t["id"])])
+	var l := _label(text_value, 13, COL_ON_TOP, true, true)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(l)
+	row.add_child(_button(Loc.t("pick_bar.more"), _select.bind(selected), 0, "on_top"))
+	if not pairing and rules.can_decline(t):
+		var bin := _button(Loc.t("pick_bar.bin") + _cost_mark(rules.cost("decline")), _decline, 0, "on_top")
+		bin.disabled = bin.disabled or not rules.can_afford(rules.cost("decline"))
+		row.add_child(bin)
+	row.add_child(_button(Loc.t("pick_bar.cancel"), _clear_selection, 0, "on_top"))
+	return bar
+
+
+# A task as a sticky: paper in its kind's colour, what it takes and when it's due in marker, the title,
+# and how it's going. In the inbox they lie in a pile at a slant; on a column they hang straighter.
+func _sticky(t: Dictionary, where: String) -> Control:
+	var colors: Array = CAT_COLORS[t["cat"]]
+	var ink: Color = colors[0]
+	var chosen: bool = selected == t["uid"] and window == "" and where != "preview"
+	var card := PanelContainer.new()
+	var style := _flat(colors[1])
+	style.set_content_margin_all(6 if compact else 8)
+	style.shadow_color = Color(0, 0, 0, 0.3 if chosen else 0.2)
+	style.shadow_size = 10 if chosen else 3
+	style.shadow_offset = Vector2(0, 4 if chosen else 2)
+	if chosen:
+		style.border_color = COL_PRIMARY
+		style.set_border_width_all(3)
+	card.add_theme_stylebox_override("panel", style)
+	if where == "preview":
+		card.custom_minimum_size = Vector2(150, 150)
+	elif where == "inbox" and not compact:
+		card.custom_minimum_size = Vector2(116, 124)
+	else:
+		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card.custom_minimum_size.y = 52 if compact else 64
+	var tilt: float = -2.0 if where == "preview" else 0.0 if chosen else float((t["uid"] * 37) % 7 - 3) * (0.9 if where == "inbox" else 0.4)
+	card.rotation_degrees = tilt
+	card.scale = Vector2(1.06, 1.06) if chosen else Vector2.ONE
+	card.resized.connect(_center_pivot.bind(card))
+	if where == "inbox" and rules.can_assign(t):
+		_anchor(card, "inbox_first")
+	if t["late"] and where != "done":
+		_anchor(card, "late_card")
+	if where == "done":
+		card.modulate = Color(1, 1, 1, 0.8)
+	elif where != "preview" and _looking() and t["status"] in ["inbox", "active"]:
+		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		card.gui_input.connect(func(event: InputEvent):
+			if not _tapped(event):
+				return
+			# With a sticky picked, a tap on someone's column (stickies included) is where it goes.
+			if where == "column" and _picking():
+				return
+			card.accept_event()
+			cue = "select"
+			_sticky_tapped.call_deferred(t["uid"], where))
+	if flash_cards.has(t["uid"]) and where != "preview":
+		var color: Color = flash_cards[t["uid"]]
+		card.ready.connect(func(): _flash.call_deferred(card, color))
+	var v := _vbox(2)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(v)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 4)
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(top)
+	var icon := TextureRect.new()
+	icon.texture = _cat_icon(t["cat"])
+	icon.modulate = ink
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.custom_minimum_size = Vector2(14, 14)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(icon)
+	var marks := PackedStringArray()
+	if t["key"]:
+		marks.append("★")
+	if t.get("again", false) and C.TASKS.get(t["id"], {}).get("kind", "") != "weekly":
+		marks.append(Loc.t("chip_again"))
+	var mark := _label(" ".join(marks), 10, ink, false, true)
+	mark.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mark.clip_text = true
+	top.add_child(mark)
+	if where != "done" and t["status"] != "taras":
+		var est: Dictionary = rules.estimate(t)
+		top.add_child(_hand(Loc.t("sticky.size" if est["sure"] else "sticky.size_guess", [_days(est["days"])]), 18 if compact else 21, COL_TEXT))
+	var title := _label(Loc.t("taskname." + t["id"]), 11 if compact else 13, COL_TEXT, true, true)
+	title.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	if where == "inbox":
+		title.max_lines_visible = 2 if compact else 4
+		title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	v.add_child(title)
+	if t["status"] == "active":
+		v.add_child(_sticky_progress(t, ink))
+	var warn := ""
+	if t["status"] == "active" and rules.needs_pair(t):
+		warn = Loc.t("sticky.no_pair")
+	elif t["blocked"] > 0:
+		warn = Loc.t("chip_blocked")
+	elif _stalled(t):
+		warn = Loc.t("sticky.stalled")
+	elif not _letter_for(t).is_empty():
+		warn = Loc.t("chip_letter")
+	if warn != "" and where != "done":
+		v.add_child(_hand(warn, 18 if compact else 20, COL_DANGER))
+	var foot := HBoxContainer.new()
+	foot.add_theme_constant_override("separation", 4)
+	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(foot)
+	var due: String
+	var urgent: bool = t["late"] or t["due"] - rules.day <= 0
+	if where == "done":
+		due = Loc.t("sticky.late") if t["late"] else "✓"
+		urgent = t["late"]
+	else:
+		due = _due_hand(t)
+	var due_label := _hand(due, 17 if compact else 20, COL_DANGER if urgent else (COL_GOOD if where == "done" else COL_TEXT))
+	due_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	due_label.clip_text = true
+	foot.add_child(due_label)
+	if t["helper"] != "" and t["status"] == "active":
+		foot.add_child(_avatar(t["helper"], 18))
+	if rules.paid_card(t) and t["status"] != "done":
+		foot.add_child(_coin(t))
+	return card
+
+
+# Stickies and photos tilt round their middle.
+func _center_pivot(c: Control) -> void:
+	if is_instance_valid(c):
+		c.pivot_offset = c.size / 2.0
+
+
+# The bank's money on a task: a gold coin with the bonus, or a red stamp once the SLA fine is in.
+func _coin(t: Dictionary) -> Control:
+	var fined: bool = t.get("sla_fined", false)
+	var coin := PanelContainer.new()
+	var cs := _box(Color("f2c230") if not fined else Color("ffd9d2"), Color("c79a14") if not fined else COL_DANGER, 2, 0)
+	cs.set_corner_radius_all(12)
+	cs.content_margin_left = 5
+	cs.content_margin_right = 5
+	coin.add_theme_stylebox_override("panel", cs)
+	coin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	coin.tooltip_text = Loc.t("sla.fined", [_rub(rules.card_sla(t))]) if fined else Loc.t("sla.terms", [_rub(rules.card_bonus(t)), _rub(rules.card_bonus_ok(t)), _rub(rules.card_sla(t))])
+	coin.add_child(_label(Loc.t("chip_sla") if fined else "+%d" % Rules.cash(rules.card_bonus(t)), 10, COL_DANGER if fined else COL_TEXT, false, true))
+	return coin
+
+
+func _sticky_tapped(uid: int, where: String) -> void:
+	var t := rules.task(uid)
+	if t.is_empty():
+		return
+	if where == "inbox" and rules.can_assign(t):
+		_pick_sticky(uid, false)
+	elif where == "column" and t["status"] == "active" and rules.needs_pair(t) and rules.allowed("pair"):
+		_pick_sticky(uid, true)
+	else:
+		_select(uid)
+
+
+# How far along, in marker: what was done before today hatched, today's part filled in. Stuck at midday,
+# it's all grey.
+func _sticky_progress(t: Dictionary, ink: Color) -> Control:
+	var bar := Control.new()
+	bar.custom_minimum_size = Vector2(0, 8)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var size: float = t["size"]
+	var shown: float = minf(rules.shown_progress(t), size)
+	var today: float = clampf(t.get("gain_today", 0.0), 0.0, shown)
+	var stalled := _stalled(t)
+	bar.draw.connect(_draw_progress.bind(bar, (shown - today) / size, today / size, COL_FAINT if stalled else ink))
+	return bar
+
+
+func _draw_progress(bar: Control, earlier: float, today: float, pen: Color) -> void:
+	var w := bar.size.x
+	var h := bar.size.y
+	var x := 2.0
+	while x < w * earlier:
+		bar.draw_line(Vector2(x, h - 1), Vector2(minf(x + h - 2, w * earlier), 1), pen, 1.5)
+		x += 4.0
+	bar.draw_rect(Rect2(w * earlier, 0, w * today, h), COL_GAIN)
+	bar.draw_rect(Rect2(0, 0, w, h), COL_TEXT, false, 1.5)
+
+
+# When it's due, the way you'd write it on a sticky: "today!", "by Thu".
+const WEEKDAY_KEYS := ["wd.mon", "wd.tue", "wd.wed", "wd.thu", "wd.fri"]
+
+
+func _due_hand(t: Dictionary) -> String:
+	if t["due"] >= rules.NO_DEADLINE:
+		return Loc.t("due.none")
+	if t["late"]:
+		return Loc.t("sticky.late")
+	var left: int = t["due"] - rules.day
+	if left <= 0:
+		return Loc.t("sticky.today")
+	if left == 1:
+		return Loc.t("sticky.tomorrow")
+	if left < 5:
+		return Loc.t("sticky.by", [Loc.t(WEEKDAY_KEYS[(t["due"] - 1) % 5])])
+	return Loc.t("sticky.in", [left])
+
+
+# A person's photo, pinned to the board with a magnet; a red "!" on it when they're waiting for an answer.
+func _photo(p: String, size: int, asks: bool) -> Control:
+	var frame := PanelContainer.new()
+	var style := _flat(COL_SURFACE)
+	style.content_margin_left = 3
+	style.content_margin_right = 3
+	style.content_margin_top = 3
+	style.content_margin_bottom = int(size / 5.0)
+	style.shadow_color = Color(0, 0, 0, 0.22)
+	style.shadow_size = 3
+	style.shadow_offset = Vector2(0, 2)
+	frame.add_theme_stylebox_override("panel", style)
+	frame.mouse_filter = Control.MOUSE_FILTER_PASS
+	frame.rotation_degrees = float(absi(p.hash()) % 5 - 2) * 1.2
+	frame.resized.connect(_center_pivot.bind(frame))
+	frame.add_child(_avatar(p, size, "", true))
+	frame.draw.connect(_draw_photo.bind(frame, MAGNETS[absi(p.hash()) % MAGNETS.size()], asks))
+	return frame
+
+
+func _draw_photo(frame: Control, magnet: Color, asks: bool) -> void:
+	var c := Vector2(frame.size.x / 2.0, 1.0)
+	frame.draw_circle(c + Vector2(0, 1.5), 7.0, Color(0, 0, 0, 0.25))
+	frame.draw_circle(c, 7.0, magnet)
+	if asks:
+		var at := Vector2(frame.size.x - 2.0, 4.0)
+		frame.draw_circle(at, 11.0, COL_SURFACE)
+		frame.draw_circle(at, 9.0, COL_DANGER)
+		frame.draw_string(font_bold, at + Vector2(-3.0, 5.0), "!", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, COL_SURFACE)
+
+
+# How someone feels, drawn as a face in marker.
+func _mood_face(word: String, size: int) -> Control:
+	var face := Control.new()
+	face.custom_minimum_size = Vector2(size, size)
+	face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	face.tooltip_text = Loc.t("mood." + word)
+	face.draw.connect(_draw_mood.bind(face, word))
+	return face
+
+
+func _draw_mood(face: Control, word: String) -> void:
+	var s := face.size.x
+	var c := Vector2(s, s) / 2.0
+	face.draw_circle(c, s / 2.0 - 1.0, Color(MOOD_COLORS.get(word, COL_MUTED), 0.18))
+	face.draw_arc(c, s / 2.0 - 1.5, 0, TAU, 24, COL_TEXT, 1.6)
+	face.draw_circle(c + Vector2(-s * 0.16, -s * 0.1), s * 0.05, COL_TEXT)
+	face.draw_circle(c + Vector2(s * 0.16, -s * 0.1), s * 0.05, COL_TEXT)
+	var m := c + Vector2(0, s * 0.14)
+	if word in ["happy", "good"]:
+		face.draw_arc(m - Vector2(0, s * 0.12), s * 0.22, 0.35, PI - 0.35, 10, COL_TEXT, 1.6)
+	elif word in ["down", "angry"]:
+		face.draw_arc(m + Vector2(0, s * 0.16), s * 0.2, PI + 0.5, TAU - 0.5, 10, COL_TEXT, 1.6)
+	else:
+		face.draw_line(m + Vector2(-s * 0.16, 0), m + Vector2(s * 0.16, 0), COL_TEXT, 1.6)
+
+
+# How much they have left in them, as a battery.
+const BATTERY := {"fresh": 1.0, "ok": 0.7, "tired": 0.4, "drained": 0.15}
+
+
+func _battery(word: String) -> Control:
+	var b := Control.new()
+	b.custom_minimum_size = Vector2(28, 14)
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.tooltip_text = Loc.t("energy." + word)
+	b.draw.connect(_draw_battery.bind(b, BATTERY.get(word, 0.5), ENERGY_COLORS.get(word, COL_MUTED)))
+	return b
+
+
+func _draw_battery(b: Control, level: float, color: Color) -> void:
+	var r := Rect2(1, 1, b.size.x - 5, b.size.y - 2)
+	b.draw_rect(Rect2(r.position + Vector2(2, 2), Vector2((r.size.x - 4) * level, r.size.y - 4)), color)
+	b.draw_rect(r, COL_TEXT, false, 1.6)
+	b.draw_rect(Rect2(r.end.x, r.position.y + r.size.y * 0.3, 3, r.size.y * 0.4), COL_TEXT)
+
+
+# Marker handwriting, for what's written on the board.
+func _hand(text_value: String, size: int, color: Color) -> Label:
+	var l := _label(text_value, size, color)
+	l.add_theme_font_override("font", font_hand)
+	return l
+
+
+# A phone held upright: one sticky asking to turn it, since the board only fits sideways.
+func _build_turn_phone() -> void:
+	var wall := ColorRect.new()
+	wall.color = COL_BG
+	wall.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(wall)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	ui.add_child(center)
+	var note := PanelContainer.new()
+	var style := _flat(COL_STICKY)
+	style.set_content_margin_all(28)
+	style.shadow_color = Color(0, 0, 0, 0.25)
+	style.shadow_size = 8
+	style.shadow_offset = Vector2(0, 4)
+	note.add_theme_stylebox_override("panel", style)
+	note.custom_minimum_size = Vector2(300, 300)
+	note.rotation_degrees = -3.0
+	note.resized.connect(_center_pivot.bind(note))
+	center.add_child(note)
+	var v := _vbox(16)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	note.add_child(v)
+	var phone := Control.new()
+	phone.custom_minimum_size = Vector2(90, 90)
+	phone.draw.connect(_draw_turn.bind(phone))
+	var holder := CenterContainer.new()
+	holder.add_child(phone)
+	v.add_child(holder)
+	var title := _hand(Loc.t("turn.title"), 40, COL_PRIMARY)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(title)
+	var text := _label(Loc.t("turn.text"), 15, COL_TEXT, true)
+	text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	text.custom_minimum_size.x = 240
+	v.add_child(text)
 
 
 # Three columns: the inbox, what's on people's plates (each person's queue, the first card being worked
@@ -2741,158 +3185,12 @@ func _lanes() -> Dictionary:
 			lanes["done"].push_front(t)
 	return lanes
 
-
-# A person's name over their cards, in the people column.
-func _owner_head(list: VBoxContainer, owner: String) -> void:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	row.add_child(_avatar(owner, 20))
-	row.add_child(_label(Loc.t("me_card") if owner == "me" else (Loc.t("owner.outside") if owner in ["taras", "contractor"] else Loc.person(owner)), 12, COL_MUTED, false, true))
-	list.add_child(row)
-
-
-func _column(lane: String, items: Array) -> Control:
-	var panel := PanelContainer.new()
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.add_theme_stylebox_override("panel", _box(COL_COLUMN, COL_COLUMN, 0, 8))
-	var v := _vbox(8)
-	panel.add_child(v)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 6)
-	v.add_child(head)
-	head.add_child(_label(Loc.t("col." + lane), 12, COL_MUTED, false, true))
-	head.add_child(_label(str(items.size()), 12, COL_FAINT))
-	var scroll := _scroll("col_" + lane)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	v.add_child(scroll)
-	var list := _vbox(6)
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(list)
-	if items.is_empty():
-		list.add_child(_label(Loc.t("col_empty." + lane), 12, COL_FAINT, true))
-	_fill_lane(list, lane, items)
-	return panel
-
-
-func _fill_lane(list: VBoxContainer, lane: String, items: Array) -> void:
-	var last_owner := ""
-	for t in items:
-		if lane == "people" and t["owner"] != last_owner:
-			last_owner = t["owner"]
-			_owner_head(list, last_owner)
-		list.add_child(_task_card(t, lane))
-
-
-func _task_card(t: Dictionary, lane: String) -> Control:
-	var card := PanelContainer.new()
-	if lane == "inbox" and rules.can_assign(t):
-		_anchor(card, "inbox_first")
-	if t["late"] and lane != "done":
-		_anchor(card, "late_card")
-	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var chosen: bool = selected == t["uid"]
-	var style := _box(COL_SELECTED if chosen else COL_SURFACE, COL_FOCUS if chosen else COL_BORDER, 2 if chosen else 1, 8)
-	style.shadow_color = Color(0, 0, 0, 0.18)
-	style.shadow_size = 1
-	style.shadow_offset = Vector2(0, 1)
-	card.add_theme_stylebox_override("panel", style)
-	var clickable: bool = _looking() and (t["status"] == "inbox" or t["status"] == "active")
-	if clickable:
-		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		card.gui_input.connect(_on_card_input.bind(t["uid"]))
-	if lane == "done":
-		card.modulate = Color(1, 1, 1, 0.7)
-	if flash_cards.has(t["uid"]):
-		var color: Color = flash_cards[t["uid"]]
-		card.ready.connect(func(): _flash.call_deferred(card, color))
-	var v := _vbox(4)
-	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(v)
-	var tags := _flow(4, 4)
-	v.add_child(tags)
-	var colors: Array = CAT_COLORS[t["cat"]]
-	tags.add_child(_pill(Loc.t("cat." + t["cat"]), colors[0], colors[1], _cat_icon(t["cat"])))
-	if t.get("again", false) and C.TASKS.get(t["id"], {}).get("kind", "") != "weekly":
-		tags.add_child(_pill(Loc.t("chip_again"), COL_WARN, Color("fff0b3")))
-	if C.TASKS.get(t["id"], {}).get("kind", "") == "chain":
-		tags.add_child(_pill(Loc.t("chip_chain"), COL_PRIMARY, COL_SELECTED))
-	if t["key"]:
-		tags.add_child(_pill("★", COL_STAR, Color("fff7e6")))
-	if rules.paid_card(t) and t["status"] != "done":
-		if t.get("sla_fined", false):
-			tags.add_child(_pill(Loc.t("chip_sla"), COL_DANGER, Color("ffebe6")))
-		else:
-			tags.add_child(_pill("+" + _rub(rules.card_bonus(t)), COL_GOOD, Color("e3fcef")))
-	if t["blocked"] > 0:
-		tags.add_child(_pill(Loc.t("chip_blocked"), COL_DANGER, Color("ffebe6")))
-	if not _letter_for(t).is_empty():
-		tags.add_child(_pill(Loc.t("chip_letter"), COL_WARN, Color("fff0b3")))
-	if t["involved"] and t["owner"] != "me":
-		tags.add_child(_pill(Loc.t("chip_involved").trim_prefix("· "), COL_PRIMARY, COL_SELECTED))
-	v.add_child(_label(Loc.t("taskname." + t["id"]), 14, COL_TEXT, true))
-	if t["status"] == "active":
-		v.add_child(_progress_bar(t))
-		if rules.needs_pair(t):
-			v.add_child(_label(Loc.t("card.no_pair"), 12, COL_DANGER, true))
-		elif _stalled(t):
-			v.add_child(_label(Loc.t("card.stalled"), 12, COL_WARN, true))
-	var foot := HBoxContainer.new()
-	foot.add_theme_constant_override("separation", 4)
-	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(foot)
-	var info := _vbox(0)
-	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	foot.add_child(info)
-	if lane == "done":
-		info.add_child(_label(Loc.t("due.late") if t["late"] else "✓", 12, COL_DANGER if t["late"] else COL_GOOD))
-	else:
-		var urgent: bool = t["late"] or t["due"] - rules.day <= 0
-		info.add_child(_label(_due_text(t), 12, COL_DANGER if urgent else COL_MUTED, true))
-		if t["status"] != "taras":
-			var est: Dictionary = rules.estimate(t)
-			info.add_child(_label(Loc.t("est.short" if est["sure"] else "est.guess", [_days(est["days"])]), 12, COL_MUTED if est["sure"] else COL_FAINT, true))
-	if t["owner"] != "":
-		foot.add_child(_avatar(t["owner"], 22))
-	if t["helper"] != "" and t["status"] == "active":
-		foot.add_child(_avatar(t["helper"], 22))
-	return card
-
-
-# What was done before today in pale green, today's gain in bright green. At midday a started task that
-# hasn't moved since the morning goes grey: that's the one to look into.
-func _progress_bar(t: Dictionary) -> Control:
-	var bar := Control.new()
-	bar.custom_minimum_size = Vector2(0, 6)
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var size: float = t["size"]
-	var shown: float = minf(rules.shown_progress(t), size)
-	var today: float = clampf(t.get("gain_today", 0.0), 0.0, shown)
-	var stalled := _stalled(t)
-	bar.draw.connect(func():
-		var w := bar.size.x
-		var h := bar.size.y
-		bar.draw_rect(Rect2(0, 0, w, h), COL_COLUMN)
-		var earlier := w * (shown - today) / size
-		bar.draw_rect(Rect2(0, 0, earlier, h), COL_FAINT if stalled else COL_EARLIER)
-		bar.draw_rect(Rect2(earlier, 0, w * today / size, h), COL_GAIN))
-	return bar
-
-
 # Midday, and the task someone's on right now hasn't moved since the morning.
 func _stalled(t: Dictionary) -> bool:
 	if rules.step != "work" or t.get("gain_today", 0.0) > 0.0 or not rules.team.has(t["owner"]):
 		return false
 	var q := rules.queue_of(t["owner"])
 	return not q.is_empty() and q[0]["uid"] == t["uid"]
-
-
-# A card is picked on release, and only if the finger didn't move: dragging scrolls the list instead.
-func _on_card_input(event: InputEvent, uid: int) -> void:
-	if _tapped(event):
-		cue = "select"
-		_select.call_deferred(uid)
-
 
 func _due_text(t: Dictionary) -> String:
 	if t["due"] >= rules.NO_DEADLINE:
@@ -2906,27 +3204,32 @@ func _due_text(t: Dictionary) -> String:
 		return Loc.t("due.tomorrow")
 	return Loc.t("due.days", [left])
 
-
 func _days(d: float) -> String:
 	var x: float = maxf(0.5, snappedf(d, 0.5))
 	if is_equal_approx(x, roundf(x)):
 		return str(int(x))
 	return "%d%s5" % [int(x), "," if Loc.lang == "ru" else "."]
 
-
 # The open card: who asked, what it takes, and who gets it, each person shown with how they'd do it.
-func _task_window(v: VBoxContainer, t: Dictionary) -> void:
+# The sticky itself on the left; who asked, what's at stake and what it pays on the right.
+func _task_window(win: VBoxContainer, t: Dictionary) -> void:
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 18)
+	win.add_child(top)
+	var paper := _sticky(t, "preview")
+	paper.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	top.add_child(paper)
+	var v := _vbox(8)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(v)
 	var facts := _flow(6, 4)
 	v.add_child(facts)
-	var colors: Array = CAT_COLORS[t["cat"]]
-	facts.add_child(_pill(Loc.t("cat." + t["cat"]), colors[0], colors[1], _cat_icon(t["cat"])))
-	var est: Dictionary = rules.estimate(t)
-	facts.add_child(_pill(Loc.t("est.chip" if est["sure"] else "est.chip_guess", [_days(est["days"])]), COL_TEXT, COL_COLUMN))
-	facts.add_child(_pill(_due_text(t), COL_DANGER if t["due"] - rules.day <= 1 else COL_TEXT, Color("ffebe6") if t["due"] - rules.day <= 1 else COL_COLUMN))
+	facts.add_child(_pill(Loc.t("cat." + t["cat"]), CAT_COLORS[t["cat"]][0], CAT_COLORS[t["cat"]][1], _cat_icon(t["cat"])))
+	facts.add_child(_pill(_due_text(t), COL_DANGER if t["due"] - rules.day <= 1 else COL_TEXT, Color("ffe2dc") if t["due"] - rules.day <= 1 else COL_COLUMN))
 	if t["key"]:
-		facts.add_child(_pill(Loc.t("chip_key"), COL_WARN, Color("fff7e6")))
+		facts.add_child(_pill(Loc.t("chip_key"), COL_WARN, Color("fff3cf")))
 	elif t["public"]:
-		facts.add_child(_pill(Loc.t("public"), COL_WARN, Color("fff7e6")))
+		facts.add_child(_pill(Loc.t("public"), COL_WARN, Color("fff3cf")))
 	var waiting := _letter_for(t)
 	if not waiting.is_empty():
 		var row := HBoxContainer.new()
@@ -2944,13 +3247,14 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 			v.add_child(_label(Loc.t("sla.fined", [_rub(rules.card_sla(t))]), 14, COL_DANGER, true))
 		else:
 			v.add_child(_label(Loc.t("sla.terms", [_rub(rules.card_bonus(t)), _rub(rules.card_bonus_ok(t)), _rub(rules.card_sla(t))]), 14, COL_GOOD, true))
+	v = win
 	if deal_from >= 0:
 		_deal_block(v, t)
 		return
 	if rules.can_assign(t):
 		v.add_child(_section(Loc.t("to_whom").trim_suffix(":")))
 		var grid := GridContainer.new()
-		grid.columns = 2 if mobile else 4
+		grid.columns = 2 if compact else 4
 		grid.add_theme_constant_override("h_separation", 8)
 		grid.add_theme_constant_override("v_separation", 8)
 		v.add_child(grid)
@@ -2993,7 +3297,6 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 		pair.add_child(_button(Loc.t("no_helper"), _helper.bind(""), 0, "chosen" if t["helper"] == "" else ""))
 		v.add_child(_label(Loc.t("helper_hint"), 12, COL_MUTED, true))
 
-
 # Who can take it, best first: sooner done by them, then fewer things already on them; you last.
 func _pick_order(t: Dictionary) -> Array:
 	var people: Array = []
@@ -3005,13 +3308,11 @@ func _pick_order(t: Dictionary) -> Array:
 	people.append("me")
 	return people
 
-
 func _pick_score(t: Dictionary, p: String) -> float:
 	var score: float = rules.estimate(t, p)["days"] + 0.6 * rules.queue_of(p).size()
 	if rules.people[p]["absent"]:
 		score += 100.0
 	return score
-
 
 # The one to point at: first in the order, if you actually know their level at this.
 func _best_pick(t: Dictionary) -> String:
@@ -3021,15 +3322,12 @@ func _best_pick(t: Dictionary) -> String:
 	var p: String = order[0]
 	return p if rules.people[p]["known"].has("skill." + t["cat"]) and rules.people[p]["skills"][t["cat"]] >= 2 else ""
 
-
 func _level_stars(level: int) -> String:
 	return "★".repeat(level) + "☆".repeat(4 - level)
-
 
 # Good at it reads green, weak reads as a warning, the middle stays plain.
 func _level_color(level: int) -> Color:
 	return COL_WARN if level <= 1 else (COL_TEXT if level == 2 else COL_GOOD)
-
 
 # One person as a choice: their level at this kind of work, what's on them, how they are, and how long.
 func _pick_tile(t: Dictionary, p: String, best: bool) -> Control:
@@ -3098,7 +3396,6 @@ func _pick_tile(t: Dictionary, p: String, best: bool) -> Control:
 		foot.add_child(_label(_cost_mark(rules.cost("assign")).strip_edges(), 13, COL_MUTED))
 	return tile
 
-
 # The talk over a task someone pushed back on: what was said, then how you answer, or what came of it.
 func _deal_block(v: VBoxContainer, t: Dictionary) -> void:
 	var box := PanelContainer.new()
@@ -3116,7 +3413,7 @@ func _deal_block(v: VBoxContainer, t: Dictionary) -> void:
 		var p: String = rules.pending["p"]
 		v.add_child(_label(Loc.render("objection_title", [], {"who": Loc.person(p)}), 13, COL_PRIMARY, true, true))
 		var grid := GridContainer.new()
-		grid.columns = 1 if mobile else 2
+		grid.columns = 1 if compact else 2
 		grid.add_theme_constant_override("h_separation", 8)
 		grid.add_theme_constant_override("v_separation", 8)
 		v.add_child(grid)
@@ -3128,7 +3425,6 @@ func _deal_block(v: VBoxContainer, t: Dictionary) -> void:
 		var ok := _button(Loc.t("deal.ok"), _deal_done, 200, "primary")
 		ok.size_flags_horizontal = Control.SIZE_SHRINK_END
 		v.add_child(ok)
-
 
 func _deal_line(e: Dictionary) -> Control:
 	var body := Loc.render(e["key"], e.get("args", []), e.get("names", {}))
@@ -3145,223 +3441,14 @@ func _deal_line(e: Dictionary) -> Control:
 	col.add_child(_label(body, 16, COL_TEXT, true))
 	return row
 
-
 func _row_label(text_value: String) -> Control:
 	var l := _label(text_value, 13, COL_MUTED)
 	l.custom_minimum_size.y = 34
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	return l
 
-
-# ---------- the phone layout ----------
-
 func _view_width() -> float:
 	return get_viewport().get_visible_rect().size.x
-
-
-# One screen at a time, and only you switch them: when the chat needs you, the other screens say so
-# and point there, but nothing jumps by itself.
-func _build_phone() -> void:
-	var v := _vbox(0)
-	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	ui.add_child(v)
-	v.add_child(_phone_top())
-	var body: Control = _phone_messenger() if tab == "chat" else _phone_board()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	v.add_child(body)
-	v.add_child(_phone_tabs())
-
-
-# The phone's top: the day, then what you have as game resources: points, money, the race.
-func _phone_top() -> Control:
-	var bar := PanelContainer.new()
-	var style := _box(_sky(), _sky(), 0, 0)
-	style.set_corner_radius_all(0)
-	style.content_margin_left = 12
-	style.content_margin_right = 12
-	style.content_margin_top = 8
-	style.content_margin_bottom = 10
-	bar.add_theme_stylebox_override("panel", style)
-	var v := _vbox(8)
-	bar.add_child(v)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	v.add_child(row)
-	row.add_child(_logo(24))
-	var day := _label(_day_label(), 15, COL_ON_TOP, false, true)
-	day.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(day)
-	var menu := _button(Loc.t("menu.button"), _open_menu, 0, "on_top")
-	menu.custom_minimum_size.y = 30
-	row.add_child(menu)
-	var chips := HFlowContainer.new()
-	chips.add_theme_constant_override("h_separation", 6)
-	chips.add_theme_constant_override("v_separation", 6)
-	v.add_child(chips)
-	var dots := ""
-	for i in rules.max_attention():
-		dots += "●" if i < rules.attention else "○"
-	var points := _label(Loc.t("you.sick_today") if rules.sick_today else dots, 17, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER, false, true)
-	juice_nodes["points"] = points
-	chips.add_child(_chip(points))
-	chips.add_child(_chip(_money_label(14, true)))
-	var race := _race_label(14)
-	juice_nodes["race"] = race
-	chips.add_child(_chip(race))
-	if not rules.chapter_keys().is_empty():
-		var k := rules.key_status()
-		chips.add_child(_chip(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 14, COL_ON_TOP, false, true)))
-	return bar
-
-
-# A resource on the phone's top bar: a translucent rounded plate around its number.
-func _chip(content: Control) -> Control:
-	var chip := PanelContainer.new()
-	var cs := _flat(Color(1, 1, 1, 0.14))
-	cs.set_corner_radius_all(14)
-	cs.content_margin_left = 10
-	cs.content_margin_right = 10
-	cs.content_margin_top = 3
-	cs.content_margin_bottom = 3
-	chip.add_theme_stylebox_override("panel", cs)
-	chip.add_child(content)
-	return chip
-
-
-# The phone's bottom bar: the board, the messenger, Irina, and everything else, each with its icon and a
-# counter when something waits there.
-func _phone_tabs() -> Control:
-	var bar := PanelContainer.new()
-	var style := _flat(COL_SURFACE)
-	style.border_color = COL_BORDER
-	style.border_width_top = 1
-	style.content_margin_left = 6
-	style.content_margin_right = 6
-	style.content_margin_top = 6
-	style.content_margin_bottom = 10
-	bar.add_theme_stylebox_override("panel", style)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
-	bar.add_child(row)
-	var unread := 0
-	var asks := false
-	for th in _contacts():
-		unread += _unread(th)
-		asks = asks or _letters_in(th) > 0 or _asked_thread() == th
-	row.add_child(_tab_item(_icon("nav_board"), Loc.t("tab.board"), "", tab == "board", _go_tab.bind("board")))
-	row.add_child(_anchor(_tab_item(_icon("nav_chat"), Loc.t("tab.chat"), "!" if asks else _badge(unread), tab == "chat", _go_tab.bind("chat"), asks), "chat_tab"))
-	row.add_child(_anchor(_tab_item(_icon("nav_more"), Loc.t("tab.more"), _badge(_more_count()), window == "more", _open_window.bind("more")), "tab_more"))
-	return bar
-
-
-func _icon(name: String) -> Control:
-	var tex := TextureRect.new()
-	var path := ICON_DIR + name + ".svg"
-	if ResourceLoader.exists(path):
-		tex.texture = load(path)
-	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	tex.custom_minimum_size = Vector2(24, 24)
-	return tex
-
-
-func _tab_item(icon: Control, text_value: String, badge: String, chosen: bool, action: Callable, urgent: bool = false) -> Control:
-	var item := PanelContainer.new()
-	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	item.add_theme_stylebox_override("panel", _box(COL_SELECTED if chosen else Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, 6))
-	item.gui_input.connect(func(event: InputEvent):
-		if _tapped(event):
-			action.call_deferred())
-	var v := _vbox(2)
-	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	item.add_child(v)
-	var spot := Control.new()
-	spot.custom_minimum_size = Vector2(28, 26)
-	spot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	spot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(spot)
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	icon.position = Vector2(1, 0)
-	if icon is TextureRect:
-		icon.modulate = COL_PRIMARY if chosen else COL_MUTED
-	spot.add_child(icon)
-	var l := _label(text_value, 12, COL_PRIMARY if chosen else COL_MUTED, false, chosen)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(l)
-	if badge != "":
-		var dot := PanelContainer.new()
-		var ds := _flat(COL_STAR if urgent else COL_DANGER)
-		ds.set_corner_radius_all(9)
-		ds.content_margin_left = 5
-		ds.content_margin_right = 5
-		dot.add_theme_stylebox_override("panel", ds)
-		dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		dot.add_child(_label(badge, 10, COL_ON_TOP, false, true))
-		dot.position = Vector2(18, -4)
-		spot.add_child(dot)
-	return item
-
-
-# What waits behind "more": CVs, upgrades newly within reach, unhappy clients.
-func _more_count() -> int:
-	var n := rules.candidates.size() + _fresh_upgrades()
-	for bank in rules.banks:
-		if rules.bank_word(bank) in ["unhappy", "leaving"]:
-			n += 1
-	return n
-
-
-# The phone's board: the inbox, or the team with each person's cards under them; the week's done
-# folded into a line; the day's button.
-func _phone_board() -> Control:
-	var v := _vbox(8)
-	var lanes := _lanes()
-	var switcher := HBoxContainer.new()
-	switcher.add_theme_constant_override("separation", 4)
-	v.add_child(switcher)
-	if lane != "team":
-		lane = "inbox"
-	for name in ["inbox", "team"]:
-		var text_value := "%s %d" % [Loc.t("col_short.inbox"), lanes["inbox"].size()] if name == "inbox" else Loc.t("tab.team")
-		var b := _button(text_value, _pick_lane.bind(name), 0, "chosen" if lane == name else "subtle")
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.add_theme_font_size_override("font_size", _fs(14))
-		switcher.add_child(b)
-	var hint := Loc.t("you.busy", [rules.own_task_cost()]) if not rules.queue_of("me").is_empty() else Loc.t("step.%s.hint" % rules.step)
-	v.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
-	var scroll := _scroll("phone_" + lane)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	v.add_child(scroll)
-	var list := _vbox(10)
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(list)
-	if lane == "inbox":
-		if lanes["inbox"].is_empty():
-			list.add_child(_label(Loc.t("col_empty.inbox"), 14, COL_FAINT, true))
-		_fill_lane(list, "inbox", lanes["inbox"])
-	else:
-		for p in rules.team:
-			if not rules.people[p]["gone"]:
-				list.add_child(_phone_lane(_person_row(p), rules.queue_of(p), Loc.t("row.free")))
-		list.add_child(_phone_lane(_me_head(), rules.queue_of("me"), Loc.t("row.me_free")))
-	v.add_child(_done_strip(lanes["done"]))
-	v.add_child(_day_button(0))
-	return _padded(v, 10, 10)
-
-
-# One person on the phone: their plate under their name, full width.
-func _phone_lane(head: Control, items: Array, empty: String) -> Control:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _box(COL_COLUMN, COL_COLUMN, 0, 8))
-	var v := _vbox(6)
-	panel.add_child(v)
-	v.add_child(head)
-	if items.is_empty():
-		var l := _label(empty, 12, COL_FAINT, true)
-		v.add_child(_indented(l))
-	for t in items:
-		v.add_child(_task_card(t, "people"))
-	return panel
 
 
 # ---------- the messenger ----------
@@ -3466,7 +3553,8 @@ func _asked_thread() -> String:
 
 
 func _open_thread(th: String) -> void:
-	chat_thread = "" if chat_thread == th and not mobile else th
+	chat_thread = "" if chat_thread == th and not compact else th
+	chat_open = true
 	_render()
 
 
@@ -3484,8 +3572,7 @@ func _go_to_letter(th: String) -> void:
 	window = ""
 	selected = -1
 	chat_thread = th
-	if mobile:
-		tab = "chat"
+	chat_open = true
 	_render()
 
 
@@ -3607,7 +3694,7 @@ func _contact_dot(th: String) -> Control:
 # One conversation: the last few days of it, what waits for an answer, and what you can say first.
 func _thread_view(th: String) -> Control:
 	var panel := PanelContainer.new()
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL if mobile else Control.SIZE_FILL
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL if compact else Control.SIZE_FILL
 	var style := _flat(COL_SURFACE)
 	style.border_color = COL_BORDER
 	style.border_width_left = 1
@@ -3627,8 +3714,8 @@ func _thread_view(th: String) -> Control:
 	var head_row := HBoxContainer.new()
 	head_row.add_theme_constant_override("separation", 8)
 	head.add_child(head_row)
-	if mobile:
-		head_row.add_child(_button("‹", _close_thread, 36, "subtle"))
+	if compact:
+		head_row.add_child(_button("‹", _close_thread, 40, "subtle"))
 	head_row.add_child(_contact_face(th, 30))
 	var titles := _vbox(0)
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -3642,8 +3729,7 @@ func _thread_view(th: String) -> Control:
 		var card := _button(Loc.t("chat.card"), _open_window.bind("person:" + th), 0, "subtle")
 		card.add_theme_font_size_override("font_size", _fs(12))
 		head_row.add_child(card)
-	if not mobile:
-		head_row.add_child(_button("×", _close_thread, 30, "subtle"))
+	head_row.add_child(_button("×", _toggle_chat if compact else _close_thread, 40 if compact else 30, "subtle"))
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -3737,12 +3823,52 @@ func _talk_in_thread(list: VBoxContainer) -> void:
 		v.add_child(b)
 
 
-# The phone's chat tab: the contact list, or the conversation picked from it.
-func _phone_messenger() -> Control:
+# On a small screen the messenger slides over the board from the right; a tap beside it closes it.
+func _chat_drawer() -> void:
+	var dim := ColorRect.new()
+	dim.color = Color(0.12, 0.13, 0.15, 0.45)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	dim.gui_input.connect(func(event: InputEvent):
+		if _tapped(event):
+			_toggle_chat.call_deferred())
+	ui.add_child(dim)
+	var w := minf(460.0, _view_width() * 0.62)
+	var panel: Control
 	if chat_thread != "" and _contacts().has(chat_thread):
-		return _thread_view(chat_thread)
-	chat_thread = ""
+		panel = _thread_view(chat_thread)
+	else:
+		chat_thread = ""
+		panel = _contact_list()
+	panel.anchor_left = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_bottom = 1.0
+	panel.offset_left = -w
+	ui.add_child(panel)
+
+
+func _toggle_chat() -> void:
+	chat_open = not chat_open
+	_render()
+
+
+# The drawer's list of conversations, each with its last line.
+func _contact_list() -> Control:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _flat(COL_SURFACE))
+	var outer := _vbox(0)
+	panel.add_child(outer)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	var head_box := _padded(head, 12, 8)
+	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	outer.add_child(head_box)
+	var title := _label(Loc.t("tab.chat"), 17, COL_TEXT, false, true)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(title)
+	head.add_child(_button("×", _toggle_chat, 40, "subtle"))
 	var scroll := _scroll("contacts")
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_child(scroll)
 	var v := _vbox(6)
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_padded(v, 10, 10))
@@ -3776,7 +3902,7 @@ func _phone_messenger() -> Control:
 			badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			h.add_child(badge)
 		v.add_child(row)
-	return scroll
+	return panel
 
 
 # One chat entry: a day-part divider, narration, or a line under its speaker's name.
@@ -3845,6 +3971,11 @@ func _prompt_box(list: VBoxContainer, title: String) -> VBoxContainer:
 # A message waiting for an answer: answering costs, saying nothing is free and settles at the end of the day.
 func _letter_prompt(list: VBoxContainer, i: int, ev: Dictionary) -> void:
 	var v := _prompt_box(list, Loc.t("letter.title"))
+	_letter_choices(v, i, ev)
+	v.add_child(_label(Loc.t("letter.hint"), 12, COL_MUTED, true))
+
+
+func _letter_choices(v: VBoxContainer, i: int, ev: Dictionary) -> void:
 	for choice in ev["choices"]:
 		var parts: PackedStringArray = choice.split(":")
 		var names: Dictionary = ev["names"].duplicate()
@@ -3853,10 +3984,9 @@ func _letter_prompt(list: VBoxContainer, i: int, ev: Dictionary) -> void:
 		elif parts.size() > 1:
 			names["who"] = "@name.%s.acc" % parts[1]
 		var text := Loc.render("event.%s.choice.%s" % [ev["id"], parts[0]], [], names) + _cost_mark(rules.reply_cost(ev, choice))
-		var b := _answer_button(text, _answer_letter.bind(i, choice))
+		var b := _answer_button(text, _answer_letter.bind(i, choice), v.has_meta("small"))
 		b.disabled = not rules.can_answer(i, choice)
 		v.add_child(b)
-	v.add_child(_label(Loc.t("letter.hint"), 12, COL_MUTED, true))
 
 
 func _answer_letter(i: int, choice: String) -> void:
@@ -3872,7 +4002,10 @@ func _event_prompt(list: VBoxContainer, ev: Dictionary) -> void:
 		title = Loc.render("intervene_title", [], ev["names"]) + " — " + Loc.person(ev["target"])
 	elif ev["id"] == "decline":
 		title = Loc.render("decline_title", [], ev["names"])
-	var v := _prompt_box(list, title)
+	_event_choices(_prompt_box(list, title), ev)
+
+
+func _event_choices(v: VBoxContainer, ev: Dictionary) -> void:
 	for choice in ev["choices"]:
 		var parts: PackedStringArray = choice.split(":")
 		var names: Dictionary = ev["names"].duplicate()
@@ -3887,7 +4020,7 @@ func _event_prompt(list: VBoxContainer, ev: Dictionary) -> void:
 			text += _cost_mark(rules.choice_cost(ev, choice))
 		if ev["id"] == "boss_visit" and (parts[0] == "delay" or parts[0] == "contractor") and not rules.has_weight():
 			text += " " + Loc.t("needs_weight")
-		var answer := _answer_button(text, _event.bind(choice))
+		var answer := _answer_button(text, _event.bind(choice), v.has_meta("small"))
 		answer.disabled = answer.disabled or not rules.can_afford(rules.choice_cost(ev, choice))
 		v.add_child(answer)
 
@@ -3903,11 +4036,14 @@ func _review_prompt(list: VBoxContainer) -> void:
 	v.add_child(_label(Loc.t("review_hint.endless"), 12, COL_MUTED, true))
 
 
-func _answer_button(text_value: String, action: Callable) -> Button:
-	var b := _button(text_value, action, 0)
+func _answer_button(text_value: String, action: Callable, small: bool = false) -> Button:
+	var b := _button(text_value, action, 0, "answer")
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if small:
+		b.add_theme_font_size_override("font_size", _fs(12))
+		b.custom_minimum_size.y = 30
 	return b
 
 
@@ -3941,7 +4077,7 @@ func _document(width: int) -> VBoxContainer:
 	ui.add_child(dim)
 	var panel := PanelContainer.new()
 	var w := minf(width, _view_width() - 16.0)
-	var margin := 8.0 if mobile else 32.0
+	var margin := 8.0 if compact else 32.0
 	panel.anchor_left = 0.5
 	panel.anchor_right = 0.5
 	panel.anchor_bottom = 1.0
@@ -3956,7 +4092,7 @@ func _document(width: int) -> VBoxContainer:
 	panel.add_child(scroll)
 	var v := _vbox(10)
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_padded(v, 16 if mobile else 28, 16 if mobile else 24))
+	scroll.add_child(_padded(v, 16 if compact else 28, 16 if compact else 24))
 	return v
 
 
@@ -3969,8 +4105,8 @@ func _build_story() -> void:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
 	var view := get_viewport().get_visible_rect().size
-	var w := minf(880.0, view.x - (16.0 if mobile else 64.0))
-	var h := view.y - 16.0 if mobile else minf(600.0, view.y - 64.0)
+	var w := minf(880.0, view.x - (16.0 if compact else 64.0))
+	var h := view.y - 16.0 if compact else minf(600.0, view.y - 64.0)
 	var panel := PanelContainer.new()
 	panel.anchor_left = 0.5
 	panel.anchor_right = 0.5
@@ -3997,7 +4133,7 @@ func _build_story() -> void:
 			if op["op"] == "line" and op["who"] != "" and op["who"] != "you":
 				speaker = op["who"]
 				break
-	var body: BoxContainer = VBoxContainer.new() if mobile else HBoxContainer.new()
+	var body: BoxContainer = VBoxContainer.new() if compact else HBoxContainer.new()
 	body.add_theme_constant_override("separation", 0)
 	panel.add_child(body)
 	if speaker != "":
@@ -4012,11 +4148,11 @@ func _build_story() -> void:
 	right.add_child(scroll)
 	var list := _vbox(12)
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_padded(list, 18 if mobile else 28, 18 if mobile else 24))
+	scroll.add_child(_padded(list, 18 if compact else 28, 18 if compact else 24))
 	for i in log.size():
 		list.add_child(_story_entry(log[i], i == log.size() - 1))
 	var actions := _vbox(8)
-	var foot := _padded(actions, 18 if mobile else 28, 16)
+	var foot := _padded(actions, 18 if compact else 28, 16)
 	foot.size_flags_vertical = Control.SIZE_SHRINK_END
 	right.add_child(foot)
 	if rules.story["wait"] == "choice":
@@ -4037,8 +4173,8 @@ func _build_convo() -> void:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
 	var view := get_viewport().get_visible_rect().size
-	var w := minf(880.0, view.x - (16.0 if mobile else 64.0))
-	var h := view.y - 16.0 if mobile else minf(600.0, view.y - 64.0)
+	var w := minf(880.0, view.x - (16.0 if compact else 64.0))
+	var h := view.y - 16.0 if compact else minf(600.0, view.y - 64.0)
 	var panel := PanelContainer.new()
 	panel.anchor_left = 0.5
 	panel.anchor_right = 0.5
@@ -4053,7 +4189,7 @@ func _build_convo() -> void:
 	panel.add_theme_stylebox_override("panel", style)
 	ui.add_child(panel)
 	var who: String = rules.convo["who"]
-	var body: BoxContainer = VBoxContainer.new() if mobile else HBoxContainer.new()
+	var body: BoxContainer = VBoxContainer.new() if compact else HBoxContainer.new()
 	body.add_theme_constant_override("separation", 0)
 	panel.add_child(body)
 	body.add_child(_story_portrait(who, rules.convo.get("emo", ""), "meeting_room" if rules.convo["kind"] == "interview" else "office_day"))
@@ -4067,14 +4203,14 @@ func _build_convo() -> void:
 	right.add_child(scroll)
 	var list := _vbox(12)
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_padded(list, 18 if mobile else 28, 18 if mobile else 24))
+	scroll.add_child(_padded(list, 18 if compact else 28, 18 if compact else 24))
 	var log: Array = rules.convo["log"]
 	for i in log.size():
 		var e: Dictionary = log[i]
 		var said: String = Loc.render(e["key"], [], e["names"]) if e.has("key") else Loc.fill(e["ru"], e["en"], e["names"])
 		list.add_child(_story_entry({"who": e["who"], "emo": "", "ru": said, "en": ""}, i == log.size() - 1))
 	var actions := _vbox(8)
-	var foot := _padded(actions, 18 if mobile else 28, 16)
+	var foot := _padded(actions, 18 if compact else 28, 16)
 	foot.size_flags_vertical = Control.SIZE_SHRINK_END
 	right.add_child(foot)
 	if rules.convo["left"] > 0:
@@ -4102,8 +4238,8 @@ func _build_standup() -> void:
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
 	var view := get_viewport().get_visible_rect().size
-	var w := minf(960.0, view.x - (16.0 if mobile else 64.0))
-	var h := view.y - 16.0 if mobile else minf(640.0, view.y - 64.0)
+	var w := minf(960.0, view.x - (16.0 if compact else 64.0))
+	var h := view.y - 16.0 if compact else minf(640.0, view.y - 64.0)
 	var panel := PanelContainer.new()
 	panel.anchor_left = 0.5
 	panel.anchor_right = 0.5
@@ -4123,7 +4259,7 @@ func _build_standup() -> void:
 	var head := _vbox(4)
 	head.add_child(_label(Loc.t("standup.title"), 22, COL_TEXT, false, true))
 	head.add_child(_label(Loc.t("standup.hint_endless") + "   " + _attention_text(), 13, COL_MUTED, true))
-	var head_box := _padded(head, 18 if mobile else 28, 16)
+	var head_box := _padded(head, 18 if compact else 28, 16)
 	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	right.add_child(head_box)
 	var scroll := ScrollContainer.new()
@@ -4131,15 +4267,15 @@ func _build_standup() -> void:
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_child(scroll)
 	var grid := GridContainer.new()
-	grid.columns = 1 if mobile else 2
+	grid.columns = 1 if compact else 2
 	grid.add_theme_constant_override("h_separation", 12)
 	grid.add_theme_constant_override("v_separation", 12)
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_padded(grid, 18 if mobile else 28, 4))
+	scroll.add_child(_padded(grid, 18 if compact else 28, 4))
 	var lines: Array = rules.standup["lines"]
 	for i in lines.size():
 		grid.add_child(_standup_tile(lines[i], i))
-	var foot := _padded(HBoxContainer.new(), 18 if mobile else 28, 16)
+	var foot := _padded(HBoxContainer.new(), 18 if compact else 28, 16)
 	foot.size_flags_vertical = Control.SIZE_SHRINK_END
 	right.add_child(foot)
 	var gap := Control.new()
@@ -4208,7 +4344,7 @@ func _background(place: String) -> Control:
 	pic.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	stack.add_child(pic)
 	var fade := Gradient.new()
-	if mobile:
+	if compact:
 		fade.set_color(0, Color(COL_BG, 0.45))
 		fade.set_color(1, Color(COL_BG, 0.75))
 	else:
@@ -4218,7 +4354,7 @@ func _background(place: String) -> Control:
 	var wash_tex := GradientTexture2D.new()
 	wash_tex.gradient = fade
 	wash_tex.fill_from = Vector2(0, 0)
-	wash_tex.fill_to = Vector2(1, 0) if mobile else Vector2(0, 1)
+	wash_tex.fill_to = Vector2(1, 0) if compact else Vector2(0, 1)
 	var wash := TextureRect.new()
 	wash.texture = wash_tex
 	wash.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -4231,7 +4367,7 @@ func _background(place: String) -> Control:
 func _story_portrait(p: String, emo: String, place: String = "") -> Control:
 	var box := PanelContainer.new()
 	var style := _flat(COL_BG)
-	if mobile:
+	if compact:
 		style.corner_radius_top_left = 16
 		style.corner_radius_top_right = 16
 	else:
@@ -4242,13 +4378,13 @@ func _story_portrait(p: String, emo: String, place: String = "") -> Control:
 	var back := _background(place)
 	if back != null:
 		box.add_child(back)
-	var inner: BoxContainer = HBoxContainer.new() if mobile else VBoxContainer.new()
+	var inner: BoxContainer = HBoxContainer.new() if compact else VBoxContainer.new()
 	inner.add_theme_constant_override("separation", 12)
-	inner.alignment = BoxContainer.ALIGNMENT_BEGIN if mobile else BoxContainer.ALIGNMENT_CENTER
-	box.add_child(_padded(inner, 16 if mobile else 24, 16 if mobile else 24))
-	var size := 64 if mobile else 168
+	inner.alignment = BoxContainer.ALIGNMENT_BEGIN if compact else BoxContainer.ALIGNMENT_CENTER
+	box.add_child(_padded(inner, 16 if compact else 24, 16 if compact else 24))
+	var size := 64 if compact else 168
 	var tex := _portrait(p, emo)
-	if tex != null and not mobile:
+	if tex != null and not compact:
 		# The whole picture, the mood in the pill under the name.
 		var pic := TextureRect.new()
 		pic.texture = tex
@@ -4266,19 +4402,19 @@ func _story_portrait(p: String, emo: String, place: String = "") -> Control:
 	ring.add_theme_stylebox_override("panel", ring_style)
 	ring.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	ring.add_child(_avatar(p, size, emo))
-	if tex == null or mobile:
+	if tex == null or compact:
 		inner.add_child(ring)
 	var names := _vbox(4)
 	names.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	inner.add_child(names)
-	var name := _label(Loc.person(p), 20 if mobile else 22, COL_TEXT, false, true)
-	if not mobile:
+	var name := _label(Loc.person(p), 20 if compact else 22, COL_TEXT, false, true)
+	if not compact:
 		name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		box.custom_minimum_size.x = 240
 	names.add_child(name)
 	if emo != "" and Loc.has_key("emo." + emo):
 		var tag := _pill(Loc.t("emo." + emo), COL_SURFACE, EMO_COLORS.get(emo, COL_MUTED))
-		tag.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if mobile else Control.SIZE_SHRINK_CENTER
+		tag.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN if compact else Control.SIZE_SHRINK_CENTER
 		names.add_child(tag)
 	return box
 
@@ -4678,10 +4814,11 @@ const PORTRAIT_FACE_DEFAULT := Rect2(0.2, 0.05, 0.6, 0.6)
 const FACE_SHADER := """
 shader_type canvas_item;
 uniform vec4 region = vec4(0.0, 0.0, 1.0, 1.0);
+uniform float round_cut = 1.0;
 void fragment() {
 	vec4 c = texture(TEXTURE, region.xy + UV * region.zw);
 	float d = distance(UV, vec2(0.5));
-	COLOR = vec4(c.rgb, c.a * (1.0 - smoothstep(0.47, 0.5, d)));
+	COLOR = vec4(c.rgb, c.a * mix(1.0, 1.0 - smoothstep(0.47, 0.5, d), round_cut));
 }
 """
 var portrait_cache := {}
@@ -4704,7 +4841,7 @@ func _portrait(p: String, emo: String = "") -> Texture2D:
 	return portrait_cache[key]
 
 
-func _face(p: String, size: int, emo: String = "") -> Control:
+func _face(p: String, size: int, emo: String = "", square: bool = false) -> Control:
 	var tex := _portrait(p, emo)
 	if tex == null:
 		return null
@@ -4715,6 +4852,7 @@ func _face(p: String, size: int, emo: String = "") -> Control:
 	var mat := ShaderMaterial.new()
 	mat.shader = face_shader
 	mat.set_shader_parameter("region", Vector4(r.position.x, r.position.y, r.size.x, r.size.y))
+	mat.set_shader_parameter("round_cut", 0.0 if square else 1.0)
 	var pic := TextureRect.new()
 	pic.texture = tex
 	pic.material = mat
@@ -4726,18 +4864,19 @@ func _face(p: String, size: int, emo: String = "") -> Control:
 	return pic
 
 
-func _avatar(p: String, size: int, emo: String = "") -> Control:
+# A round face for the chat and the lists; square (square = true) for a photo pinned to the board.
+func _avatar(p: String, size: int, emo: String = "", square: bool = false) -> Control:
 	var box := PanelContainer.new()
 	box.custom_minimum_size = Vector2(size, size)
 	box.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	box.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	box.mouse_filter = Control.MOUSE_FILTER_PASS
 	var style := _flat(AVATAR_COLORS.get(p, HIRE_COLORS[absi(p.hash()) % HIRE_COLORS.size()] if p.begins_with("hire") else COL_MUTED))
-	style.set_corner_radius_all(int(size / 2.0))
+	style.set_corner_radius_all(1 if square else int(size / 2.0))
 	box.add_theme_stylebox_override("panel", style)
 	var name := Loc.t("you") if p == "me" else Loc.person(p)
 	box.tooltip_text = name
-	var face := _face(p, size, emo)
+	var face := _face(p, size, emo, square)
 	if face != null:
 		style.bg_color = style.bg_color.lerp(COL_SURFACE, 0.75)
 		box.add_child(face)
@@ -4859,7 +4998,7 @@ func _button(text_value: String, action: Callable, min_width: int, look: String 
 	var b := Button.new()
 	b.text = text_value
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(min_width, 44 if mobile else 34)
+	b.custom_minimum_size = Vector2(min_width, 44 if compact else 34)
 	b.add_theme_font_size_override("font_size", _fs(14))
 	var fill := COL_COLUMN
 	var hover := COL_BORDER
@@ -4881,8 +5020,12 @@ func _button(text_value: String, action: Callable, min_width: int, look: String 
 			fill = Color(1, 1, 1, 0.12)
 			hover = Color(1, 1, 1, 0.22)
 			text_color = COL_ON_TOP
-	b.add_theme_stylebox_override("normal", _box(fill, fill, 0, 8))
-	b.add_theme_stylebox_override("hover", _box(hover, hover, 0, 8))
+		"answer":
+			fill = COL_SURFACE
+			hover = COL_SELECTED
+	var edge := 1 if look == "answer" else 0
+	b.add_theme_stylebox_override("normal", _box(fill, COL_BORDER, edge, 8))
+	b.add_theme_stylebox_override("hover", _box(hover, COL_PRIMARY, edge, 8))
 	b.add_theme_stylebox_override("pressed", _box(hover.darkened(0.08), hover, 0, 8))
 	b.add_theme_stylebox_override("disabled", _box(fill if look == "chosen" else COL_BG, COL_BG, 0, 8))
 	for state in ["font_color", "font_hover_color", "font_pressed_color"]:
@@ -4910,3 +5053,11 @@ func _box(fill: Color, border: Color, border_width: int, padding: int) -> StyleB
 	s.set_corner_radius_all(6)
 	s.set_content_margin_all(padding)
 	return s
+
+
+func _draw_turn(phone: Control) -> void:
+	phone.draw_rect(Rect2(28, 8, 34, 60), COL_TEXT, false, 3.5)
+	phone.draw_line(Vector2(40, 60), Vector2(50, 60), COL_TEXT, 3.0)
+	phone.draw_arc(Vector2(45, 45), 38, -0.6, 0.9, 12, COL_PRIMARY, 3.5)
+	phone.draw_line(Vector2(73, 72), Vector2(80, 64), COL_PRIMARY, 3.5)
+	phone.draw_line(Vector2(73, 72), Vector2(64, 69), COL_PRIMARY, 3.5)
