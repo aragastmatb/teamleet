@@ -121,6 +121,8 @@ var cue := ""
 var mobile := false
 var tab := "board"
 var lane := "inbox"
+# The step of the day the board was last drawn in: when it changes, the phone turns to what matters now.
+var lane_step := ""
 # The messenger: a column of contacts, and the one conversation that's open ("" for none).
 var chat_thread := ""
 # How far each conversation has been read, as an index into the history.
@@ -265,6 +267,9 @@ func _on_resize() -> void:
 
 
 func _go_tab(name: String) -> void:
+	# The chat tab again, from inside a conversation, goes back to the list of them.
+	if name == "chat" and tab == "chat":
+		chat_thread = ""
 	tab = name
 	if name != "board":
 		selected = -1
@@ -631,6 +636,10 @@ func _render() -> void:
 		rules.save_game()
 	cue = ""
 	anchors.clear()
+	# Once the cards are handed out, the phone shows the team at work; a new morning goes back to the inbox.
+	if rules.step != lane_step:
+		lane_step = rules.step
+		lane = "inbox" if lane_step == "triage" else "team"
 	if is_instance_valid(chat_scroll):
 		chat_pos = 1 << 30 if chat_to_end else chat_scroll.scroll_vertical
 	for key in scrolls:
@@ -1922,6 +1931,17 @@ func _upgrade_affordable(id: String) -> bool:
 func _more_row(b: Control) -> Control:
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	b.custom_minimum_size.y = 44
+	# In a window's list the counter sits inside the row, at its right end: hanging off the corner it gets cut off.
+	for dot in b.get_children():
+		if dot is PanelContainer:
+			dot.anchor_top = 0.5
+			dot.anchor_bottom = 0.5
+			dot.offset_right = -14
+			dot.offset_left = -14
+			dot.offset_top = -9
+			dot.offset_bottom = 9
+			dot.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+			dot.grow_vertical = Control.GROW_DIRECTION_BOTH
 	return b
 
 
