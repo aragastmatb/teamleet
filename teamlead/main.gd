@@ -3587,6 +3587,9 @@ func _quiet(key: String) -> bool:
 	for prefix in QUIET_PREFIXES:
 		if key.begins_with(prefix):
 			return true
+	# A new card's request: it's on the card itself, in the inbox.
+	if key.begins_with("task.") and key.ends_with(".ask"):
+		return true
 	# A person's own finish line, unless it went badly.
 	return key.begins_with("result.") and not key.ends_with(".bad")
 
