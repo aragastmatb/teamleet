@@ -1254,7 +1254,7 @@ func _build_setup() -> void:
 	head.add_theme_constant_override("separation", 12)
 	v.add_child(head)
 	head.add_child(_logo(32))
-	head.add_child(_label(Loc.t("setup.title"), 26, COL_TEXT, false, true))
+	head.add_child(_hand(Loc.t("setup.title"), 40, COL_PRIMARY))
 	v.add_child(_label(Loc.t("setup.boss_head"), 17, COL_TEXT, true, true))
 	var bosses: Array = C.BOSS_KINDS.duplicate()
 	bosses.append("random")
@@ -1342,7 +1342,7 @@ func _build_draft() -> void:
 	head.add_theme_constant_override("separation", 12)
 	v.add_child(head)
 	head.add_child(_logo(32))
-	head.add_child(_label(Loc.t("draft.title"), 26, COL_TEXT, false, true))
+	head.add_child(_hand(Loc.t("draft.title"), 40, COL_PRIMARY))
 	v.add_child(_label(Loc.t("draft.hint", [_rub(rules.PERIOD_BUDGET)]), 15, COL_MUTED, true))
 	var cols := 3 if width >= 760 else (2 if width >= 500 else 1)
 	var grid := GridContainer.new()
@@ -1382,7 +1382,7 @@ func _draft_card(id: String, w: float) -> Control:
 	var on: bool = rules.draft_picked.has(id)
 	var card := PanelContainer.new()
 	card.custom_minimum_size.x = w
-	card.add_theme_stylebox_override("panel", _box(COL_SELECTED if on else COL_SURFACE, COL_PRIMARY if on else COL_BORDER, 2 if on else 1, 14))
+	card.add_theme_stylebox_override("panel", _paper(COL_SURFACE, on))
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	var v := _vbox(6)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1391,7 +1391,7 @@ func _draft_card(id: String, w: float) -> Control:
 	head.add_theme_constant_override("separation", 8)
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(head)
-	head.add_child(_avatar(id, 32))
+	head.add_child(_photo(id, 40, false))
 	var names := _vbox(0)
 	names.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1404,7 +1404,7 @@ func _draft_card(id: String, w: float) -> Control:
 	for cat in C.CATEGORIES:
 		var colors: Array = CAT_COLORS[cat]
 		skills.add_child(_pill("%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % rules.cv_level(id, cat))], colors[0], colors[1], _cat_icon(cat)))
-	v.add_child(_label(Loc.t("draft.picked" if on else "draft.pick"), 13, COL_PRIMARY if on else COL_FAINT))
+	v.add_child(_hand(Loc.t("draft.picked"), 24, COL_PRIMARY) if on else _label(Loc.t("draft.pick"), 13, COL_FAINT))
 	card.gui_input.connect(_on_draft_input.bind(id))
 	return card
 
@@ -1452,12 +1452,12 @@ func _option_grid(kind: String, values: Array, chosen: String, width: int) -> Co
 		var card := PanelContainer.new()
 		card.custom_minimum_size.x = (width - 12 * (cols - 1)) / float(cols)
 		card.size_flags_vertical = Control.SIZE_FILL
-		card.add_theme_stylebox_override("panel", _box(COL_SELECTED if on else COL_SURFACE, COL_PRIMARY if on else COL_BORDER, 2 if on else 1, 14))
+		card.add_theme_stylebox_override("panel", _paper(COL_STICKY if on else COL_STICKY_PALE, on))
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		var key := "setup.%s.%s" % [kind, value]
 		var text := _vbox(4)
 		text.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		text.add_child(_label(Loc.t(key), 16, COL_PRIMARY if on else COL_TEXT, true, true))
+		text.add_child(_label(Loc.t(key), 16, COL_TEXT, true, true))
 		text.add_child(_label(Loc.t(key + ".desc"), 14, COL_MUTED, true))
 		card.add_child(text)
 		card.gui_input.connect(_on_option_input.bind("boss" if kind == "boss" else "profile", value))
@@ -1617,17 +1617,17 @@ func _person_card(p: String) -> Control:
 	var st: Dictionary = rules.people[p]
 	var card := PanelContainer.new()
 	var target: bool = rules.pending.get("p", "") == p
-	card.add_theme_stylebox_override("panel", _box(COL_SELECTED if target else COL_SURFACE, COL_FOCUS if target else COL_BORDER, 2 if target else 1, 10))
+	card.add_theme_stylebox_override("panel", _box(COL_SELECTED if target else Color(0, 0, 0, 0), COL_FOCUS if target else Color(0, 0, 0, 0), 2 if target else 0, 2))
 	var v := _vbox(5)
 	card.add_child(v)
 	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 8)
+	head.add_theme_constant_override("separation", 12)
 	v.add_child(head)
-	head.add_child(_avatar(p, 32))
+	head.add_child(_photo(p, 56, false))
 	var names := _vbox(0)
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	names.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	head.add_child(names)
-	names.add_child(_label(Loc.person(p), 15, COL_TEXT, false, true))
 	var role := rules.role_of(p)
 	if role != "":
 		names.add_child(_label(Loc.t("role." + role), 12, COL_MUTED, true))
@@ -1683,13 +1683,13 @@ func _person_card(p: String) -> Control:
 # You know your own strengths; they matter when you do the work or step into someone's.
 func _me_card() -> Control:
 	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 10))
+	card.add_theme_stylebox_override("panel", _box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, 2))
 	var v := _vbox(6)
 	card.add_child(v)
 	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 8)
+	head.add_theme_constant_override("separation", 12)
 	v.add_child(head)
-	head.add_child(_avatar("me", 32))
+	head.add_child(_photo("me", 56, false))
 	var names := _vbox(0)
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(names)
@@ -2971,6 +2971,15 @@ func _sticky(t: Dictionary, where: String) -> Control:
 	return card
 
 
+func _paper(fill: Color, picked: bool) -> StyleBoxFlat:
+	var st := _box(fill, COL_PRIMARY, 3 if picked else 0, 14)
+	st.set_corner_radius_all(2)
+	st.shadow_color = Color(0, 0, 0, 0.28 if picked else 0.18)
+	st.shadow_size = 8 if picked else 3
+	st.shadow_offset = Vector2(0, 3 if picked else 2)
+	return st
+
+
 # Stickies and photos tilt round their middle.
 func _center_pivot(c: Control) -> void:
 	if is_instance_valid(c):
@@ -4249,15 +4258,17 @@ func _build_standup() -> void:
 	panel.offset_right = w / 2.0
 	panel.offset_top = -h / 2.0
 	panel.offset_bottom = h / 2.0
-	var style := _box(COL_SURFACE, COL_BORDER, 1, 0)
-	style.set_corner_radius_all(16)
+	var style := _box(COL_BOARD, COL_FRAME, 5, 0)
+	style.set_corner_radius_all(6)
+	style.shadow_color = Color(0, 0, 0, 0.3)
+	style.shadow_size = 12
 	panel.add_theme_stylebox_override("panel", style)
 	ui.add_child(panel)
 	_anchor(panel, "standup")
 	var right := _vbox(0)
 	panel.add_child(right)
 	var head := _vbox(4)
-	head.add_child(_label(Loc.t("standup.title"), 22, COL_TEXT, false, true))
+	head.add_child(_hand(Loc.t("standup.title"), 32 if compact else 38, COL_PRIMARY))
 	head.add_child(_label(Loc.t("standup.hint_endless") + "   " + _attention_text(), 13, COL_MUTED, true))
 	var head_box := _padded(head, 18 if compact else 28, 16)
 	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
@@ -4289,15 +4300,15 @@ func _standup_tile(line: Dictionary, i: int) -> Control:
 	var tile := PanelContainer.new()
 	tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var quiet: bool = line["topic"] == "quiet"
-	var style := _box(COL_BG if quiet else COL_SURFACE, COL_BORDER if quiet else COL_FOCUS, 1, 14)
-	style.set_corner_radius_all(12)
+	var style := _box(COL_COLUMN if quiet else COL_SURFACE, COL_BORDER, 1, 14)
+	style.set_corner_radius_all(10)
 	tile.add_theme_stylebox_override("panel", style)
 	var v := _vbox(8)
 	tile.add_child(v)
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 10)
-	top.add_child(_avatar(p, 40))
-	var name := _label(Loc.person(p), 15, COL_TEXT, false, true)
+	top.add_child(_photo(p, 36, false))
+	var name := _hand(Loc.person(p), 24, COL_PRIMARY)
 	name.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(name)
 	v.add_child(top)
