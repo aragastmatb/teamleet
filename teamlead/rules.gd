@@ -44,7 +44,8 @@ const STUCK_DAYS := 3
 var rng := RandomNumberGenerator.new()
 var scenes := Scenes.new()
 var day := 1
-# Which chapter (1..4) of C.CHAPTERS; days run on through the chapters.
+# Which chapter (1..4) of C.CHAPTERS the story is in: the period's number. 0 in the endless run, which has none,
+# so every lookup of chapter content there comes back empty.
 var chapter := 1
 # "story": the four chapters with the team and the scenes. "endless": the tycoon, a made-up team and
 # period after period of PERIOD_DAYS on one common deck (C.ENDLESS_DECK). A period closes with the budget
@@ -96,12 +97,9 @@ var deck: Array = []
 var seen_day := {}
 # Chain cards on their way: [{"id", "day"}], dealt the morning of that day.
 var chain_due: Array = []
-# Improvements to Chainer that are done: id -> the day.
-var improved := {}
-# The banks with us: id -> {"mood": how they feel about us, "since": day}. Reputation: how the platform's
+# The banks with us: id -> {"mood": how they feel about us, "since": day}.
 # deliveries have gone lately; it makes the next sale come sooner.
 var banks := {}
-var reputation := 0.0
 var comp_off := {}
 # Your attention: the day's points for managing. Spend past them and you're borrowing from tomorrow
 # (overtime_today, up to borrow_cap()); in the endless run hitting the cap ends the day for you.
@@ -132,9 +130,6 @@ var my_sick := 0
 var my_hangover := 0
 var sick_today := false
 var visited_today := false
-var init_next := {}
-# Who feels like volunteering today: decided each morning from their energy, mood and character.
-var offer_today := {}
 # Which Irina this run has (a key of C.BOSSES) and how your leading leans, overall and this week.
 var boss_type: String = C.DEFAULT_BOSS
 # Who you were before this job: a key of C.PROFILES.
@@ -163,7 +158,7 @@ var shares := {}
 # Chat entries: {"who": speaker id, "you" or "" for narration; "key"; "args": [] for %s; "names": {} for {placeholders}; "day"}.
 # Values starting with "@" are locale keys.
 var history: Array = []
-# Marina's first-steps tips in the chat (see update_tips).
+# Marina's first-month walkthrough (main.gd, the coach).
 var tips := true
 
 
@@ -176,52 +171,45 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 		rng.randomize()
 	mode = run_mode
 	day = 1
-	chapter = 1
+	chapter = 1 if run_mode == "story" else 0
 	period = 1
 	period_start = 1
 	people.clear()
 	hires.clear()
 	candidates.clear()
-	openings = 0
 	next_hire = 1
 	L.EXTRA = {"ru": {}, "en": {}}
 	L.STAND_IN = {}
-	if endless():
-		team = []
-		# You start with what Irina gives for the first month, nothing else.
-		money = PERIOD_BUDGET
-		draft_rerolls = DRAFT_REROLLS
-		draft_picked.clear()
-		last_race = {}
-		for i in DRAFT_SIZE:
-			_draft_add()
-	else:
+	# You start with what Irina gives for the first month, nothing else.
+	money = PERIOD_BUDGET
+	last_race = {}
+	draft_picked.clear()
+	# The story comes with its team; otherwise you pick one from Marina's CVs.
+	if story_mode():
 		team = C.TEAM.duplicate()
 		for p in team:
 			_new_person(p, true)
+	else:
+		team = []
+		draft_rerolls = DRAFT_REROLLS
+		for i in DRAFT_SIZE:
+			_draft_add()
 	tasks.clear()
 	comp_off.clear()
 	flags.clear()
 	deck.clear()
 	seen_day.clear()
 	chain_due.clear()
-	improved.clear()
 	banks.clear()
 	for b in C.START_BANKS:
 		banks[b] = {"mood": 0.0, "since": 1}
-	reputation = 0.0
 	_refill_deck()
 	debt = 0
 	debt_days = 0
 	my_sick = 0
 	my_hangover = 0
-	init_next.clear()
 	boss_type = boss_kind
 	profile = profile_kind
-	if C.PROFILES[profile].get("knows_team", false):
-		for p in team:
-			for cat in C.CATEGORIES:
-				people[p]["known"]["skill." + cat] = true
 	for x in C.PAEI:
 		style[x] = 0.0
 		week_style[x] = 0.0
@@ -243,10 +231,10 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	flags.clear()
 	history.clear()
 	ending = ""
-	_fill_backlog()
-	if endless():
+	if not story_mode():
 		phase = "draft"
 		return
+	_period_budget()
 	_start_day()
 
 
@@ -286,13 +274,9 @@ func _start_day() -> void:
 	# Today's cards come in once the morning's questions are answered, so the chat reads in order.
 	arriving = _arrivals()
 	talked.clear()
-	offer_today.clear()
-	for p in team:
-		if day > 1 and available(p) and not people[p]["absent"] and _wants_to_volunteer(p):
-			offer_today[p] = true
 	visited_today = false
 	overtime_today = 0
-	day_start = {"money": money, "race": my_points() if endless() else 0.0, "taras": taras_total() if endless() else 0.0}
+	day_start = {"money": money, "race": my_points(), "taras": taras_total()}
 	step = "triage"
 	after_events = "plan"
 	attention = 0 if my_sick > 0 else maxi(0, max_attention() - debt)
@@ -312,15 +296,14 @@ func _start_day() -> void:
 
 
 func _open_morning() -> void:
-	# In the endless run the cards are on the table before the stand-up, so people can grab some.
-	if endless() and step == "triage" and flags.get("delivered_day", -1) != day:
+	# The cards are on the table before the stand-up, so people can grab some.
+	if step == "triage" and flags.get("delivered_day", -1) != day:
 		_deliver_arrivals()
 		_team_pulls()
 	if _open_standup():
 		return
 	_queue_events()
-	if endless():
-		_post_letters()
+	_post_letters()
 	if events.is_empty():
 		_deliver_arrivals()
 		phase = "plan"
@@ -338,14 +321,13 @@ func _deliver_arrivals() -> void:
 	if flags.get("delivered_day", -1) == day:
 		return
 	flags["delivered_day"] = day
-	_maybe_sell()
 	_layoff_rush()
 	_hiring_morning()
 	if flags.get("auto_today", 0) > 0:
 		_narrate("up.auto", [flags["auto_today"]])
 		flags["auto_today"] = 0
 	for id in arriving:
-		if endless() and C.TASKS[id]["tags"].has("incident"):
+		if C.TASKS[id]["tags"].has("incident"):
 			arriving_midday.append(id)
 		else:
 			add_task(id)
@@ -384,7 +366,7 @@ func _nudge_pull(p: String, by: float) -> void:
 func _pull_choice(p: String) -> Dictionary:
 	var best: Dictionary = {}
 	# A newcomer doesn't pick work for themselves: they don't know yet what's what.
-	if endless() and newbie(p):
+	if newbie(p):
 		return best
 	var best_score := -INF
 	for t in inbox():
@@ -458,14 +440,12 @@ func _team_picks() -> void:
 					_say(p, _own_key("pulled.alone", p), [], {"task": "@taskname." + t["id"]})
 
 
-# The endless run's actions belong to steps of the day; the story lets you do anything on the board.
+# Actions belong to steps of the day.
 const TRIAGE_ACTIONS := ["assign", "decline", "prioritize", "unassign", "react", "initiative"]
 const WORK_ACTIONS := ["sit", "intervene", "talk", "stay"]
 
 
 func allowed(kind: String) -> bool:
-	if not endless():
-		return true
 	if kind in TRIAGE_ACTIONS:
 		return step == "triage"
 	if kind in WORK_ACTIONS:
@@ -480,15 +460,13 @@ func can_assign(t: Dictionary) -> bool:
 
 # The morning's done: half the day goes by, and what came up in it shows.
 func start_work() -> void:
-	if not endless() or phase != "plan" or step != "triage" or not pending.is_empty():
+	if phase != "plan" or step != "triage" or not pending.is_empty():
 		return
 	step = "work"
-	flags.erase("tip_hl")
 	_half_day()
 	_narrate("log.midday")
 	scenes.queue(self, "midday")
-	if endless():
-		_post_letters()
+	_post_letters()
 	_say_event_lines()
 	if events.is_empty():
 		_deliver_arrivals()
@@ -503,10 +481,10 @@ func _arrivals() -> Array:
 	if day % 5 == 1 and not flags.has("automated_report"):
 		out.append_array(C.tasks_with("kind", "weekly"))
 	# The endless run has no key projects and no story chains, only the deck.
-	var keys: Dictionary = {} if endless() else C.KEY_DAYS.get(chapter, {})
+	var keys: Dictionary = C.KEY_DAYS.get(chapter, {})
 	if keys.has(chapter_day()):
 		out.append(keys[chapter_day()])
-	for id in ({} if endless() else C.START_DAYS.get(chapter, {})).get(chapter_day(), []):
+	for id in C.START_DAYS.get(chapter, {}).get(chapter_day(), []):
 		# A chain that only starts if something hasn't happened yet (unless:<flag>).
 		if not C.TASKS[id]["tags"].any(func(tag): return tag.begins_with("unless:") and flags.has(tag.substr(7))):
 			out.append(id)
@@ -517,11 +495,9 @@ func _arrivals() -> Array:
 	var load := 0.0
 	for id in out:
 		load += C.TASKS[id]["size"]
-	# More banks than chapter one's three bring more work.
+	# Every bank past the first brings more work.
 	var ramp := ramp_now()
-	var target: float = C.DAILY_LOAD * ramp["load"] * (RUSH_LOAD if flags.has("rush") else 1.0) + C.BANK_LOAD * maxi(0, banks.size() - 3)
-	if endless():
-		target = C.DAILY_LOAD * ramp["load"] + BANK_WORK * extra_banks()
+	var target: float = C.DAILY_LOAD * ramp["load"] * (RUSH_LOAD if flags.has("rush") else 1.0) + BANK_WORK * extra_banks()
 	if flags.get("relief", false):
 		flags["relief"] = false
 		target -= 1.5
@@ -533,7 +509,7 @@ func _arrivals() -> Array:
 		var i := 0
 		while i < deck.size():
 			# What the upgrades now take care of goes by without reaching anyone, and counts as done.
-			if endless() and _bank_here(deck[i]) and _automated(deck[i]):
+			if _bank_here(deck[i]) and _automated(deck[i]):
 				var gone: String = deck.pop_at(i)
 				_automation_credit(gone)
 				load += C.TASKS[gone]["size"]
@@ -545,7 +521,7 @@ func _arrivals() -> Array:
 			for id in out:
 				if C.TASKS[id]["cat"] == info["cat"]:
 					same += 1
-			if same < C.MAX_SAME_KIND and (endless() or day + info["size"] - 1 <= last_day()) and _can_come_again(deck[i]) and not out.has(deck[i]) and _improved_by("remove", deck[i]).is_empty() and _bank_here(deck[i]):
+			if same < C.MAX_SAME_KIND and _can_come_again(deck[i]) and not out.has(deck[i]) and _bank_here(deck[i]):
 				picked = i
 				break
 			i += 1
@@ -557,11 +533,12 @@ func _arrivals() -> Array:
 	return out
 
 
-# How hard this week of the chapter pushes (C.RAMP): past the listed weeks, full load.
+# How hard this week pushes: the story's chapters have their own (C.RAMP), past the listed weeks full load;
+# with no chapter the load grows period by period.
 func ramp_now() -> Dictionary:
-	if endless():
+	if chapter == 0:
 		return endless_ramp()
-	var weeks: Array = C.RAMP.get(chapter, C.RAMP[0])
+	var weeks: Array = C.RAMP.get(chapter, C.RAMP_LATER)
 	var w := (chapter_day() - 1) / 5
 	return weeks[w] if w < weeks.size() else {"load": 1.0, "cards": C.MAX_CARDS_A_DAY, "slack": 0}
 
@@ -605,7 +582,7 @@ func endless_ramp() -> Dictionary:
 
 
 func deck_source() -> Array:
-	return C.ENDLESS_DECK if endless() else C.DECK.get(chapter, [])
+	return C.DECK.get(chapter, C.ENDLESS_DECK)
 
 
 func _refill_deck() -> void:
@@ -614,8 +591,8 @@ func _refill_deck() -> void:
 		fresh = fresh.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
 	fresh.append_array(curses)
 	fresh.append_array(upkeep)
-	# (in the endless run removed cards stay in: drawn, they count as done by the upgrades)
-	fresh = fresh.filter(func(id): return (endless() or _improved_by("remove", id).is_empty()) and _bank_here(id))
+	# (cards the upgrades took over stay in: drawn, they count as done by the upgrades)
+	fresh = fresh.filter(func(id): return _bank_here(id))
 	for i in range(fresh.size() - 1, 0, -1):
 		var j := rng.randi_range(0, i)
 		var tmp = fresh[i]
@@ -629,30 +606,11 @@ func add_task(id: String) -> void:
 	if info["tags"].has("joins"):
 		_join_bank(info["bank"])
 
-	# What the teams can now do through the portal, they do; it only shows in the chat.
-	if not _improved_by("self", id).is_empty():
-		seen_day[id] = day
-		seen_day[info["tpl"]] = day
-		_narrate("imp.self", [], {"who": "@name.%s.gen" % info["from"], "task": "@taskname." + id})
-		if endless():
-			_automation_credit(id)
-		return
 	var size: float = info["size"] * flags.get("shrink:" + id, 1.0)
-	for imp in _improved_by("shrink", id):
-		if imp == "perk":
-			continue
-		for e in C.IMPROVEMENTS[imp]["effects"]:
-			if e["kind"] == "shrink":
-				size *= e["factor"]
 	for e in perks:
 		if e["kind"] == "shrink" and e["targets"].any(func(target): return C.covers(target, id)):
 			size *= e["value"]
-	# Near the end of the probation, deadlines squeeze into what's left of it.
-	var due: int = day + info["due"] + ramp_now()["slack"]
-	if endless():
-		due += int(perk_add("due", info["cat"]))
-	else:
-		due = mini(due, last_day())
+	var due: int = day + info["due"] + ramp_now()["slack"] + int(perk_add("due", info["cat"]))
 	add_task_raw(id, info["cat"], maxf(0.5, size), due, info["public"], info["from"])
 	_say(info["from"], "task.%s.ask" % id)
 
@@ -695,8 +653,7 @@ func _new_person(p: String, jitter: bool) -> void:
 
 # ---------- hiring ----------
 
-# Openings Irina has given and not yet filled; candidates Marina has sent: [{"id", "until", "asked", "known"}].
-var openings := 0
+# Candidates Marina has sent: [{"id", "until", "asked", "known"}].
 var candidates: Array = []
 var next_hire := 1
 
@@ -787,20 +744,18 @@ func _register_hire(id: String) -> void:
 		L.EXTRA["en"]["name.%s.%s" % [id, cases[i]]] = n["en"] + ("'s" if cases[i] == "gen" else "")
 
 
-# Each morning: candidates who waited too long take another offer, and Marina sends more while there are openings.
+# Each morning: candidates who waited too long take another offer, and every few days Marina sends one more.
+# In the story's chapter three the first is Palych.
 func _hiring_morning() -> void:
-	if flags.get("openings_said", 0) < openings:
-		flags["openings_said"] = openings
-		_say("boss", "hire.openings", [openings])
 	for c in candidates.duplicate():
 		if c["until"] < day:
 			candidates.erase(c)
 			_narrate("hire.gone", [], {"who": "@name.%s.nom" % c["id"]})
-	if openings > 0 and candidates.size() < MAX_CANDIDATES and not flags.has("palych_sent") and not endless():
+	if candidates.size() >= MAX_CANDIDATES or day % CANDIDATE_EVERY != 0:
+		return
+	if story_mode() and chapter >= 3 and not flags.has("palych_sent"):
 		_new_palych()
-	elif openings > 0 and candidates.size() < MAX_CANDIDATES and (candidates.is_empty() or day % 2 == 0):
-		_new_candidate()
-	elif endless() and candidates.size() < MAX_CANDIDATES and day % CANDIDATE_EVERY == 0:
+	else:
 		_new_candidate()
 
 
@@ -1001,9 +956,7 @@ func _talk_topics(p: String) -> Array:
 			break
 	if st["energy"] <= 4.0:
 		found.append("tired")
-	# Endless: how a task is going is asked on the task itself; a one-on-one is about the person.
-	if _stuck_task(p) >= 0 and not endless():
-		found.append("stuck")
+	# How a task is going is asked on the task itself; a one-on-one is about the person.
 	var q := queue_of(p)
 	if q.size() >= 3:
 		found.append("load")
@@ -1019,8 +972,6 @@ func _talk_topics(p: String) -> Array:
 		found.append("grow")
 	if day - st["last_done"] <= 2 and scenes._last_good(self, p) >= 0:
 		found.append("proud")
-	if not q.is_empty() and not endless():
-		found.append("work")
 	found.append("how")
 	found.sort_custom(func(a, b): return Dialogue.TOPICS[a]["heat"] > Dialogue.TOPICS[b]["heat"])
 	# One topic per task, the sharpest: "stuck", "hate" and "work" can all be about the same card.
@@ -1273,9 +1224,10 @@ func _talk_fx(w: Array) -> void:
 			if _stuck_task(p) >= 0:
 				sit_with(_stuck_task(p))
 		"initiative":
-			offer_today[p] = true
-			if initiative_offer(p) != "":
-				accept_initiative(p)
+			# "Something from the inbox, want it?": the first card waiting goes to them.
+			var waiting := inbox().filter(func(x): return not only_me(x))
+			if not waiting.is_empty():
+				_take(p, waiting[0])
 		"calm":
 			flags["calm_" + p] = day + int(w[2])
 		"mention":
@@ -1326,9 +1278,7 @@ func _confide(p: String) -> void:
 
 
 func can_hire(id: String) -> bool:
-	if endless():
-		return phase == "plan" and pending.is_empty() and money >= HIRE_FEE and not candidate(id).is_empty()
-	return phase == "plan" and pending.is_empty() and openings > 0 and not candidate(id).is_empty()
+	return phase == "plan" and pending.is_empty() and money >= HIRE_FEE and not candidate(id).is_empty()
 
 
 func hire(id: String) -> void:
@@ -1336,10 +1286,7 @@ func hire(id: String) -> void:
 		return
 	var c := candidate(id)
 	candidates.erase(c)
-	if endless():
-		money -= HIRE_FEE
-	else:
-		openings -= 1
+	money -= HIRE_FEE
 	team.append(id)
 	_new_person(id, false)
 	# What the interview showed, you know about them from day one.
@@ -1368,7 +1315,7 @@ const WARNING_DAYS := 5 # after a warning, this long before you can decide
 # From chapter two: a serious talk first (a warning), a decision a week later. Doing it without the
 # warning is possible, and Marina will make sure everyone hears about it.
 func can_fire(p: String) -> bool:
-	return (chapter >= 2 or endless()) and phase == "plan" and pending.is_empty() and available(p)
+	return phase == "plan" and pending.is_empty() and available(p)
 
 
 func warned(p: String) -> bool:
@@ -1405,10 +1352,9 @@ func let_go(p: String, with_warning: bool) -> void:
 	var st: Dictionary = people[p]
 	st["gone"] = true
 	st["fired"] = true
-	if endless():
-		var severance := weekly_pay(p) * SEVERANCE_WEEKS
-		money -= severance
-		_narrate("money.severance", [cash_arg(severance)], {"who": "@name.%s.nom" % p})
+	var severance := weekly_pay(p) * SEVERANCE_WEEKS
+	money -= severance
+	_narrate("money.severance", [cash_arg(severance)], {"who": "@name.%s.nom" % p})
 	taras_like(2.0)
 	_drop_tasks(p)
 	lead("P", 1.0)
@@ -1446,8 +1392,6 @@ func let_go(p: String, with_warning: bool) -> void:
 	elif arch in ["faker", "stump"]:
 		team_mood = 0.3
 		line = "fire.team.relief"
-	if line != "layoff.team":
-		openings += 1
 	for q in team:
 		if q != p and available(q):
 			people[q]["mood"] = clampf(people[q]["mood"] + team_mood, -5.0, 5.0)
@@ -1508,8 +1452,6 @@ func _expose_faker(t: Dictionary) -> void:
 
 # ---------- banks ----------
 
-const SALE_CHANCE := 0.3 # each Monday, plus REPUTATION_SALE for each point of reputation
-const REPUTATION_SALE := 0.1
 const BANK_LEAVES := -3.0
 const BANK_MOOD := {"good": 1.0, "bad": -1.0, "late": -1.5, "declined": -0.5}
 
@@ -1532,8 +1474,7 @@ func _join_bank(b: String) -> void:
 
 
 # A few days after the order to cut one, sales close two banks at once, and from then on there's a lot more
-# work than the team can take: the irony the hiring in chapter three hangs on. The first time you go to
-# Irina about it is a story scene (data/dialogues/ch3_hiring.dlg); after that, ask_people().
+# work than the team can take: the irony the hiring in chapter three hangs on (data/dialogues/ch3_hiring.dlg).
 const RUSH_AFTER := 4 # days after the layoff order
 const RUSH_BANKS := ["harbor", "till"]
 const RUSH_LOAD := 1.15
@@ -1549,10 +1490,7 @@ func _layoff_rush() -> void:
 		_join_bank(b)
 
 
-# Asking Irina for people again, after the first time: she looks at how much is piling up and at your weight.
-const PEOPLE_ASK_GAP := 5 # days between two asks
-const PEOPLE_OVERLOAD := 3.0 # days of unfinished work per person that counts as drowning
-const OVERLOAD_STORY := 2.0 # and enough of a pile-up for the first trip to Irina (the "overload" condition)
+const OVERLOAD_STORY := 2.0 # days of unfinished work per person that counts as a pile-up (the "overload" condition)
 const RUSH_CARDS := 1 # more cards a day can come in once the rush is on
 
 
@@ -1565,28 +1503,7 @@ func workload() -> float:
 	return left / maxf(1.0, heads)
 
 
-func can_ask_people() -> bool:
-	return phase == "plan" and pending.is_empty() and convo.is_empty() and flags.has("asked_people") and openings == 0 \
-		and day - flags.get("people_asked_day", -100) >= PEOPLE_ASK_GAP
-
-
-func ask_people() -> void:
-	if not can_ask_people():
-		return
-	spend_attention(cost("people"))
-	flags["people_asked_day"] = day
-	history.append({"who": "you", "key": "people.ask", "args": [], "names": {}, "day": day})
-	if workload() < PEOPLE_OVERLOAD:
-		boss -= 0.5
-		_say("boss", "people.no")
-	elif has_weight():
-		openings += 1
-		_say("boss", "people.yes")
-	else:
-		_say("boss", "people.later")
-
-
-# ---------- clients (endless run) ----------
+# ---------- clients ----------
 
 # Every bank past the first brings this much more work a day. Not more cards: each card costs you a point
 # to hand out, so more of them would burn you out rather than keep the team busy.
@@ -1622,7 +1539,7 @@ func pitched_this_week() -> bool:
 
 
 func can_pitch(b: String) -> bool:
-	return endless() and phase == "plan" and pending.is_empty() and prospects().has(b) and not pitched_this_week() and can_afford(cost("pitch"))
+	return phase == "plan" and pending.is_empty() and prospects().has(b) and not pitched_this_week() and can_afford(cost("pitch"))
 
 
 # You go and talk a bank into our stands. They come on right away, with their first delivery.
@@ -1657,23 +1574,6 @@ func team_capacity() -> float:
 	return sum
 
 
-# On a Monday sales may close a deal with the next bank of the chapter; good deliveries make it likelier.
-func _maybe_sell() -> void:
-	# In the endless run you go and get clients yourself (pitch_bank).
-	if endless() or day % 5 != 1 or day == first_day():
-		return
-	var pool: Array = []
-	for ch in range(1, (C.CHAPTERS.size() if endless() else chapter) + 1):
-		pool.append_array(C.BANK_POOL.get(ch, []))
-	pool = pool.filter(func(b): return not banks.has(b) and not flags.has("bank_lost_" + b))
-	if pool.is_empty() or rng.randf() > SALE_CHANCE + REPUTATION_SALE * maxf(0.0, reputation) + perk_add("sales"):
-		return
-	var b: String = pool[0]
-	reputation = 0.0
-	_say("boss", "bank.sold", [], {"bank": "@bankphrase." + b})
-	_join_bank(b)
-
-
 # How a card about a bank went moves that bank, and the platform's name with the next ones.
 func _settle_bank(t: Dictionary, outcome: String) -> void:
 	var b: String = C.TASKS.get(t["id"], {}).get("bank", "")
@@ -1682,11 +1582,10 @@ func _settle_bank(t: Dictionary, outcome: String) -> void:
 	var info: Dictionary = C.TASKS[t["id"]]
 	var was := bank_word(b)
 	banks[b]["mood"] += BANK_MOOD[outcome]
-	if endless() and was != "happy" and bank_word(b) == "happy":
+	if was != "happy" and bank_word(b) == "happy":
 		boss += 0.3
 	if outcome == "good" and info["tags"].has("client"):
 		banks[b]["shipped"] = true
-	reputation += 1.0 if outcome == "good" else -0.5
 	if (info["tags"].has("last_chance") and outcome in ["late", "declined"]) or banks[b]["mood"] <= BANK_LEAVES:
 		banks.erase(b)
 		flags["bank_lost_" + b] = true
@@ -1700,63 +1599,12 @@ func bank_word(b: String) -> String:
 	return "happy" if m >= 2.0 else ("fine" if m > -1.0 else ("unhappy" if m > -2.5 else "leaving"))
 
 
-# ---------- improvements to Chainer ----------
-
-const BACKLOG_SIZE := 3
-const NO_DEADLINE := 100000 # improvements and initiatives: done when they're done
+const NO_DEADLINE := 100000 # upgrade cards: done when they're done
 
 
-# The improvements done that act on this card in this way ("remove", "shrink", "self").
-func _improved_by(kind: String, id: String) -> Array:
-	var out: Array = []
-	for e in perks:
-		if e["kind"] == kind and e["targets"].any(func(target): return C.covers(target, id)):
-			out.append("perk")
-			break
-	for imp in improved:
-		for e in C.IMPROVEMENTS[imp]["effects"]:
-			if e["kind"] == kind and e["targets"].any(func(target): return C.covers(target, id)):
-				out.append(imp)
-				break
-	return out
-
-
-# Keep three improvements on offer, next in line first.
-func _fill_backlog() -> void:
-	if endless():
-		return
-	var open := tasks.filter(func(t): return t.get("backlog", false) and t["status"] == "inbox").size()
-	var ids: Array = []
-	for ch in range(1, (C.CHAPTERS.size() if endless() else chapter) + 1):
-		ids.append_array(C.improvements_of(ch))
-	for id in ids:
-		if open >= BACKLOG_SIZE:
-			return
-		if flags.has("imp_added_" + id) or flags.has("init_" + id):
-			continue
-		_add_improvement(id)
-		open += 1
-
-
-func _add_improvement(id: String) -> Dictionary:
-	flags["imp_added_" + id] = true
-	var info: Dictionary = C.IMPROVEMENTS[id]
-	add_task_raw("init_" + id, info["cat"], info["size"], NO_DEADLINE, false, "me")
-	var t: Dictionary = tasks[tasks.size() - 1]
-	t["backlog"] = true
-	return t
-
-
-func backlog() -> Array:
-	return tasks.filter(func(t): return t.get("backlog", false) and t["status"] == "inbox")
-
-
-# An improvement is done: its cards change from now on.
-func _improve(id: String) -> void:
-	improved[id] = day
-	deck = deck.filter(func(card): return _improved_by("remove", card).is_empty())
-	_narrate("imp.done", [], {"task": "@taskname.init_" + id, "effect": "@imp.%s.effect" % id})
-	_fill_backlog()
+# Does a finished upgrade act on this card in this way ("remove", "shrink")?
+func _improved_by(kind: String, id: String) -> bool:
+	return perks.any(func(e): return e["kind"] == kind and e["targets"].any(func(target): return C.covers(target, id)))
 
 
 func add_task_raw(id: String, cat: String, size: float, due: int, public: bool, from: String) -> void:
@@ -1775,8 +1623,6 @@ func add_task_raw(id: String, cat: String, size: float, due: int, public: bool, 
 
 func _queue_events() -> void:
 	scenes.queue(self)
-	if not endless():
-		_say_event_lines()
 
 
 # Whatever was queued goes out as messages: each one's lines into the asker's conversation, to answer when you like.
@@ -1902,7 +1748,7 @@ func resolve_event(choice: String) -> void:
 	# Remembered like story answers (<event>:<choice>), so a later scene can quote what was said back then.
 	flags["%s:%s" % [events[0]["id"], choice]] = true
 	# What you say at Irina's is a reply like any other.
-	if endless() and (_visit_event(events[0]) or events[0]["id"] == "intervene"):
+	if _visit_event(events[0]) or events[0]["id"] == "intervene":
 		if not can_afford(choice_cost(events[0], choice)):
 			return
 		spend_attention(choice_cost(events[0], choice))
@@ -1939,7 +1785,7 @@ func taras_score() -> float:
 # An evening scene remembers where the day was going (the summary or the Friday report) and goes there after.
 func _queue_story(at: String = "morning") -> void:
 	story = {}
-	if endless():
+	if not story_mode():
 		return
 	for id in Dialogue.ORDER:
 		var sc: Dictionary = Dialogue.SCENES[id]
@@ -2120,7 +1966,6 @@ func _story_fx(words: Array) -> void:
 		"interview":
 			interview(w[1], true)
 		"openings":
-			openings += int(w[1])
 			flags["asked_people"] = true
 		"reveal":
 			if people.has(w[1]):
@@ -2138,7 +1983,7 @@ func _story_fx(words: Array) -> void:
 			_story_shrink(w[1], float(w[2]))
 
 
-# give <improvement or task id> <who> [helper <who>]: handed over right there in the conversation, no objections.
+# give <task id> <who> [helper <who>]: handed over right there in the conversation, no objections.
 func _story_give(w: Array) -> void:
 	var id: String = w[1]
 	var p: String = w[2]
@@ -2146,12 +1991,10 @@ func _story_give(w: Array) -> void:
 		return
 	var t: Dictionary = {}
 	for x in tasks:
-		if (x["id"] == "init_" + id or x["id"] == id) and x["status"] == "inbox":
+		if x["id"] == id and x["status"] == "inbox":
 			t = x
 	if t.is_empty():
-		if C.IMPROVEMENTS.has(id) and not improved.has(id):
-			t = _add_improvement(id)
-		elif C.TASKS.has(id):
+		if C.TASKS.has(id):
 			add_task(id)
 			t = tasks[tasks.size() - 1]
 	if t.is_empty():
@@ -2182,7 +2025,7 @@ func _story_grab(p: String, n: int) -> void:
 		if deck.size() < 4:
 			_refill_deck()
 		var id: String = deck.pop_front()
-		if day + C.TASKS[id]["size"] - 1 <= last_day() and _improved_by("remove", id).is_empty() and _bank_here(id):
+		if day + C.TASKS[id]["size"] - 1 <= last_day() and not _improved_by("remove", id) and _bank_here(id):
 			_story_take_new(id, p)
 
 
@@ -2244,7 +2087,7 @@ func _story_end() -> void:
 # Every morning after any story scene, before the chat: everyone at work says one line, built from how they
 # really are. Nobody says "I'm stuck" or "I'm worn out" in so many words; you hear it the way you would on a
 # real call. One reaction is free, each next one costs attention.
-const STANDUP_REACTIONS := {"stuck": "sit", "tired": "rest", "swamped": "lighten", "idle": "backlog", "done": "praise"}
+const STANDUP_REACTIONS := {"stuck": "sit", "tired": "rest", "swamped": "lighten", "done": "praise"}
 
 
 func _open_standup() -> bool:
@@ -2327,15 +2170,9 @@ func standup_reactions(i: int) -> Array:
 	if line["topic"] == "pulled":
 		return ["praise_pull", "take_back"] if not task(line["uid"]).is_empty() else []
 	var r: String = STANDUP_REACTIONS.get(line["topic"], "")
-	if r == "backlog" and backlog().is_empty():
-		return []
 	if r == "sit" and task(line["uid"]).is_empty():
 		return []
 	return [r] if r != "" else []
-
-
-func standup_cost() -> bool:
-	return endless() or standup.get("reacted", 0) > 0
 
 
 func standup_react(i: int, r: String = "") -> void:
@@ -2346,10 +2183,9 @@ func standup_react(i: int, r: String = "") -> void:
 		return
 	var line: Dictionary = standup["lines"][i]
 	var p: String = line["who"]
-	if standup_cost():
-		if not can_afford(cost("react")):
-			return
-		spend_attention(cost("react"))
+	if not can_afford(cost("react")):
+		return
+	spend_attention(cost("react"))
 	standup["reacted"] += 1
 	line["reacted"] = true
 	line["said"] = r
@@ -2369,14 +2205,6 @@ func standup_react(i: int, r: String = "") -> void:
 		"lighten":
 			lighten(p)
 			lead("A", 0.3)
-		"backlog":
-			var t: Dictionary = backlog()[0]
-			if not t.get("started", false):
-				t["started"] = true
-				lead("E", 0.7)
-			t["owner"] = p
-			t["status"] = "active"
-			t["assigned_day"] = day
 		"praise":
 			people[p]["mood"] = clampf(people[p]["mood"] + 0.3, -5.0, 5.0)
 			lead("I", 0.3)
@@ -2420,7 +2248,7 @@ func task(uid: int) -> Dictionary:
 func inbox() -> Array[Dictionary]:
 	var result: Array[Dictionary] = []
 	for t in tasks:
-		if t["status"] == "inbox" and not t.get("backlog", false):
+		if t["status"] == "inbox":
 			result.append(t)
 	return result
 
@@ -2444,7 +2272,7 @@ func newbie(p: String) -> bool:
 
 # A newcomer's card with nobody to pair with them: it stands.
 func needs_pair(t: Dictionary) -> bool:
-	return endless() and t["status"] == "active" and team.has(t["owner"]) and newbie(t["owner"]) \
+	return t["status"] == "active" and team.has(t["owner"]) and newbie(t["owner"]) \
 		and not (people.has(t["helper"]) and available(t["helper"]) and not people[t["helper"]]["absent"]) and not t.get("sit_today", false)
 
 
@@ -2456,12 +2284,7 @@ func assign(uid: int, p: String) -> void:
 	var t := task(uid)
 	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] == "done" or t["status"] == "taras" or p == t["owner"] or not can_assign(t):
 		return
-	_tip_used("inbox")
 	var previous: String = t["owner"]
-	if p == "taras":
-		if not endless():
-			_hand_to_taras(t)
-		return
 	if p != "me" and not available(p):
 		return
 	if p != "me" and only_me(t):
@@ -2477,10 +2300,6 @@ func assign(uid: int, p: String) -> void:
 		_say(previous, "taken_away", [], names)
 	_check_commitments(t, p)
 	var reason := _objection(p, t) if p != "me" else ""
-	# Starting an improvement nobody asked for is changing how things are done.
-	if t.get("backlog", false) and not t.get("started", false):
-		t["started"] = true
-		lead("E", 0.7)
 	t["owner"] = p
 	t["status"] = "active"
 	t["assigned_day"] = day
@@ -2659,26 +2478,6 @@ func _first_key(keys: Array) -> String:
 	return keys[keys.size() - 1]
 
 
-func _hand_to_taras(t: Dictionary) -> void:
-	history.append({"who": "you", "key": "you.to_taras", "args": [], "names": {}, "day": day})
-	if t["from"] != "taras" and flags.get("taras_owes", false):
-		flags["taras_owes"] = false
-		t["owner"] = "taras"
-		t["status"] = "taras"
-		t["helper"] = ""
-		_say("taras", "taras.accept_owed", [], {"task": "@taskname." + t["id"]})
-		return
-	if t["from"] == "taras" or flags.has("taras_grudge") or flags.get("taras_said_no", 0) >= 2 or rng.randf() < 0.5:
-		flags["taras_said_no"] = flags.get("taras_said_no", 0) + 1
-		var no := "taras.refuse_own" if t["from"] == "taras" else ("taras.refuse_grudge" if flags.has("taras_grudge") else "taras.refuse")
-		_say("taras", no, [], {"task": "@taskname." + t["id"]})
-		return
-	t["owner"] = "taras"
-	t["status"] = "taras"
-	t["helper"] = ""
-	_say("taras", "taras.accept", [], {"task": "@taskname." + t["id"]})
-
-
 # Move a task to the front of its owner's queue. Dropping something half-done costs a little mood.
 func prioritize(uid: int) -> void:
 	var t := task(uid)
@@ -2739,7 +2538,6 @@ func start_talk(p: String) -> void:
 		return
 	talked[p] = true
 	flags["talks_w%d" % week()] = flags.get("talks_w%d" % week(), 0) + 1
-	_tip_used("talk")
 	lead("I", 0.3)
 	spend_attention(cost("talk"))
 	history.append({"who": "you", "key": "talk.open", "args": [], "names": {}, "to": p, "day": day})
@@ -2801,9 +2599,9 @@ func _visit_event(ev: Dictionary) -> bool:
 
 func choice_cost(ev: Dictionary, choice: String) -> int:
 	var key: String = ev["id"] + "/" + choice
-	if endless() and _visit_event(ev):
+	if _visit_event(ev):
 		return 0 if choice == "leave" else cost("reply")
-	if endless() and ev["id"] == "intervene":
+	if ev["id"] == "intervene":
 		return cost("sit") if choice.begins_with("help_") else 0
 	if EVENING_COSTS.has(key):
 		return EVENING_COSTS[key]
@@ -2830,31 +2628,26 @@ func spend_attention(n: int = 1) -> void:
 			overtime_today += 1
 
 
-# What each action takes in the endless run. The story keeps its old prices: one point for managing,
-# and handing out work is free.
-# Opening a conversation (a one-on-one, Irina's door) is free in the endless run; each thing you say in it is a reply.
+# What each action takes. Opening a conversation (a one-on-one, Irina's door) is free; each thing you say in it is a reply.
 const COSTS := {"pitch": 2, "buy": 1, "assign": 1, "pair": 1, "decline": 1, "react": 1, "sit": 2, "talk": 0, "intervene": 1, "boss": 0, "reply": 1, "people": 2, "interview": 2, "fire": 2}
-const FREE_IN_STORY := ["assign", "pair", "decline", "reply"]
 
 
 func cost(kind: String) -> int:
-	if not endless():
-		return 0 if kind in FREE_IN_STORY else 1
 	return COSTS[kind]
 
 
 # How much you may borrow from tomorrow in one day.
 func borrow_cap() -> int:
-	return ceili(C.PROFILES[profile]["attention"] * (2 if endless() else 1) / 2.0) + int(perk_add("borrow"))
+	return C.PROFILES[profile]["attention"] + int(perk_add("borrow"))
 
 
 func can_afford(n: int) -> bool:
 	return not sick_today and n <= attention + borrow_cap() - overtime_today
 
 
-# Nothing left to give today, borrowing included: in the endless run the day goes on without you.
+# Nothing left to give today, borrowing included: the day goes on without you.
 func spent_out() -> bool:
-	return endless() and (sick_today or (attention <= 0 and overtime_today >= borrow_cap()))
+	return sick_today or (attention <= 0 and overtime_today >= borrow_cap())
 
 
 # Called after every action: once you're spent out and nothing is waiting on you, the day ends.
@@ -2867,7 +2660,7 @@ func auto_end_day() -> bool:
 
 
 func own_task_cost() -> int:
-	return ceili(max_attention() / 2.0) if endless() else OWN_TASK_COST
+	return ceili(max_attention() / 2.0)
 
 
 # Sit down with someone over their task today: it goes faster and better, they learn, and you were
@@ -2899,7 +2692,6 @@ func intervene(uid: int) -> void:
 	var t := task(uid)
 	if phase != "plan" or not pending.is_empty() or t.is_empty() or t["status"] != "active" or t.get("checked_day", 0) == day or not allowed("intervene"):
 		return
-	_tip_used("active")
 	var p: String = t["owner"]
 	if not team.has(p) or not available(p) or people[p]["absent"]:
 		return
@@ -2925,103 +2717,6 @@ func take_over(t: Dictionary) -> void:
 	t["involved"] = true
 	t["pace"] = 1.0
 	t["assigned_day"] = day
-
-
-# What a free person offers to do on their own, or "" if nothing (or they're busy).
-func initiative_offer(p: String) -> String:
-	if phase != "plan" or not allowed("initiative") or not offer_today.has(p) or not available(p) or people[p]["absent"] or not queue_of(p).is_empty():
-		return ""
-	for t in tasks:
-		if t["status"] == "active" and t["helper"] == p:
-			return ""
-	var list: Array = C.INITIATIVES.get(p, [])
-	var i := _initiative_index(p)
-	return list[i] if i < list.size() else ""
-
-
-# Where in their list they are: past what they've offered and had taken up, and past what's already done.
-func _initiative_index(p: String) -> int:
-	var list: Array = C.INITIATIVES.get(p, [])
-	var i: int = init_next.get(p, 0)
-	while i < list.size() and _initiative_done(list[i], p):
-		i += 1
-	return i
-
-
-func _initiative_done(id: String, p: String) -> bool:
-	if id == "showcase":
-		return false
-	if id == "self_study":
-		return study_target(p) == "" # nothing left they'd learn on their own
-	return flags.has("init_" + id) or tasks.any(func(t): return t["id"] == "init_" + id and t["owner"] != "")
-
-
-# What someone would study on their own: their weakest category, while it's still below confident.
-func study_target(p: String) -> String:
-	var weakest := ""
-	for cat in C.CATEGORIES:
-		if weakest == "" or people[p]["skills"][cat] < people[p]["skills"][weakest]:
-			weakest = cat
-	return weakest if people[p]["skills"][weakest] < 3 else ""
-
-
-func accept_initiative(p: String) -> void:
-	var id := initiative_offer(p)
-	if id == "" or not pending.is_empty():
-		return
-	init_next[p] = _initiative_index(p) + 1
-	for pair in INIT_STYLE.get(id, []):
-		lead(pair[0], pair[1])
-	flags["init_" + id] = true
-	# An improvement they take from the backlog, or put there and take; anything else is just theirs.
-	var t: Dictionary = {}
-	for b in backlog():
-		if b["id"] == "init_" + id:
-			t = b
-	if t.is_empty() and C.IMPROVEMENTS.has(id):
-		t = _add_improvement(id)
-	if t.is_empty():
-		var info: Dictionary = C.INIT_TASKS[id]
-		add_task_raw("init_" + id, info["cat"], info["size"], NO_DEADLINE, false, p)
-		t = tasks[tasks.size() - 1]
-		if id == "self_study":
-			# What they'll study is settled when they start: their weakest thing at the time.
-			t["study"] = study_target(p)
-			t["cat"] = t["study"]
-	t["owner"] = p
-	t["status"] = "active"
-	t["assigned_day"] = day
-	history.append({"who": "you", "key": "init.yes", "args": [], "names": {}, "to": p, "day": day})
-	var drive: String = info(p)["drive"]
-	people[p]["mood"] = clampf(people[p]["mood"] + (1.5 if drive == "craft" or drive == "growth" else 1.0), -5.0, 5.0)
-	_say(p, "react.%s.pos" % p)
-
-
-# An initiative is finished: it changes the decks or the people.
-func _initiative_effect(t: Dictionary) -> void:
-	var id: String = t["id"].trim_prefix("init_")
-	var names := {"who": "@name.%s.nom" % t["owner"]}
-	if C.IMPROVEMENTS.has(id):
-		_improve(id)
-	match id:
-		"tech_debt":
-			flags["tech_debt_done"] = true
-			comp_off["legacy_bug"] = true
-			deck = deck.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
-		"automate_report":
-			flags["automated_report"] = true
-		"showcase":
-			vika_up()
-		"self_study":
-			var target: String = t.get("study", study_target(t["owner"]))
-			if target != "":
-				learn(t["owner"], target, 4.0)
-				names["cat"] = "@cat." + target
-		"write_docs":
-			comp_off["missing_docs"] = true
-			comp_off["old_system"] = true
-	if L.has_key("init.done." + id): # improvements have said their piece in _improve
-		_narrate("init.done." + id, [], names)
 
 
 func _next_unknown(p: String) -> String:
@@ -3071,17 +2766,15 @@ func _half_day() -> void:
 func end_day() -> void:
 	if phase != "plan" or not pending.is_empty():
 		return
-	flags.erase("tip_hl")
 	# Skipped straight past the morning: whatever broke out today came in all the same, and the team
 	# shared out the work as it saw fit.
-	if endless() and step == "triage":
+	if step == "triage":
 		step = "work"
 		_deliver_arrivals()
 		_team_picks()
 	evening_from = history.size()
 	_narrate("log.evening")
-	if endless():
-		_expire_letters(["triage", "work"])
+	_expire_letters(["triage", "work"])
 	_alex_nights()
 	_share_help()
 	var part: float = 0.5 if flags.get("half_day", -1) == day else 1.0
@@ -3093,9 +2786,8 @@ func end_day() -> void:
 		if t["blocked"] > 0:
 			t["blocked"] -= 1
 	_end_of_my_day()
-	if endless():
-		_taras_day()
-		_upgrade_progress()
+	_taras_day()
+	_upgrade_progress()
 	shares.clear()
 	for t in tasks:
 		if t["status"] == "taras" and t["due"] <= day:
@@ -3107,15 +2799,13 @@ func end_day() -> void:
 			else:
 				_say("taras", "taras.done", [], {"task": "@taskname." + t["id"]})
 	for t in tasks:
-		# Improvements and initiatives have no real deadline.
-		if (t["status"] == "inbox" or t["status"] == "active") and t["due"] == day and not t["late"] and not t["id"].begins_with("init_"):
+		if (t["status"] == "inbox" or t["status"] == "active") and t["due"] == day and not t["late"]:
 			_expose_faker(t)
 			t["late"] = true
 			t["late_day"] = day
 			_late(t)
-			if endless():
-				_penalty(t)
-				_sla_fine(t)
+			_penalty(t)
+			_sla_fine(t)
 			if t["vouched"]:
 				boss -= 1
 				_say("boss", "boss.vouched_late", [], {"task": "@taskname." + t["id"]})
@@ -3129,11 +2819,8 @@ func end_day() -> void:
 			if q != "palych" and available(q):
 				people[q]["mood"] = clampf(people[q]["mood"] + PLODDER_WARMTH, -5.0, 5.0)
 	_weight_check()
-	if C.SURVEY_AT.has(chapter_day()):
-		_run_survey()
 	if day % 5 == 0:
-		if endless():
-			_payday()
+		_payday()
 		_style_week()
 		_build_review()
 		if review.is_empty():
@@ -3141,10 +2828,9 @@ func end_day() -> void:
 		phase = "report"
 	else:
 		phase = "evening"
-	if endless():
-		step = "evening"
-		scenes.queue(self, "evening")
-		_post_letters()
+	step = "evening"
+	scenes.queue(self, "evening")
+	_post_letters()
 	# An evening conversation comes before the day's summary.
 	_queue_story("evening")
 
@@ -3164,16 +2850,15 @@ func _end_of_my_day() -> void:
 		flags[burnout_key()] = flags.get(burnout_key(), 0) + 1
 		# One short of quitting: the body says so first.
 		if flags[burnout_key()] == burnouts_to_quit() - 1:
-			_narrate("you.burnout_warning_run" if endless() else "you.burnout_warning")
+			_narrate("you.burnout_warning_run")
 	# Untouched tech debt makes itself felt: each Friday another outage goes into the deck.
 	if day % 5 == 0 and day < last_day() and not flags.has("tech_debt_done"):
-		var fires := C.tasks_with("tag", "debt").filter(func(id): return _improved_by("remove", id).is_empty())
+		var fires := C.tasks_with("tag", "debt").filter(func(id): return not _improved_by("remove", id))
 		if not fires.is_empty():
 			deck.insert(mini(2, deck.size()), fires[rng.randi() % fires.size()])
 			_narrate("deck.neglect_tech")
 
 
-const OWN_TASK_COST := 2
 const BURNOUT_DEBT_DAYS := 3 # start this many days in a row in debt and you're off sick
 
 
@@ -3200,8 +2885,8 @@ func _check_lies() -> void:
 # when the same person has complained twice.
 func _late(t: Dictionary) -> void:
 	var names := {"task": "@taskname." + t["id"]}
-	# In the endless run the penalty's own line says what slipped and what it cost: one message, not two.
-	var told := endless() and not penalty_of(t).is_empty()
+	# The penalty's own line says what slipped and what it cost: one message, not two.
+	var told := not penalty_of(t).is_empty()
 	if t["public"] or t["from"] == "boss":
 		boss -= 2.0 if t["key"] else 1.0
 		merit -= 1.0
@@ -3237,7 +2922,7 @@ func upgrade_price(id: String) -> int:
 
 
 func can_buy(id: String) -> bool:
-	return endless() and phase == "plan" and pending.is_empty() and upgrade_state(id) == "open" \
+	return phase == "plan" and pending.is_empty() and upgrade_state(id) == "open" \
 		and money >= upgrade_price(id) and can_afford(cost("buy"))
 
 
@@ -3283,6 +2968,7 @@ func _complete_upgrade(id: String) -> void:
 	upgrades[id]["state"] = "done"
 	_apply_effects(up["final"])
 	flags["up_done_p%d" % period] = true
+	flags["ups_done_p%d" % period] = flags.get("ups_done_p%d" % period, 0) + 1
 	boss += 0.3
 	var old: String = up["replaces"]
 	if old != "" and C.UPGRADES.has(old):
@@ -3336,7 +3022,7 @@ func _freq_ok(id: String) -> bool:
 
 
 func _automated(id: String) -> bool:
-	return not _improved_by("remove", id).is_empty() or not _freq_ok(id)
+	return _improved_by("remove", id) or not _freq_ok(id)
 
 
 # Work the platform did for you counts in the race as if the team had done it decently.
@@ -3370,14 +3056,12 @@ func run_stats() -> Dictionary:
 	}
 
 
-# The achievements this run has earned so far (the endless run only); the game keeps them across runs.
+# The achievements this run has earned so far; the game keeps them across runs.
 const ACHIEVEMENTS := ["first_period", "five_periods", "ten_periods", "clean_period", "beat_taras", "taras_streak",
 	"clean_week", "self_org", "branch_done", "openshift", "rich"]
 
 
 func run_achievements() -> Array:
-	if not endless():
-		return []
 	var out: Array = []
 	var n := done_periods()
 	if n >= 1:
@@ -3414,7 +3098,7 @@ const CALL_SIZE := 0.5
 # What missing this card's deadline costs, as written on it: {"kind", "amount"}, or {} for nothing.
 func penalty_of(t: Dictionary) -> Dictionary:
 	var text: String = C.TASKS.get(t["id"], {}).get("penalty", "")
-	if text == "" or not endless():
+	if text == "":
 		return {}
 	var parts := text.split(":")
 	return {"kind": parts[0], "amount": int(parts[1]) if parts.size() > 1 else 0}
@@ -3439,7 +3123,7 @@ func _penalty(t: Dictionary) -> void:
 				chain_due.append({"id": fires[rng.randi() % fires.size()], "day": day + 1})
 			_narrate("penalty.incident.hit", [], names)
 		"debt":
-			var debts := C.tasks_with("tag", "debt").filter(func(id): return _improved_by("remove", id).is_empty())
+			var debts := C.tasks_with("tag", "debt").filter(func(id): return not _improved_by("remove", id))
 			if not debts.is_empty():
 				var id: String = debts[rng.randi() % debts.size()]
 				curses.append(id)
@@ -3592,7 +3276,7 @@ func tools_factor(p: String) -> float:
 			return 1.0
 		if day < flags.get("gena_slow_until", 0):
 			return 0.7
-	return 1.0 + minf(TOOLS_MAX, TOOLS_BASE + TOOLS_PER_IMPROVEMENT * improved.size())
+	return 1.0 + minf(TOOLS_MAX, TOOLS_BASE + TOOLS_PER_IMPROVEMENT * upgrades.values().filter(func(u): return u["state"] == "done").size())
 
 
 # How much of the helper's day goes to this task: all of it if they have nothing of their own,
@@ -3786,14 +3470,13 @@ func _work(p: String, part: float = 1.0, upkeep: bool = true) -> void:
 # Saying no to a request in the inbox: a conversation with whoever brought it (see scenes.gd decline).
 # Key projects can't be turned down.
 func can_decline(t: Dictionary) -> bool:
-	return phase == "plan" and pending.is_empty() and allowed("decline") and can_afford(cost("decline")) and t.get("status", "") == "inbox" and not t["key"] and not t.get("backlog", false) and not only_me(t)
+	return phase == "plan" and pending.is_empty() and allowed("decline") and can_afford(cost("decline")) and t.get("status", "") == "inbox" and not t["key"] and not only_me(t)
 
 
 func decline(uid: int) -> void:
 	var t := task(uid)
 	if t.is_empty() or not can_decline(t):
 		return
-	_tip_used("inbox")
 	spend_attention(cost("decline"))
 	history.append({"who": "you", "key": "decline.open", "args": [], "names": {"task": "@taskname." + t["id"]}, "to": t["from"], "day": day})
 	_open_conversation(scenes.decline_event(self, t))
@@ -4009,9 +3692,6 @@ func _finish(p: String, t: Dictionary) -> void:
 		if not flags.has("genius_praised_" + p):
 			flags["genius_praised_" + p] = true
 			_say("boss", "hire.genius_praised", [], {"who": "@name.%s.nom" % p})
-	if t["id"].begins_with("init_"):
-		t["reviewed"] = true
-		_initiative_effect(t)
 	# A client who liked the work comes back with more.
 	var followups := C.tasks_with("kind", "followup")
 	if C.TASKS.get(t["id"], {}).get("tags", []).has("client") and t["quality"] == "good" and flags.get("followups", 0) < 2 and not followups.is_empty():
@@ -4026,7 +3706,7 @@ func _finish(p: String, t: Dictionary) -> void:
 			lead("P", 1.0)
 			weight_cause = t["id"]
 	# What she asked for herself, done on time: she sees that.
-	if endless() and t["from"] == "boss" and day <= t["due"] and t["quality"] != "bad":
+	if t["from"] == "boss" and day <= t["due"] and t["quality"] != "bad":
 		boss += 0.2
 	t["status"] = "done"
 	t["done_day"] = day
@@ -4062,8 +3742,6 @@ func my_skill(cat: String) -> int:
 
 # The endless run lives on attention: almost everything costs it, so the day holds twice as much.
 func max_attention() -> int:
-	if not endless():
-		return C.PROFILES[profile]["attention"]
 	return C.PROFILES[profile]["attention"] * 2 + int(perk_add("attention"))
 
 
@@ -4176,7 +3854,7 @@ func days_needed(t: Dictionary) -> float:
 func _build_review() -> void:
 	review.clear()
 	var w := week()
-	var best := {}
+	# Irina asks only about what went wrong; what went well she just takes as done.
 	var worst := {}
 	for t in tasks:
 		if t["reviewed"]:
@@ -4184,24 +3862,14 @@ func _build_review() -> void:
 		var by_team: bool = team.has(t["owner"]) and available(t["owner"])
 		var done: bool = t["status"] == "done"
 		var good: bool = done and (t["quality"] == "good" or t["quality"] == "ok") and not t["late"]
-		if done and t["owner"] == "me":
-			t["reviewed"] = true
-		elif by_team and good and t["public"]:
-			if best.is_empty() or t["size"] > best["size"]:
-				best = t
-		elif by_team and (t["late"] or (done and t["public"] and not good)):
+		if by_team and (t["late"] or (done and t["public"] and not good)):
 			if worst.is_empty() or _pain(t) > _pain(worst):
 				worst = t
-	# Irina doesn't ask who did what went well in the endless run: she cares that it's done.
-	if not best.is_empty() and endless():
-		best["reviewed"] = true
-	elif not best.is_empty():
-		review.append({"uid": best["uid"], "kind": "success"})
 	if not worst.is_empty():
 		review.append({"uid": worst["uid"], "kind": "failure"})
-	# Everything else from this week she notes quietly; it counts toward results, not toward you.
+	# Everything else from this week she notes quietly.
 	for t in tasks:
-		if t["reviewed"] or (not best.is_empty() and t["uid"] == best["uid"]) or (not worst.is_empty() and t["uid"] == worst["uid"]):
+		if t["reviewed"] or (not worst.is_empty() and t["uid"] == worst["uid"]):
 			continue
 		if t["status"] == "done" or t["late"]:
 			t["reviewed"] = true
@@ -4226,18 +3894,11 @@ func _review_names(t: Dictionary) -> Dictionary:
 func _ask_review() -> void:
 	var item: Dictionary = review[0]
 	var t := task(item["uid"])
-	var key := "review.q.success"
-	if item["kind"] == "failure":
-		key = "review.q.late" if t["late"] else "review.q.poor"
-	_say("boss", key, [], _review_names(t))
+	_say("boss", "review.q.late" if t["late"] else "review.q.poor", [], _review_names(t))
 
 
-func review_choices(item: Dictionary) -> Array:
-	if item["kind"] == "success":
-		return ["credit_owner", "team", "self", "scale"]
-	if endless():
-		return ["own", "blame"]
-	return ["own", "overload", "blame", "change"]
+func review_choices(_item: Dictionary) -> Array:
+	return ["own", "blame"]
 
 
 # Something slipped this week, and Irina asks you: you're the lead, so it costs you either way. Take it
@@ -4283,23 +3944,6 @@ func _review_failure(t: Dictionary, choice: String, names: Dictionary) -> void:
 	_post_letters()
 
 
-# Is this answer true? The weekly report is the evidence for "we were swamped".
-func review_true(item: Dictionary, choice: String) -> bool:
-	var t := task(item["uid"])
-	var p: String = t["owner"]
-	match choice:
-		"self":
-			return t.get("involved", false)
-		"blame":
-			return people[p]["skills"][t["cat"]] >= 2 and people[p]["week_overtime"][week()] == 0
-		"overload":
-			var overtime := 0
-			for q in team:
-				overtime += people[q]["week_overtime"][week()]
-			return overtime >= 4 or people[p]["week_overtime"][week()] >= 2
-	return true
-
-
 func answer_review(choice: String) -> void:
 	if phase != "review" or review.is_empty() or not review_choices(review[0]).has(choice):
 		return
@@ -4311,84 +3955,11 @@ func answer_review(choice: String) -> void:
 		return
 	var st: Dictionary = people[p]
 	var names := _review_names(t)
-	var truth := review_true(item, choice)
 	weight_cause = t["id"]
 	history.append({"who": "you", "key": "review.a." + choice, "args": [], "names": names, "to": "boss", "day": day})
 	for pair in REVIEW_STYLE[choice]:
 		lead(pair[0], pair[1])
-	# The endless run's review is only about what went wrong, and works its own way (below).
-	if endless() and item["kind"] == "failure":
-		_review_failure(t, choice, names)
-		choice = ""
-	match choice:
-		"credit_owner":
-			taras_like(-0.5)
-			boss += boss_like("I", 0.3)
-			st["mood"] += 1.0
-			st["trust"] += 1
-			_say("boss", "review.boss.credit_owner", [], names)
-			if st["promised"]:
-				st["promised"] = false
-			if p == "vika" and t["quality"] == "good":
-				vika_up()
-		"team":
-			boss += boss_like("I", 0.5)
-			for q in team:
-				if available(q):
-					people[q]["mood"] += 0.3
-			if info(p)["drive"] == "visibility":
-				st["mood"] -= 0.8
-				_say(p, "review.team." + p if L.has_key("review.team." + p) else "review.hurt", [], names)
-			_say("boss", "review.boss.team", [], names)
-		"self":
-			taras_like(1.0)
-			boss += boss_like("P", 2.0)
-			_say("boss", "review.boss.self", [], names)
-			if truth:
-				st["mood"] -= 0.5
-			else:
-				st["mood"] -= 1.5
-				st["trust"] -= 1
-				if not flags.has("credit_taken"):
-					flags["credit_taken"] = []
-				flags["credit_taken"].append({"uid": t["uid"], "owner": p, "day": day})
-				if p == "vika":
-					st["ambition"] += 1
-					if st["ambition"] >= 3:
-						vika_up()
-						_say("vika", "review.vika_goes_to_boss", [], names)
-				else:
-					_say(p, "review.hurt", [], names)
-		"own":
-			st["trust"] += 1
-			_say("boss", "review.boss.own", [], names)
-		"blame":
-			taras_like(1.0)
-			st["mood"] -= 2.0
-			st["trust"] -= 1 if truth else 2
-			if truth:
-				boss += 1.0
-				_say("boss", "review.boss.blame", [], names)
-			else:
-				_say("boss", "review.boss.blame_false", [], names)
-			_say(p, "review.blamed", [], names)
-		"scale":
-			# What worked here, everywhere: Irina likes it as much as she likes change.
-			boss += boss_like("E", 0.6) - 0.3
-			st["mood"] += 0.3
-			_say("boss", "review.boss.scale", [], names)
-		"change":
-			# Not who failed but how it's done: an E-minded Irina hears a plan, another hears an excuse.
-			boss += boss_like("E", 0.6) - 0.6
-			_say("boss", "review.boss.change", [], names)
-		"overload":
-			if truth:
-				boss += boss_like("A", 1.0)
-				flags["relief"] = true
-				_say("boss", "review.boss.overload_true", [], names)
-			else:
-				boss -= 1.0
-				_say("boss", "review.boss.overload_false", [], names)
+	_review_failure(t, choice, names)
 	st["mood"] = clampf(st["mood"], -5.0, 5.0)
 	_weight_check()
 	if not review.is_empty():
@@ -4399,118 +3970,11 @@ func answer_review(choice: String) -> void:
 		phase = "evening"
 
 
-# ---------- first steps ----------
-
-# In the first month Marina from HR shows the new lead around: one line in the chat at the moment it's
-# needed, and the board lights up where to look until you've used it. Each tip once a run.
-const TIP_TARGETS := {"assign": "inbox", "end_day": "end_day", "talk": "talk", "decline": "inbox", "intervene": "active", "backlog": "backlog",
-	"start_work": "end_day", "upgrades": "upgrades"}
-
-
-func update_tips() -> void:
-	# The endless run teaches by pointing at things instead (main.gd, the coach).
-	if not tips or endless() or chapter != 1:
-		return
-	var id := _next_tip()
-	if id == "":
-		return
-	flags["tip_" + id] = true
-	flags["tip_last"] = id
-	flags["tip_day"] = day
-	flags["tip_hl"] = TIP_TARGETS.get(id, "")
-	# The endless run has its own set, about its own rules.
-	_say(tip_who(), tip_key(id))
-
-
-func tip_who() -> String:
-	return "marina"
-
-
-func tip_key(id: String) -> String:
-	return ("tip.run." if endless() else "tip.") + id
-
-
-func _next_tip() -> String:
-	if endless():
-		return _next_run_tip()
-	var due: Array = []
-	match phase:
-		"plan":
-			if not pending.is_empty():
-				due.append("pushback")
-			elif day == 1:
-				due.append("assign")
-				if team.any(func(p): return not queue_of(p).is_empty()):
-					due.append("end_day")
-			elif flags.get("tip_day", 0) != day: # after day one, one tip a day at most
-				due.append("talk")
-				if day >= 3 and not inbox().is_empty():
-					due.append("decline")
-				if day >= 4 and not backlog().is_empty():
-					due.append("backlog")
-				if tasks.any(func(t): return can_intervene(t)):
-					due.append("intervene")
-				if team.any(func(p): return available(p) and late_hours(p) > 0):
-					due.append("overtime")
-		"evening":
-			due.append("evening")
-		"report":
-			due.append("friday")
-	for id in due:
-		if not flags.has("tip_" + id):
-			return id
-	return ""
-
-
-# The endless run's first month, as Marina walks the new lead through it.
-func _next_run_tip() -> String:
-	var due: Array = []
-	match phase:
-		"plan":
-			if not pending.is_empty():
-				due.append("pushback")
-			elif step == "triage":
-				if day == 1:
-					due.append("assign")
-					if team.any(func(p): return not queue_of(p).is_empty()):
-						due.append("start_work")
-				elif flags.get("tip_day", 0) != day:
-					if inbox().any(func(t): return not penalty_of(t).is_empty()):
-						due.append("penalty")
-					if day >= 3 and not inbox().is_empty():
-						due.append("decline")
-					if day >= 4 and C.UPGRADES.keys().any(func(id): return upgrade_state(id) == "open" and money >= upgrade_price(id)):
-						due.append("upgrades")
-			elif step == "work" and (flags.get("tip_day", 0) != day or day == 1):
-				due.append("midday")
-		"standup":
-			if standup.get("lines", []).any(func(l): return l["topic"] == "pulled"):
-				due.append("standup")
-		"evening":
-			due.append("evening")
-		"report":
-			due.append("friday")
-	for id in due:
-		if not flags.has("tip_" + id):
-			return id
-	return ""
-
-
-# The board element a tip pointed at, lit until you use it.
-func tip_target() -> String:
-	return flags.get("tip_hl", "")
-
-
-func _tip_used(target: String) -> void:
-	if flags.get("tip_hl", "") == target:
-		flags.erase("tip_hl")
-
-
 # ---------- saving ----------
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 11
+const SAVE_VERSION := 12
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.
@@ -4570,8 +4034,7 @@ static func _read_save():
 		if not C.TASKS.has(id):
 			return null
 	for t in state.get("tasks", []):
-		var bare := String(t["id"]).trim_prefix("init_")
-		if not (C.TASKS.has(t["id"]) or C.INIT_TASKS.has(bare) or C.IMPROVEMENTS.has(bare)):
+		if not C.TASKS.has(t["id"]):
 			return null
 	# Saved in the middle of a conversation the scripts no longer have (or have rewritten past that point).
 	var st: Dictionary = state.get("story", {})
@@ -4587,8 +4050,7 @@ func next() -> void:
 		return
 	if _bankrupt():
 		return
-	if endless():
-		_expire_letters(["evening"])
+	_expire_letters(["evening"])
 	if day >= last_day():
 		_finish_chapter()
 		return
@@ -4604,29 +4066,32 @@ func start_next_chapter() -> void:
 	if can_defend():
 		defend_budget("take")
 	day += 1
-	if endless():
-		period += 1
-		period_start = day
-		_period_budget()
-	else:
+	period += 1
+	period_start = day
+	if chapter > 0:
 		chapter += 1
+	_period_budget()
 	ending = ""
 	hours = 0
 	events.clear()
 	pending = {}
-	openings += C.CHAPTERS[chapter - 1].get("openings", 0)
 	deck.clear()
 	_refill_deck()
-	_fill_backlog()
 	_start_day()
 
 
 func next_chapter_ready() -> bool:
-	return endless() or (chapter < C.CHAPTERS.size() and C.CHAPTERS[chapter]["ready"])
+	return chapter == 0 or (chapter < C.CHAPTERS.size() and C.CHAPTERS[chapter]["ready"])
 
 
-func endless() -> bool:
-	return mode == "endless"
+# The story chapter's own content and goals, {} with no chapter.
+func chapter_info() -> Dictionary:
+	return C.CHAPTERS[chapter - 1] if chapter > 0 else {}
+
+
+# The story's own content (its named team, chapters, scenes, story cards) is in; the rules are the same.
+func story_mode() -> bool:
+	return mode == "story"
 
 
 # The endless run: periods of a month.
@@ -4707,7 +4172,7 @@ func _taras_period() -> void:
 func _taras_day() -> void:
 	var came := 0.0
 	for t in tasks:
-		if t.get("day", -1) == day and t["owner"] != "taras" and not t.get("backlog", false):
+		if t.get("day", -1) == day and t["owner"] != "taras":
 			came += t["size"]
 	if flags.get("auto_day", -1) == day:
 		came += flags.get("auto_size", 0.0)
@@ -4745,7 +4210,7 @@ const BONUS_PER_DAY := 40
 
 # Only the banks pay: our own product and process work never brings money straight in.
 func paid_card(t: Dictionary) -> bool:
-	return endless() and C.TASKS.get(t["id"], {}).get("bank", "") != ""
+	return C.TASKS.get(t["id"], {}).get("bank", "") != ""
 
 
 func card_bonus(t: Dictionary) -> int:
@@ -4809,7 +4274,7 @@ func budget_args() -> Array:
 
 
 func can_defend() -> bool:
-	return endless() and phase == "chapter_end" and not last_race.is_empty() and last_race.get("defended", "x") == ""
+	return phase == "chapter_end" and not last_race.is_empty() and last_race.get("defended", "x") == ""
 
 
 # "take", "more" (one argument and she listens to you at least half-way) or "lots" (two arguments and
@@ -4902,9 +4367,6 @@ func draft_start() -> void:
 		team.append(id)
 		_new_person(id, false)
 		people[id]["joined"] = -100 # the team you start with, not new hires
-		if C.PROFILES[profile].get("knows_team", false):
-			for cat in C.CATEGORIES:
-				people[id]["known"]["skill." + cat] = true
 	for c in candidates:
 		if not draft_picked.has(c["id"]):
 			hires.erase(c["id"])
@@ -4944,8 +4406,6 @@ func _payday() -> void:
 
 # The endless run ends the moment it can't go on: no money for salaries, or you've burned out for good.
 func _bankrupt() -> bool:
-	if not endless():
-		return false
 	if flags.has("bankrupt"):
 		ending = "bankrupt"
 	elif flags.get(burnout_key(), 0) >= burnouts_to_quit():
@@ -4958,22 +4418,22 @@ func _bankrupt() -> bool:
 	return true
 
 
-# The chapter, or in the endless run the period: what per-month counters are kept by.
+# The period: what per-month counters are kept by.
 func stage() -> int:
-	return period if endless() else chapter
+	return period
 
 
 func first_day() -> int:
-	return period_start if endless() else C.chapter_first_day(chapter)
+	return period_start
 
 
 func last_day() -> int:
-	return period_start + PERIOD_DAYS - 1 if endless() else C.chapter_last_day(chapter)
+	return period_start + PERIOD_DAYS - 1
 
 
-# The day of chapter three when Irina orders a cut; the endless run has none.
+# The day of chapter three when Irina orders a cut.
 func layoff_day() -> int:
-	return 0 if endless() else C.CHAPTERS[chapter - 1].get("layoff_day", 0)
+	return chapter_info().get("layoff_day", 0)
 
 
 # 1..20: how far into this chapter's month we are.
@@ -4982,7 +4442,7 @@ func chapter_day() -> int:
 
 
 func chapter_keys() -> Array:
-	return [] if endless() else C.KEY_PROJECTS.get(chapter, [])
+	return C.KEY_PROJECTS.get(chapter, [])
 
 
 # The end of a chapter: results (the boss's view, mostly the key projects) against what the team says.
@@ -4990,9 +4450,9 @@ func chapter_keys() -> Array:
 func _finish_chapter() -> void:
 	if _bankrupt():
 		return
-	# The endless run has no verdicts: the month closes, the budget is split, and on you go.
-	if endless():
-		_split_budget()
+	# The month closes and the budget is split; with no story chapter to judge, on you go.
+	_split_budget()
+	if chapter == 0:
 		ending = "period_pass"
 		phase = "chapter_end"
 		return
@@ -5018,7 +4478,7 @@ func _finish_chapter() -> void:
 	else:
 		ending = "fired"
 	promoted = _level_of(boss) >= 3 and ending in ["leader", "puppeteer"]
-	phase = "chapter_end" if passed() and (chapter < C.CHAPTERS.size() or endless()) else "end"
+	phase = "chapter_end" if passed() and chapter < C.CHAPTERS.size() else "end"
 
 
 func passed() -> bool:
@@ -5048,20 +4508,18 @@ func _chapter_verdict() -> void:
 	else:
 		ending = info["fail"]
 	promoted = false
-	phase = "chapter_end" if passed() and (chapter < C.CHAPTERS.size() or endless()) else "end"
+	phase = "chapter_end" if passed() and chapter < C.CHAPTERS.size() else "end"
 
 
-const BURNOUTS_TO_QUIT := 4
-const BURNOUTS_ENDLESS := 3 # in the whole endless run
+const BURNOUTS_TO_QUIT := 3 # in the whole run
 
 
-# Burnouts count by the month in the story, over the whole run in the endless one.
 func burnout_key() -> String:
-	return "burnouts_run" if endless() else "burnouts_%d" % stage()
+	return "burnouts_run"
 
 
 func burnouts_to_quit() -> int:
-	return BURNOUTS_ENDLESS if endless() else BURNOUTS_TO_QUIT
+	return BURNOUTS_TO_QUIT
 
 
 # The deal went through: what becomes of you depends on Irina's view of you and on the team.
@@ -5086,9 +4544,7 @@ func goal_met(g: Dictionary) -> bool:
 # This chapter's goals and how far along they are: [{"id", "have", "need"}].
 func goal_progress() -> Array:
 	var out: Array = []
-	if endless():
-		return out
-	for g in C.CHAPTERS[chapter - 1].get("goals", []):
+	for g in chapter_info().get("goals", []):
 		var have := 0
 		match g["kind"]:
 			"flags":
@@ -5102,9 +4558,7 @@ func goal_progress() -> Array:
 			"max_incidents":
 				have = flags.get("incidents_%d" % stage(), 0)
 			"improvements":
-				for imp in improved:
-					if improved[imp] >= first_day():
-						have += 1
+				have = flags.get("ups_done_p%d" % period, 0)
 		out.append({"id": g["id"], "have": have, "need": g["need"], "max": g["kind"].begins_with("max_")})
 	return out
 
@@ -5252,19 +4706,11 @@ func _level_of(w: float) -> int:
 
 # ---------- leadership style (Adizes) ----------
 
-# What each review answer and each initiative says about you as a lead.
-const REVIEW_STYLE := {
-	"credit_owner": [["I", 0.5]], "team": [["I", 0.5]], "self": [["P", 0.5], ["I", -0.5]],
-	"own": [["A", 0.5]], "blame": [["P", 0.3], ["I", -0.7]], "overload": [["A", 0.5]],
-	"scale": [["E", 0.6]], "change": [["E", 0.6]],
-}
+# What each review answer says about you as a lead.
+const REVIEW_STYLE := {"own": [["A", 0.5]], "blame": [["P", 0.3], ["I", -0.7]]}
 # Some kinds of leading come up every hour (talking to people), some rarely (changing how things
 # are done). Each letter is weighed by how hard it is to show, so a few bold moves count.
 const STYLE_SCALE := {"P": 1.0, "A": 1.3, "E": 2.0, "I": 0.6}
-const INIT_STYLE := {
-	"tech_debt": [["E", 1.0], ["A", 0.5]], "automate_report": [["A", 1.5]], "write_docs": [["A", 1.5]],
-	"showcase": [["E", 1.0]], "self_study": [["E", 0.5], ["I", 0.5]],
-}
 
 
 # Whatever you do as a lead leans toward one of the four roles. Nobody sees these numbers;
@@ -5394,21 +4840,6 @@ func _feels_tired(p: String) -> bool:
 	if info(p).get("guards_energy", false):
 		return e <= 0.4 * _stamina(p)
 	return e <= TIRED_ENERGY
-
-
-# Will they offer to do something on their own today? Only with energy to spare, and (for some)
-# after hearing something good. A team led toward change volunteers more.
-func _wants_to_volunteer(p: String) -> bool:
-	var info: Dictionary = info(p)
-	var st: Dictionary = people[p]
-	if st["energy"] < info["rest_at"] * _stamina(p):
-		return false
-	if info.get("needs_approval", false) and st["mood"] < 1.5:
-		return false
-	# Told to finish one thing before grabbing the next.
-	if day <= flags.get("focus_until_" + p, 0):
-		return false
-	return rng.randf() < info["initiative"] + (0.2 if leans("E") else 0.0)
 
 
 # ---------- helpers ----------

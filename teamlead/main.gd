@@ -147,8 +147,7 @@ var chat_pos := 0
 var chat_seen := ""
 var chat_to_end := false # a scroll to the bottom is on its way; until it lands, the bottom is where the chat is
 const HELD_WHILE_ASKED := ["_helper", "_end_day", "_visit_boss", "_unassign", "_talk_to", "_sit", "_reject_candidate",
-	"_prioritize", "_pick", "_interview", "_ask_people", "_intervene", "_hire", "_fire", "_direct", "_decline", "_days", "_ask_stay",
-	"_accept_initiative"]
+	"_prioritize", "_pick", "_interview", "_intervene", "_hire", "_fire", "_decline", "_days", "_ask_stay"]
 var press_pos := Vector2.ZERO
 # The setup screen before a run, and what's picked on it (remembered between runs).
 var setup_open := false
@@ -158,7 +157,6 @@ var pick_tips := true
 # "endless" for everyone; the story runs only in a dev build (the editor, tools/test.sh).
 var pick_mode := "endless"
 # The last of Marina's tips the phone banner was closed on.
-var tip_closed := ""
 # The open conversation's list and scroll, and who spoke last in it (to group their lines).
 var chat_list: VBoxContainer
 var chat_scroll: ScrollContainer
@@ -304,10 +302,6 @@ func _pick(p: String) -> void:
 	_render()
 
 
-func _direct(p: String) -> void:
-	_pick(p)
-
-
 func _persuade(intent: String) -> void:
 	rules.persuade(intent)
 	_render()
@@ -325,11 +319,6 @@ func _deal_done() -> void:
 
 func _helper(p: String) -> void:
 	rules.set_helper(selected, p)
-	_render()
-
-
-func _accept_initiative(p: String) -> void:
-	rules.accept_initiative(p)
 	_render()
 
 
@@ -401,11 +390,10 @@ func _start_work() -> void:
 func _day_button(width: int) -> Button:
 	if rules.phase == "evening":
 		return _anchor(_button(Loc.t("to_end" if rules.day >= rules.last_day() else "next_day"), _next, width, "primary"), "day_button")
-	var morning := rules.endless() and rules.step == "triage"
+	var morning := rules.step == "triage"
 	var b := _button(Loc.t("start_work" if morning else "end_day"), _start_work if morning else _end_day, width, "primary")
 	b.disabled = rules.phase != "plan" or not rules.pending.is_empty()
 	_anchor(b, "day_button")
-	_lit(b, "end_day")
 	return b
 
 
@@ -431,7 +419,7 @@ func _answer(choice: String) -> void:
 
 func _start_run() -> void:
 	setup_open = false
-	if not (C.RUN_PROFILE_KINDS if pick_mode == "endless" else C.PROFILE_KINDS).has(pick_profile):
+	if not C.PROFILE_KINDS.has(pick_profile):
 		pick_profile = C.DEFAULT_PROFILE
 	var settings := ConfigFile.new()
 	settings.load(SETTINGS_PATH)
@@ -442,7 +430,6 @@ func _start_run() -> void:
 	best_before = best_periods
 	rules.start_run(-1, C.BOSS_KINDS.pick_random() if pick_boss == "random" else pick_boss, pick_profile, pick_mode)
 	rules.tips = pick_tips
-	tip_closed = ""
 	_clear_selection()
 	_render()
 
@@ -455,41 +442,6 @@ func _open_setup(open: bool) -> void:
 func _toggle_tips() -> void:
 	pick_tips = not pick_tips
 	_render()
-
-
-# Marina's tip lights up what it's about: a thicker orange edge on the panel or button.
-func _lit(c: Control, target: String) -> void:
-	if rules.tip_target() != target or rules.phase != "plan":
-		return
-	for name in (["panel"] if c is PanelContainer else ["normal", "hover", "disabled"]):
-		var box = c.get_theme_stylebox(name)
-		if box is StyleBoxFlat:
-			box = box.duplicate()
-			box.border_color = COL_STAR
-			box.set_border_width_all(3)
-			c.add_theme_stylebox_override(name, box)
-
-
-# On a phone the chat is a tab away, so Marina's latest tip also shows above the board until closed.
-func _tip_banner() -> Control:
-	var id: String = rules.flags.get("tip_last", "")
-	if id == "" or id == tip_closed or tab == "chat" or rules.phase != "plan" or rules.flags.get("tip_day", 0) != rules.day:
-		return null
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _box(Color("fffae6"), COL_STAR, 1, 10))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	card.add_child(row)
-	row.add_child(_avatar(rules.tip_who(), 28))
-	var text := _label(Loc.t(rules.tip_key(id)), 13, COL_TEXT, true)
-	text.custom_minimum_size.x = _view_width() - 120.0
-	row.add_child(text)
-	var close := _button("✕", func(): tip_closed = id; _render(), 36, "subtle")
-	close.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.add_child(close)
-	var wrap := _padded(card, 8, 6)
-	wrap.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	return wrap
 
 
 func _pick_option(kind: String, value: String) -> void:
@@ -672,7 +624,6 @@ func _render() -> void:
 	juice_nodes.clear()
 	flash_cards = _cards_to_flash(before, juice_before)
 	if rules.phase != "title":
-		rules.update_tips()
 		_play(_sound_for_changes())
 	# Every action ends in a render, so this keeps the save one step behind the player at most.
 	if rules.phase == "end" or (rules.phase == "chapter_end" and not rules.next_chapter_ready()):
@@ -754,7 +705,7 @@ func _render() -> void:
 
 # New achievements pop up as they come and are kept for good; so is the longest endless run.
 func _check_progress() -> void:
-	if not rules.endless() or rules.phase in ["title", "draft"]:
+	if rules.phase in ["title", "draft"]:
 		return
 	var fresh: Array = rules.run_achievements().filter(func(a): return not unlocked.has(a))
 	for i in fresh.size():
@@ -806,9 +757,9 @@ func _sky() -> Color:
 
 
 func _moment() -> String:
-	if rules.phase in ["evening", "report", "review"] or (rules.endless() and rules.step == "evening"):
+	if rules.phase in ["evening", "report", "review"] or rules.step == "evening":
 		return "evening"
-	if rules.endless() and rules.step == "work":
+	if rules.step == "work":
 		return "midday"
 	return "morning"
 
@@ -952,8 +903,6 @@ func _waiting_for_answer() -> bool:
 # A question only the chat can answer (a pushback over a task is answered in the task's window).
 func _chat_asks() -> bool:
 	return rules.phase == "event" or rules.phase == "review"
-
-
 
 
 # The board can be looked through during the day, a question in the chat included.
@@ -1276,7 +1225,7 @@ func _build_setup() -> void:
 	v.add_child(_option_grid("boss", bosses, pick_boss, width))
 	v.add_child(_spacer(6))
 	v.add_child(_label(Loc.t("setup.me_head"), 17, COL_TEXT, true, true))
-	var kinds: Array = C.RUN_PROFILE_KINDS if pick_mode == "endless" else C.PROFILE_KINDS
+	var kinds: Array = C.PROFILE_KINDS
 	if not kinds.has(pick_profile):
 		pick_profile = C.DEFAULT_PROFILE
 	v.add_child(_option_grid("me", kinds, pick_profile, width))
@@ -1285,7 +1234,7 @@ func _build_setup() -> void:
 	tips_row.add_theme_constant_override("separation", 12)
 	v.add_child(tips_row)
 	# Marina shows the new lead around for a month in the endless run, for the first week in the story.
-	var tips_key := "setup.run_tips" if pick_mode == "endless" else "setup.tips"
+	var tips_key := "setup.run_tips"
 	tips_row.add_child(_button(Loc.t(tips_key + ("_on" if pick_tips else "_off")), _toggle_tips, 0, "chosen" if pick_tips else ""))
 	tips_row.add_child(_label(Loc.t(tips_key + "_hint"), 13, COL_MUTED, true))
 	v.add_child(_spacer(6))
@@ -1490,7 +1439,7 @@ func _top_bar() -> Control:
 	style.content_margin_right = 12
 	bar.add_theme_stylebox_override("panel", style)
 	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 14 if rules.endless() else 18)
+	top.add_theme_constant_override("separation", 14)
 	bar.add_child(top)
 	top.add_child(_logo(26))
 	top.add_child(_label(Loc.t("title"), 18, COL_ON_TOP, false, true))
@@ -1501,15 +1450,14 @@ func _top_bar() -> Control:
 	var points := _attention_label(15)
 	juice_nodes["points"] = points
 	top.add_child(points)
-	if rules.endless():
-		var money := _label(_money_text(), 15, _money_color())
-		juice_nodes["money"] = money
-		top.add_child(money)
-		var race := _race_label(15)
-		juice_nodes["race"] = race
-		top.add_child(race)
-		top.add_child(_label(_budget_text(), 13, COL_ON_TOP_MUTED))
-	else:
+	var money := _label(_money_text(), 15, _money_color())
+	juice_nodes["money"] = money
+	top.add_child(money)
+	var race := _race_label(15)
+	juice_nodes["race"] = race
+	top.add_child(race)
+	top.add_child(_label(_budget_text(), 13, COL_ON_TOP_MUTED))
+	if not rules.chapter_keys().is_empty():
 		var k := rules.key_status()
 		top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
 	# How Irina sees you sits on her button under the bar, where there's room for it.
@@ -1520,7 +1468,7 @@ func _top_bar() -> Control:
 # "Понедельник, неделя 2", and from chapter two on, which chapter.
 func _day_label() -> String:
 	var text := Loc.t(rules.day_key().substr(1))
-	if rules.endless():
+	if rules.chapter == 0:
 		return Loc.t("period_short", [rules.period]) + text
 	return text if rules.chapter == 1 else Loc.t("chapter_short", [rules.chapter]) + text
 
@@ -1606,19 +1554,14 @@ func _team_sidebar() -> Control:
 			v.add_child(_person_card(p))
 	if not gone.is_empty():
 		v.add_child(_label(Loc.t("gone_list", [", ".join(gone)]), 12, COL_FAINT, true))
-	if rules.openings > 0 or not rules.candidates.is_empty():
+	if not rules.candidates.is_empty():
 		v.add_child(_spacer(4))
-		# (in the endless run there are no openings: candidates come anyway, and a hire costs money)
-		v.add_child(_section(Loc.t("hire.section") + " · " + (Loc.t("money.fee", [_rub(rules.HIRE_FEE)]) if rules.endless() else Loc.t("hire.openings_left", [rules.openings]))))
+		v.add_child(_section(Loc.t("hire.section") + " · " + Loc.t("money.fee", [_rub(rules.HIRE_FEE)])))
 		for c in rules.candidates:
 			v.add_child(_candidate_card(c))
-	if rules.endless():
-		v.add_child(_spacer(4))
-		v.add_child(_section(Loc.t("up.section")))
-		v.add_child(_upgrades_card())
 	v.add_child(_spacer(4))
-	v.add_child(_section(Loc.t("chainer_header")))
-	v.add_child(_chainer_card())
+	v.add_child(_section(Loc.t("up.section")))
+	v.add_child(_upgrades_card())
 	if mobile:
 		v.add_child(_spacer(4))
 		var menu := _button(Loc.t("menu.button"), _open_menu, 0)
@@ -1664,7 +1607,7 @@ func _person_card(p: String) -> Control:
 	if st["absent"]:
 		state.add_child(_pill(Loc.t("absent.%s_label" % st["absent_reason"]), COL_WARN, Color("fff0b3")))
 	if rules.newbie(p):
-		state.add_child(_pill(Loc.t("newbie_label.alone" if rules.endless() else "newbie_label"), COL_PRIMARY, COL_SELECTED))
+		state.add_child(_pill(Loc.t("newbie_label.alone"), COL_PRIMARY, COL_SELECTED))
 	var late := rules.late_hours(p) if rules.phase == "plan" else 0
 	if late > 0:
 		state.add_child(_pill(Loc.render("late_preview", [], {"n": late}), COL_WARN, Color("fff0b3")))
@@ -1675,8 +1618,7 @@ func _person_card(p: String) -> Control:
 	var trust := _trust_word(p)
 	if trust != "":
 		state.add_child(_label("· " + Loc.t("trust." + trust), 13, COL_GOOD if trust == "trusts" else COL_DANGER))
-	if rules.endless():
-		v.add_child(_label(Loc.t("money.salary", [_rub(rules.salary(p))]), 12, COL_MUTED, true))
+	v.add_child(_label(Loc.t("money.salary", [_rub(rules.salary(p))]), 12, COL_MUTED, true))
 	var known: Dictionary = st["known"]
 	var drive_text: String = Loc.t("drive." + rules.info(p)["drive"]) if known.has("drive") else Loc.t("unknown")
 	v.add_child(_label(Loc.t("known.drive", [drive_text]), 12, COL_MUTED, true))
@@ -1695,18 +1637,13 @@ func _person_card(p: String) -> Control:
 	var talk := _button(Loc.t("talk_button") + _cost_mark(rules.cost("talk")), _talk_to.bind(p), 0, "subtle")
 	talk.disabled = talk.disabled or not rules.can_talk(p)
 	talk.custom_minimum_size.y = 30
-	if talk.disabled == false:
-		_lit(talk, "talk")
-	if rules.chapter >= 2 or rules.endless():
-		var fire := _button(Loc.t("fire.button"), _fire.bind(p), 0, "subtle")
-		fire.disabled = fire.disabled or not rules.can_fire(p)
-		fire.custom_minimum_size.y = 26
-		fire.add_theme_font_size_override("font_size", _fs(12))
-		fire.add_theme_color_override("font_color", COL_DANGER)
-		v.add_child(talk)
-		v.add_child(fire)
-	else:
-		v.add_child(talk)
+	var fire := _button(Loc.t("fire.button"), _fire.bind(p), 0, "subtle")
+	fire.disabled = fire.disabled or not rules.can_fire(p)
+	fire.custom_minimum_size.y = 26
+	fire.add_theme_font_size_override("font_size", _fs(12))
+	fire.add_theme_color_override("font_color", COL_DANGER)
+	v.add_child(talk)
+	v.add_child(fire)
 	return card
 
 
@@ -1749,8 +1686,7 @@ func _candidate_card(c: Dictionary) -> Control:
 	head.add_child(names)
 	names.add_child(_label(Loc.person(id), 15, COL_TEXT, false, true))
 	names.add_child(_label(Loc.t("hire.waits", [maxi(0, c["until"] - rules.day + 1)]), 12, COL_MUTED))
-	if rules.endless():
-		v.add_child(_label(Loc.t("money.asks", [_rub(rules.salary(id))]), 13, COL_TEXT))
+	v.add_child(_label(Loc.t("money.asks", [_rub(rules.salary(id))]), 13, COL_TEXT))
 	var skills := _flow(4, 4)
 	v.add_child(skills)
 	for cat in C.CATEGORIES:
@@ -1822,8 +1758,6 @@ func _close_window() -> void:
 
 func _build_window() -> void:
 	if window == "upgrades" or window.begins_with("upgrade:"):
-		if not rules.endless():
-			return
 		# One upgrade's card opens over the tree, which stays underneath.
 		_build_upgrades()
 		if window != "upgrades" and C.UPGRADES.has(window.substr(8)):
@@ -1845,7 +1779,7 @@ func _build_window() -> void:
 			return
 		_modal(Loc.person(p), "", minf(460.0, view.x - 16.0), false, true).add_child(_person_card(p))
 	elif window == "hire":
-		var hint := Loc.t("money.fee", [_rub(rules.HIRE_FEE)]) if rules.endless() else Loc.t("hire.openings_left", [rules.openings])
+		var hint := Loc.t("money.fee", [_rub(rules.HIRE_FEE)])
 		var body := _modal(Loc.t("hire.section"), hint + "   " + _money_text() + "   " + _attention_text(), minf(980.0, view.x - 16.0), true, true)
 		if rules.candidates.is_empty():
 			body.add_child(_label(Loc.t("win.no_candidates"), 14, COL_MUTED, true))
@@ -1860,18 +1794,13 @@ func _build_window() -> void:
 			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			grid.add_child(card)
 	elif window == "company":
-		var body := _modal(Loc.t("nav.clients_title"), _attention_text() if rules.endless() else "", minf(560.0, view.x - 16.0), false, true)
-		if rules.endless():
-			_clients(body)
-		else:
-			body.add_child(_chainer_card())
+		var body := _modal(Loc.t("nav.clients_title"), _attention_text(), minf(560.0, view.x - 16.0), false, true)
+		_clients(body)
 	elif window == "more":
 		var body := _modal(Loc.t("tab.more"), "", minf(460.0, view.x - 16.0), false, true)
 		var waiting := rules.candidates.size()
-		if rules.endless() or rules.openings > 0 or waiting > 0:
-			body.add_child(_more_row(_nav_button("hire", Loc.t("hire.section"), _badge(waiting), COL_DANGER)))
-		if rules.endless():
-			body.add_child(_more_row(_nav_button("upgrades", Loc.t("up.section"), _badge(_fresh_upgrades()), COL_DANGER)))
+		body.add_child(_more_row(_nav_button("hire", Loc.t("hire.section"), _badge(waiting), COL_DANGER)))
+		body.add_child(_more_row(_nav_button("upgrades", Loc.t("up.section"), _badge(_fresh_upgrades()), COL_DANGER)))
 		var unhappy := 0
 		for bank in rules.banks:
 			if rules.bank_word(bank) in ["unhappy", "leaving"]:
@@ -1979,12 +1908,8 @@ func _nav_strip() -> Control:
 	# A counter means there's something to do in there, and only then: CVs waiting, upgrades you can
 	# afford, clients who are unhappy.
 	var waiting := rules.candidates.size()
-	if rules.endless() or rules.openings > 0 or waiting > 0:
-		row.add_child(_nav_button("hire", Loc.t("hire.section"), _badge(waiting), COL_DANGER))
-	if rules.endless():
-		var b := _nav_button("upgrades", Loc.t("up.section"), _badge(_fresh_upgrades()), COL_DANGER)
-		_lit(b, "upgrades")
-		row.add_child(b)
+	row.add_child(_nav_button("hire", Loc.t("hire.section"), _badge(waiting), COL_DANGER))
+	row.add_child(_nav_button("upgrades", Loc.t("up.section"), _badge(_fresh_upgrades()), COL_DANGER))
 	var unhappy := 0
 	for bank in rules.banks:
 		if rules.bank_word(bank) in ["unhappy", "leaving"]:
@@ -1996,8 +1921,6 @@ func _nav_strip() -> Control:
 # Upgrades that came within reach since you last looked at the tree; what you could already afford
 # when the session began isn't news.
 func _fresh_upgrades() -> int:
-	if not rules.endless():
-		return 0
 	if upgrades_seen.is_empty():
 		for id in C.UPGRADES:
 			if _upgrade_affordable(id):
@@ -2094,7 +2017,6 @@ func _person_row(p: String) -> Control:
 	card.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 			_open_window.call_deferred("person:" + p))
-	_lit(card, "talk")
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2122,7 +2044,7 @@ func _person_row(p: String) -> Control:
 		var energy := rules.energy_word(p)
 		line.add_child(_label("· " + Loc.t("energy." + energy), 12, ENERGY_COLORS[energy]))
 	if rules.newbie(p):
-		line.add_child(_label("· " + Loc.t("newbie_label.alone" if rules.endless() else "newbie_label"), 12, COL_PRIMARY))
+		line.add_child(_label("· " + Loc.t("newbie_label.alone"), 12, COL_PRIMARY))
 	if rules.warned(p):
 		line.add_child(_label("· " + Loc.t("fire.warned_label"), 12, COL_DANGER))
 	return card
@@ -2145,13 +2067,11 @@ func _upgrades_card() -> Control:
 		v.add_child(_label(Loc.t("up.none"), 13, COL_MUTED, true))
 	var b := _button(Loc.t("up.button"), _open_upgrades, 0, "subtle")
 	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	_lit(b, "upgrades")
 	v.add_child(b)
 	return card
 
 
 func _open_upgrades() -> void:
-	rules._tip_used("upgrades")
 	for id in C.UPGRADES:
 		if _upgrade_affordable(id):
 			upgrades_seen[id] = true
@@ -2474,42 +2394,6 @@ func _fx_targets(e: Dictionary) -> String:
 	return ", ".join(names)
 
 
-# The platform as a business: which banks are with us and how they feel, and what's been improved.
-func _chainer_card() -> Control:
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 10))
-	var v := _vbox(4)
-	card.add_child(v)
-	var goals := rules.goal_progress()
-	if not goals.is_empty():
-		v.add_child(_label(Loc.t("chainer.goal"), 13, COL_MUTED, false, true))
-		for g in goals:
-			var done: bool = rules.goal_met(g)
-			var have: int = g["have"] if g["max"] else mini(g["have"], g["need"])
-			var color := COL_GOOD if done and not g["max"] else (COL_DANGER if not done and g["max"] else COL_TEXT)
-			v.add_child(_label(("✓ " if done and not g["max"] else "· ") + Loc.t("goal." + g["id"], [have, g["need"]]), 13, color, true))
-		v.add_child(_spacer(4))
-	v.add_child(_label(Loc.t("chainer.banks"), 13, COL_MUTED, false, true))
-	if rules.banks.is_empty():
-		v.add_child(_label(Loc.t("chainer.no_banks"), 13, COL_DANGER, true))
-	for b in rules.banks:
-		var word := rules.bank_word(b)
-		var row := _flow(6, 0)
-		row.add_child(_label(Loc.t("bank." + b), 14, COL_TEXT))
-		row.add_child(_label("· " + Loc.t("bank_mood." + word), 13, BANK_COLORS[word]))
-		v.add_child(row)
-	v.add_child(_spacer(4))
-	# The endless run's improvements are in the upgrade tree's own window.
-	if rules.endless():
-		return card
-	v.add_child(_label(Loc.t("chainer.improved"), 13, COL_MUTED, false, true))
-	if rules.improved.is_empty():
-		v.add_child(_label(Loc.t("chainer.nothing_yet"), 13, COL_FAINT, true))
-	for id in rules.improved:
-		v.add_child(_label("✓ " + Loc.t("imp.%s.effect" % id), 13, COL_GOOD, true))
-	return card
-
-
 # The endless run's clients: who pays the company what, whether the team has room for more, and the
 # banks you could go and win over.
 func _clients(v: VBoxContainer) -> void:
@@ -2547,12 +2431,6 @@ func _clients(v: VBoxContainer) -> void:
 
 func _pitch(b: String) -> void:
 	rules.pitch_bank(b)
-	_render()
-
-
-func _ask_people() -> void:
-	window = ""
-	rules.ask_people()
 	_render()
 
 
@@ -2606,7 +2484,7 @@ func _coach_steps() -> Array:
 
 
 func _coach_on() -> bool:
-	return rules.endless() and rules.tips and rules.period == 1 and not menu_open and not rules.phase in ["title", "draft", "end"]
+	return rules.tips and rules.period == 1 and not menu_open and not rules.phase in ["title", "draft", "end"]
 
 
 # What to point at now, if anything: the first step that's due and not yet seen. A forced step that's
@@ -2747,9 +2625,7 @@ func _board_area() -> Control:
 	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(titles)
 	titles.add_child(_label(Loc.t("board_title"), 20, COL_TEXT, false, true))
-	var hint := Loc.t("pick_task")
-	if rules.endless():
-		hint = Loc.t("step.%s.hint" % rules.step)
+	var hint := Loc.t("step.%s.hint" % rules.step)
 	if not rules.queue_of("me").is_empty():
 		hint = Loc.t("you.busy", [rules.own_task_cost()])
 	titles.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
@@ -2764,13 +2640,10 @@ func _board_area() -> Control:
 	var inbox := _column("inbox", lanes["inbox"])
 	inbox.size_flags_horizontal = Control.SIZE_FILL
 	inbox.custom_minimum_size.x = INBOX_W
-	_lit(inbox, "inbox")
 	columns.add_child(inbox)
 	var team := _team_zone()
-	_lit(team, "active")
 	columns.add_child(team)
 	var done := _done_strip(lanes["done"])
-	_lit(done, "done")
 	v.add_child(done)
 	return wrap
 
@@ -2937,27 +2810,6 @@ func _fill_lane(list: VBoxContainer, lane: String, items: Array) -> void:
 			last_owner = t["owner"]
 			_owner_head(list, last_owner)
 		list.add_child(_task_card(t, lane))
-	if lane == "inbox":
-		_backlog_section(list)
-
-
-# Under the inbox: Chainer's own backlog. Nothing burns here, but what's done makes every week lighter.
-func _backlog_section(list: VBoxContainer) -> void:
-	var items := rules.backlog()
-	if items.is_empty():
-		return
-	list.add_child(_spacer(6))
-	var head := _section(Loc.t("col.backlog"))
-	list.add_child(head)
-	list.add_child(_label(Loc.t("backlog_hint"), 11, COL_FAINT, true))
-	var frame := PanelContainer.new()
-	frame.add_theme_stylebox_override("panel", _box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, 2))
-	_lit(frame, "backlog")
-	list.add_child(frame)
-	var box := _vbox(6)
-	frame.add_child(box)
-	for t in items:
-		box.add_child(_task_card(t, "inbox"))
 
 
 func _task_card(t: Dictionary, lane: String) -> Control:
@@ -3058,7 +2910,7 @@ func _progress_bar(t: Dictionary) -> Control:
 
 # Midday, and the task someone's on right now hasn't moved since the morning.
 func _stalled(t: Dictionary) -> bool:
-	if not rules.endless() or rules.step != "work" or t.get("gain_today", 0.0) > 0.0 or not rules.team.has(t["owner"]):
+	if rules.step != "work" or t.get("gain_today", 0.0) > 0.0 or not rules.team.has(t["owner"]):
 		return false
 	var q := rules.queue_of(t["owner"])
 	return not q.is_empty() and q[0]["uid"] == t["uid"]
@@ -3075,7 +2927,7 @@ func _on_card_input(event: InputEvent, uid: int) -> void:
 
 
 func _due_text(t: Dictionary) -> String:
-	if t.get("backlog", false) or t["id"].begins_with("init_") or t["due"] >= rules.NO_DEADLINE:
+	if t["due"] >= rules.NO_DEADLINE:
 		return Loc.t("due.none")
 	if t["late"]:
 		return Loc.t("due.late")
@@ -3115,12 +2967,7 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 		var note := _label(Loc.render("letter.waits", [], {"who": "@name.%s.nom" % waiting["who"]}), 14, COL_WARN, true)
 		row.add_child(note)
 		row.add_child(_button(Loc.t("letter.go"), _go_to_letter.bind(_contact_of(waiting["who"])), 0, "subtle"))
-	var bare: String = t["id"].trim_prefix("init_")
-	if C.IMPROVEMENTS.has(bare):
-		v.add_child(_label(Loc.t("imp.%s.about" % bare), 14, COL_MUTED, true))
-		v.add_child(_label(Loc.t("imp.gives", [Loc.t("imp.%s.effect" % bare)]), 14, COL_GOOD, true, true))
-	else:
-		v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 14, COL_MUTED, true))
+	v.add_child(_label("%s — %s" % [Loc.t("from", [Loc.person(t["from"])]), Loc.t("quote", [Loc.t("task.%s.ask" % t["id"])])], 14, COL_MUTED, true))
 	var pen: Dictionary = rules.penalty_of(t)
 	if not pen.is_empty() and t["status"] != "done" and not t["late"]:
 		v.add_child(_label(Loc.t("penalty.%s.card" % pen["kind"], [_rub(pen["amount"])] if pen["kind"] == "money" else []), 14, COL_DANGER, true))
@@ -3143,8 +2990,6 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 		var best := _best_pick(t)
 		for p in _pick_order(t):
 			grid.add_child(_pick_tile(t, p, p == best))
-		if not t.get("backlog", false) and not rules.endless():
-			grid.add_child(_button(Loc.t("to_taras"), _direct.bind("taras"), 0))
 		if rules.can_decline(t):
 			var no := _button(Loc.t("decline_button") + _cost_mark(rules.cost("decline")), _decline, 0, "subtle")
 			no.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -3165,7 +3010,7 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 			var stay := _button(Loc.t("stay_button"), _ask_stay, 0, "subtle")
 			stay.disabled = stay.disabled or t.get("stay_asked", -1) == rules.day
 			acts.add_child(stay)
-			var step := _button(Loc.t("intervene_button.ask" if rules.endless() else "intervene_button") + _cost_mark(rules.cost("intervene")), _intervene, 0, "subtle")
+			var step := _button(Loc.t("intervene_button.ask") + _cost_mark(rules.cost("intervene")), _intervene, 0, "subtle")
 			step.disabled = step.disabled or not rules.can_intervene(t)
 			acts.add_child(step)
 	if t["status"] == "active" and rules.team.has(t["owner"]) and rules.allowed("pair"):
@@ -3356,9 +3201,6 @@ func _build_phone() -> void:
 	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(v)
 	v.add_child(_phone_top())
-	var banner := _tip_banner()
-	if banner:
-		v.add_child(banner)
 	var body: Control = _phone_messenger() if tab == "chat" else _phone_board()
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	v.add_child(body)
@@ -3397,15 +3239,14 @@ func _phone_top() -> Control:
 	var points := _label(Loc.t("you.sick_today") if rules.sick_today else dots, 17, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER, false, true)
 	juice_nodes["points"] = points
 	chips.add_child(_chip(points))
-	if rules.endless():
-		var money := _label(_money_text(), 14, _money_color(), false, true)
-		juice_nodes["money"] = money
-		chips.add_child(_chip(money))
-		var race := _race_label(14)
-		juice_nodes["race"] = race
-		chips.add_child(_chip(race))
-		chips.add_child(_chip(_label(_budget_text(), 13, COL_ON_TOP, false, true)))
-	else:
+	var money := _label(_money_text(), 14, _money_color(), false, true)
+	juice_nodes["money"] = money
+	chips.add_child(_chip(money))
+	var race := _race_label(14)
+	juice_nodes["race"] = race
+	chips.add_child(_chip(race))
+	chips.add_child(_chip(_label(_budget_text(), 13, COL_ON_TOP, false, true)))
+	if not rules.chapter_keys().is_empty():
 		var k := rules.key_status()
 		chips.add_child(_chip(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 14, COL_ON_TOP, false, true)))
 	return bar
@@ -3523,9 +3364,8 @@ func _phone_board() -> Control:
 		var b := _button(text_value, _pick_lane.bind(name), 0, "chosen" if lane == name else "subtle")
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.add_theme_font_size_override("font_size", _fs(14))
-		_lit(b, "inbox" if name == "inbox" else "active")
 		switcher.add_child(b)
-	var hint := Loc.t("you.busy", [rules.own_task_cost()]) if not rules.queue_of("me").is_empty() else (Loc.t("step.%s.hint" % rules.step) if rules.endless() else Loc.t("pick_task"))
+	var hint := Loc.t("you.busy", [rules.own_task_cost()]) if not rules.queue_of("me").is_empty() else Loc.t("step.%s.hint" % rules.step)
 	v.add_child(_label(hint, 13, COL_WARN if not rules.queue_of("me").is_empty() else COL_MUTED, true))
 	var scroll := _scroll("phone_" + lane)
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -3588,31 +3428,17 @@ func _contact_of(p: String) -> String:
 
 # Kept in the history (the task window's haggle reads it) but not worth a message: what the board
 # already shows. The chat is for what asks something of you or what you can't see on the board.
-const QUIET_PREFIXES := ["assign.say", "object.", "react.", "pace.", "stuck.found_", "standup.log", "result.any.good",
-	"result.any.ok", "result.mine", "init.yes"]
-const QUIET_KEYS := ["stayed_late"]
-# Endless: the chat holds only what asks for an answer or is a conversation, nothing else. Whatever
+# The chat holds only what asks for an answer or is a conversation, nothing else. Whatever
 # you did on the board, and news that changes nothing you'd do right now, shows on the board itself.
-const ENDLESS_SHOWN := ["event.", "review.", "budget.", "money.budget", "money.split", "boss.clean_week", "hire.cv",
-	"convo.", "talk.open", "visit.open", "fire.open", "people.", "intervene.open", "decline.open"]
+const CHAT_SHOWN := ["event.", "review.", "budget.", "money.budget", "money.split", "boss.clean_week", "hire.cv",
+	"convo.", "story.", "talk.open", "visit.open", "fire.open", "people.", "intervene.open", "decline.open"]
 
 
 func _quiet(key: String) -> bool:
-	if QUIET_KEYS.has(key):
-		return true
-	if rules.endless():
-		for prefix in ENDLESS_SHOWN:
-			if key.begins_with(prefix):
-				return false
-		return true
-	for prefix in QUIET_PREFIXES:
+	for prefix in CHAT_SHOWN:
 		if key.begins_with(prefix):
-			return true
-	# A new card's request: it's on the card itself, in the inbox.
-	if key.begins_with("task.") and key.ends_with(".ask"):
-		return true
-	# A person's own finish line, unless it went badly.
-	return key.begins_with("result.") and not key.ends_with(".bad")
+			return false
+	return true
 
 
 func _sort_threads() -> void:
@@ -3681,13 +3507,6 @@ func _asked_thread() -> String:
 	return ""
 
 
-# Offers a person makes on their own (the story's initiative), shown in their conversation.
-func _thread_offer(th: String) -> String:
-	if rules.phase != "plan" or not rules.team.has(th):
-		return ""
-	return rules.initiative_offer(th)
-
-
 func _open_thread(th: String) -> void:
 	chat_thread = "" if chat_thread == th and not mobile else th
 	_render()
@@ -3749,7 +3568,7 @@ func _letters_in(th: String) -> int:
 
 
 func _contact_badge(th: String) -> Control:
-	var waiting: bool = _asked_thread() == th or _thread_offer(th) != "" or _letters_in(th) > 0
+	var waiting: bool = _asked_thread() == th or _letters_in(th) > 0
 	var n := _unread(th)
 	if not waiting and n == 0:
 		return null
@@ -3924,9 +3743,6 @@ func _thread_prompt(list: VBoxContainer, th: String) -> void:
 	for i in rules.letters.size():
 		if _contact_of(rules.letters[i]["who"]) == th:
 			_letter_prompt(list, i, rules.letters[i])
-	var offer := _thread_offer(th)
-	if offer != "":
-		list.add_child(_offer_card(th, offer))
 	if rules.team.has(th) and rules.phase == "plan":
 		list.add_child(_spacer(8))
 		var talk := _button(Loc.t("talk_button") + _cost_mark(rules.cost("talk")), _talk_to.bind(th), 0, "")
@@ -3939,11 +3755,6 @@ func _thread_prompt(list: VBoxContainer, th: String) -> void:
 		list.add_child(go)
 		if not rules.can_visit():
 			list.add_child(_label(Loc.t("nav.boss_seen" if rules.visited_today else "nav.boss_later"), 12, COL_MUTED, true))
-		# After the first time (a story scene in chapter three), you can go and ask for people yourself.
-		if rules.flags.has("asked_people") and rules.openings == 0:
-			var ask := _button(Loc.t("people.button") + _cost_mark(rules.cost("people")), _ask_people, 0, "")
-			ask.disabled = ask.disabled or not rules.can_ask_people()
-			list.add_child(ask)
 
 
 # A one-on-one going on right now: what's been said, then what you can say, each line a reply that costs.
@@ -4134,30 +3945,7 @@ func _review_prompt(list: VBoxContainer) -> void:
 	v.add_child(_label(Loc.render("review.context", [], {"owner": Loc.person(t["owner"])}), 13, COL_MUTED, true))
 	for choice in rules.review_choices(item):
 		v.add_child(_answer_button(Loc.render("review.a." + choice, [], names), _answer.bind(choice)))
-	v.add_child(_label(Loc.t("review_hint.endless" if rules.endless() else "review_hint." + item["kind"]), 12, COL_MUTED, true))
-
-
-func _offer_card(p: String, offer: String) -> Control:
-	var box := PanelContainer.new()
-	box.add_theme_stylebox_override("panel", _box(Color("fffae6"), Color("ffe380"), 1, 10))
-	var v := _vbox(6)
-	box.add_child(v)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 8)
-	v.add_child(head)
-	head.add_child(_avatar(p, 28))
-	head.add_child(_label(Loc.person(p), 14, COL_TEXT, false, true))
-	var offer_key := "init.offer." + offer
-	if offer == "self_study":
-		offer_key += "." + rules.study_target(p)
-	v.add_child(_label(Loc.t(offer_key), 15, COL_TEXT, true))
-	var b := _button(Loc.t("init.accept"), _accept_initiative.bind(p), 0, "primary")
-	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	v.add_child(b)
-	var wrap := _vbox(0)
-	wrap.add_child(_spacer(8))
-	wrap.add_child(box)
-	return wrap
+	v.add_child(_label(Loc.t("review_hint.endless"), 12, COL_MUTED, true))
 
 
 func _answer_button(text_value: String, action: Callable) -> Button:
@@ -4379,7 +4167,7 @@ func _build_standup() -> void:
 	panel.add_child(right)
 	var head := _vbox(4)
 	head.add_child(_label(Loc.t("standup.title"), 22, COL_TEXT, false, true))
-	head.add_child(_label(Loc.t("standup.hint_endless" if rules.endless() else ("standup.hint_cost" if rules.standup_cost() else "standup.hint_free")) + "   " + _attention_text(), 13, COL_MUTED, true))
+	head.add_child(_label(Loc.t("standup.hint_endless") + "   " + _attention_text(), 13, COL_MUTED, true))
 	var head_box := _padded(head, 18 if mobile else 28, 16)
 	head_box.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	right.add_child(head_box)
@@ -4427,8 +4215,8 @@ func _standup_tile(line: Dictionary, i: int) -> Control:
 		v.add_child(_label(Loc.t(line["key"] + ".aside"), 13, COL_FAINT, true))
 	var options := rules.standup_reactions(i)
 	for r in options:
-		var b := _answer_button(Loc.render("standup.say." + r, [], line["names"]) + (_cost_mark(rules.cost("react")) if rules.standup_cost() else ""), _standup_react.bind(i, r))
-		b.disabled = b.disabled or (rules.standup_cost() and not rules.can_afford(rules.cost("react")))
+		var b := _answer_button(Loc.render("standup.say." + r, [], line["names"]) + _cost_mark(rules.cost("react")), _standup_react.bind(i, r))
+		b.disabled = b.disabled or not rules.can_afford(rules.cost("react"))
 		v.add_child(b)
 	if options.is_empty() and line["reacted"]:
 		v.add_child(_label(Loc.render("standup.say." + line.get("said", rules.STANDUP_REACTIONS.get(line["topic"], "")), [], line["names"]), 13, COL_PRIMARY, true))
@@ -4609,10 +4397,8 @@ func _build_report() -> void:
 			late += 1
 	v.add_child(_spacer(4))
 	v.add_child(_label(Loc.render("report.late", [], {"count": late}), 15, COL_DANGER if late > 0 else COL_MUTED, true))
-	if not rules.endless():
+	if not rules.chapter_keys().is_empty():
 		v.add_child(_label(_keys_text(), 15, COL_WARN, true))
-	if rules.survey.get("day", -1) == rules.day and not rules.endless():
-		_survey_block(v)
 	v.add_child(_spacer(6))
 	var b := _button(Loc.t("report.to_review" if not rules.review.is_empty() else "report.next"), _continue_report, 260, "primary")
 	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -4676,27 +4462,21 @@ func _run_record(v: VBoxContainer) -> void:
 # The end of a chapter or of the run: Irina's verdict, the numbers, the team, and what comes next.
 func _build_end() -> void:
 	var v := _document(780)
-	var info: Dictionary = C.CHAPTERS[rules.chapter - 1]
-	if rules.endless():
+	var info: Dictionary = rules.chapter_info()
+	if info.is_empty():
 		v.add_child(_section(Loc.t("period.results", [rules.period])))
 	else:
 		v.add_child(_section(Loc.t("chapter.results", [rules.chapter, Loc.t("chapter.%s.name" % info["id"])])))
 	var good := rules.ending == "beloved" or rules.passed()
 	v.add_child(_label(Loc.t("ending.%s.title" % rules.ending), 28, COL_GOOD if good else COL_DANGER, true, true))
 	v.add_child(_label(Loc.t("ending.%s.text" % rules.ending), 16, COL_TEXT, true))
-	if rules.endless():
-		v.add_child(_label(Loc.t("period.survived", [rules.done_periods()]), 18, COL_TEXT, true, true))
-		if not rules.last_race.is_empty() and rules.phase == "chapter_end":
-			var race: Dictionary = rules.last_race
-			if race.has("offer"):
-				v.add_child(_label(Loc.t("race.result", [race["mine"], race["taras"]]), 16, COL_GOOD if race["mine"] >= race["taras"] else COL_DANGER, true))
-				_budget_block(v)
-			else:
-				v.add_child(_label(Loc.t("race.summary", [race["mine"], race["taras"], _rub(race["budget"])]), 16, COL_GOOD if race["mine"] >= race["taras"] else COL_DANGER, true))
-		if rules.phase == "end":
-			_run_record(v)
-	else:
-		v.add_child(_label(Loc.t("summary.hours", [rules.hours]), 15, COL_GOOD if rules.hours == 0 else COL_DANGER, true))
+	v.add_child(_label(Loc.t("period.survived", [rules.done_periods()]), 18, COL_TEXT, true, true))
+	if not rules.last_race.is_empty() and rules.phase == "chapter_end":
+		var race: Dictionary = rules.last_race
+		v.add_child(_label(Loc.t("race.result", [race["mine"], race["taras"]]), 16, COL_GOOD if race["mine"] >= race["taras"] else COL_DANGER, true))
+		_budget_block(v)
+	if rules.phase == "end":
+		_run_record(v)
 	var done := 0
 	var late := 0
 	for t in rules.tasks:
@@ -4705,23 +4485,18 @@ func _build_end() -> void:
 		if t["late"]:
 			late += 1
 	# (the end of an endless run has these in its own table)
-	if not (rules.endless() and rules.phase == "end"):
+	if rules.phase != "end":
 		v.add_child(_label(Loc.t("summary.done", [done, late]), 15, COL_TEXT, true))
 	var k := rules.key_status()
-	if not rules.endless():
+	if not rules.chapter_keys().is_empty():
 		v.add_child(_label(Loc.render("summary.results", [], {"good": k["good"], "total": rules.chapter_keys().size(), "boss": "@weight." + rules.boss_word()}), 15, COL_TEXT, true))
 	var bank_names := PackedStringArray()
 	for b in rules.banks:
 		bank_names.append(Loc.t("bank." + b))
 	v.add_child(_label(Loc.t("summary.banks", [", ".join(bank_names) if not bank_names.is_empty() else Loc.t("summary.no_banks")]), 15, COL_TEXT, true))
-	if not rules.improved.is_empty():
-		v.add_child(_label(Loc.t("summary.improved", [rules.improved.size()]), 15, COL_TEXT, true))
 	if rules.ending in ["leader", "puppeteer"]:
 		v.add_child(_label(Loc.t("promoted.yes" if rules.promoted else "promoted.no"), 15, COL_GOOD if rules.promoted else COL_MUTED, true))
 	_adizes_block(v)
-	# Marina's survey is the story's probation verdict; an endless run has its record instead.
-	if not rules.survey.is_empty() and not rules.endless():
-		_survey_block(v)
 	v.add_child(_spacer(4))
 	v.add_child(_section(Loc.t("summary.team")))
 	for p in rules.team:
@@ -4751,7 +4526,7 @@ func _build_end() -> void:
 		if rules.can_defend():
 			pass
 		elif rules.next_chapter_ready():
-			buttons.add_child(_button(Loc.t("period.start" if rules.endless() else "chapter.start", [(rules.period if rules.endless() else rules.chapter) + 1]), _start_next_chapter, 260, "primary"))
+			buttons.add_child(_button(Loc.t("period.start" if rules.chapter == 0 else "chapter.start", [(rules.period if rules.chapter == 0 else rules.chapter) + 1]), _start_next_chapter, 260, "primary"))
 		else:
 			buttons.add_child(_button(Loc.t("to_menu"), _to_title.bind(false), 260, "primary"))
 	else:
@@ -4806,7 +4581,7 @@ func _next_chapter_block(v: VBoxContainer) -> void:
 	var box := _vbox(6)
 	card.add_child(box)
 	box.add_child(_section(Loc.t("chapter.next")))
-	if rules.endless():
+	if rules.chapter == 0:
 		box.add_child(_label(Loc.t("period.title", [rules.period + 1]), 20, COL_TEXT, true, true))
 		box.add_child(_label(Loc.t("period.next", [_rub(rules.last_race.get("budget", 0))]), 15, COL_TEXT, true))
 		v.add_child(card)

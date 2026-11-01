@@ -44,19 +44,18 @@ const COMP_STYLE := {
 	"hack": "E", "manual": "E", "negotiate": "E", "push_back": "E",
 	"deadline": "A", "escalate": "A", "fix": "A", "clean": "A", "dig": "A", "redo": "A", "wait": "A",
 	"as_is": "P", "corners": "P", "push": "P", "accept": "P", "ignore": "P", "together": "P", "you_call": "P",
-	"ask_gena": "I", "ask_taras": "I", "owner_handles": "I", "mediate": "I",
+	"ask_gena": "I", "owner_handles": "I", "mediate": "I",
 }
 
 # Checked in this order; the first MAX_PER_MORNING that fire are shown.
 const ORDER := [
 	"probation", "chapter_intro", "layoff_order", "weekend_fire", "chaos_meeting", "boss_dump", "boss_deadline", "boss_details", "complication", "marina_warns", "alex_offer", "vika_lie_found", "alex_vika_clash", "gena_forgot",
-	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "dima_question", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "taras_borrow", "boris_drunk", "friday_deploy",
+	"dima_mistake", "vika_raise", "vika_promise_check", "alex_tired", "dima_bored", "dima_question", "vika_takes_task", "gena_mentor", "taras_brag", "vika_rising", "boris_drunk", "friday_deploy",
 	"complaint", "stayed_late", "conflict", "offer",
 ]
 
 
-# When in the endless run's day each scene comes up; anything not listed is a morning one.
-# The story keeps them all in the morning.
+# When in the day each scene comes up; anything not listed is a morning one.
 const WHEN := {
 	"chaos_meeting": "midday", "boss_deadline": "midday", "boss_details": "midday", "complication": "midday", "boris_drunk": "midday", "offer": "midday",
 	"friday_deploy": "evening", "marina_warns": "evening", "stayed_late": "evening", "conflict": "evening", "complaint": "evening",
@@ -67,7 +66,7 @@ func queue(r, at: String = "morning") -> void:
 	for id in ORDER:
 		if r.events.size() >= MAX_PER_MORNING:
 			break
-		if (WHEN.get(id, "morning") if r.endless() else "morning") != at:
+		if WHEN.get(id, "morning") != at:
 			continue
 		# A scene about one of the four (alex_tired, vika_raise...) only while they're on the team.
 		var about: String = id.get_slice("_", 0)
@@ -137,7 +136,7 @@ func _check_layoff_order(r) -> Dictionary:
 
 # The first day of a later chapter: Irina sets the company's goal for the month and names the key projects.
 func _check_chapter_intro(r) -> Dictionary:
-	if r.chapter == 1 or r.chapter_day() != 1 or not once(r, "intro_%d" % r.stage()):
+	if r.chapter <= 1 or r.chapter_day() != 1 or not once(r, "intro_%d" % r.stage()):
 		return {}
 	var id: String = C.CHAPTERS[r.chapter - 1]["id"]
 	var names := {}
@@ -148,7 +147,7 @@ func _check_chapter_intro(r) -> Dictionary:
 
 # Day one: Irina explains the probation and names the key projects.
 func _check_probation(r) -> Dictionary:
-	if r.endless() or r.day != 1 or not once(r, "probation"):
+	if r.chapter_keys().is_empty() or r.day != 1 or not once(r, "probation"):
 		return {}
 	var names := {}
 	for i in r.chapter_keys().size():
@@ -169,7 +168,7 @@ func _check_boss_dump(r) -> Dictionary:
 		return {}
 	r.flags["dump_w%d" % r.week()] = true
 	var used: Array = r.flags.get("dumps_used", [])
-	var dumps: Array = C.DUMPS.filter(func(d): return not (r.endless() and C.TASKS[d]["tags"].has("story")))
+	var dumps: Array = C.DUMPS.filter(func(d): return r.story_mode() or not C.TASKS[d]["tags"].has("story"))
 	var id: String = dumps[0]
 	for d in dumps:
 		if not used.has(d):
@@ -233,11 +232,11 @@ func _check_taras_brag(r) -> Dictionary:
 	return {"who": "taras", "lines": [{"who": "taras", "key": "event.taras_brag.ask"}], "choices": ["noted", "who_did"]}
 
 
-# ---------- the endless evening ----------
+# ---------- the evening ----------
 
 # Someone swamped or worn out is still at their desk when everyone's gone.
 func _check_stayed_late(r) -> Dictionary:
-	if not r.endless() or r.rng.randf() > 0.35:
+	if r.rng.randf() > 0.35:
 		return {}
 	for p in r.team:
 		if not here(r, p):
@@ -252,7 +251,7 @@ func _check_stayed_late(r) -> Dictionary:
 
 # Two people fall out over how the work gets done. At most once a week.
 func _check_conflict(r) -> Dictionary:
-	if not r.endless() or r.flags.has("conflict_w%d" % r.week()) or r.rng.randf() > 0.3:
+	if r.flags.has("conflict_w%d" % r.week()) or r.rng.randf() > 0.3:
 		return {}
 	var here_now: Array = r.team.filter(func(p): return here(r, p))
 	if here_now.size() < 2:
@@ -269,8 +268,6 @@ func _check_conflict(r) -> Dictionary:
 
 # Whoever was waiting for something that slipped today comes to say so.
 func _check_complaint(r) -> Dictionary:
-	if not r.endless():
-		return {}
 	for t in r.tasks:
 		if not t["late"] or t.get("late_day", 0) != r.day or not t["from"] in C.LEAD_VOICE or not r.team.has(t["owner"]):
 			continue
@@ -306,7 +303,7 @@ func _check_boss_details(r) -> Dictionary:
 func _check_complication(r) -> Dictionary:
 	var candidates: Array = []
 	for t in r.tasks:
-		if t["status"] != "active" or t["complicated"] or t["id"].begins_with("init_") or not r.team.has(t["owner"]) or not here(r, t["owner"]):
+		if t["status"] != "active" or t["complicated"] or not r.team.has(t["owner"]) or not here(r, t["owner"]):
 			continue
 		if t["progress"] < 0.2 * t["size"] or t["size"] - t["progress"] < 0.6:
 			continue
@@ -330,27 +327,25 @@ func _check_complication(r) -> Dictionary:
 		var choices: Array = data["choices"].keys()
 		if cid == "old_system" and (t["owner"] == "gena" or not here(r, "gena")):
 			choices.erase("ask_gena")
-		if r.endless():
-			choices.erase("ask_taras")
 		return {"id": "comp_" + cid, "comp": cid, "who": who, "uid": t["uid"], "names": task_names(r, t),
 			"lines": [{"who": who, "key": "event.comp_%s.ask" % cid}], "choices": choices}
 	return {}
 
 
 # Someone sees a way to do their task better and asks if they may. Say yes and it's smaller or better;
-# say nothing and it just goes on as it was. Only in the endless run.
+# say nothing and it just goes on as it was.
 const OFFER_CHANCE := 0.3
 const OFFER_SHRINK := 0.7
 const OFFER_QUALITY := 0.6
 
 
 func _check_offer(r) -> Dictionary:
-	if not r.endless() or r.rng.randf() > OFFER_CHANCE:
+	if r.rng.randf() > OFFER_CHANCE:
 		return {}
 	var picks: Array = []
 	for p in r.team:
 		var q: Array = r.queue_of(p)
-		if here(r, p) and not q.is_empty() and not q[0].get("offered", false) and q[0]["progress"] < q[0]["size"] * 0.6 and not q[0]["id"].begins_with("init_"):
+		if here(r, p) and not q.is_empty() and not q[0].get("offered", false) and q[0]["progress"] < q[0]["size"] * 0.6:
 			picks.append(q[0])
 	if picks.is_empty():
 		return {}
@@ -582,23 +577,6 @@ func _check_gena_mentor(r) -> Dictionary:
 	return {}
 
 
-# Taras needs a pair of hands for a day.
-func _check_taras_borrow(r) -> Dictionary:
-	if r.endless() or r.day < 3 or r.day > r.last_day() - 3 or r.flags.has("scene_taras_borrow"):
-		return {}
-	if r.day < 12 and r.rng.randf() > 0.15:
-		return {}
-	var choices := []
-	for p in r.team:
-		if here(r, p):
-			choices.append("lend:" + p)
-	if choices.is_empty():
-		return {}
-	once(r, "taras_borrow")
-	choices.append("refuse")
-	return {"who": "taras", "lines": [{"who": "taras", "key": "event.taras_borrow.ask"}], "choices": choices}
-
-
 # ---------- choices ----------
 
 func _resolve_complication(r, ev: Dictionary, c: String, t: Dictionary, names: Dictionary) -> void:
@@ -616,15 +594,6 @@ func _resolve_complication(r, ev: Dictionary, c: String, t: Dictionary, names: D
 		reply = "event.comp_%s.%s.%s" % [cid, c, "pass" if passed else "fail"]
 	var who: String = ev["who"]
 	match fx.get("special", ""):
-		"taras":
-			who = "taras"
-			if r.flags.has("taras_grudge"):
-				fx = {"block": 1}
-				reply = "event.comp_needs_access.ask_taras.no"
-			else:
-				r.flags["taras_owes"] = false
-		"grudge":
-			r.flags["taras_grudge"] = true
 		"please_from":
 			if t["from"] == "boss":
 				r.boss += 0.5
@@ -710,7 +679,7 @@ func _last_good(r, p: String) -> int:
 	var best := -1
 	var best_day := -1
 	for t in r.tasks:
-		if t["owner"] == p and t["status"] == "done" and (t["quality"] == "good" or t["quality"] == "ok") and t["done_day"] > best_day and not t["id"].begins_with("init_"):
+		if t["owner"] == p and t["status"] == "done" and (t["quality"] == "good" or t["quality"] == "ok") and t["done_day"] > best_day:
 			best = t["uid"]
 			best_day = t["done_day"]
 	return best
@@ -718,29 +687,11 @@ func _last_good(r, p: String) -> int:
 
 # ---------- stepping into a task ----------
 
-# They tell you how it's going. Most say it straight; Alex won't admit he's behind until it's obvious.
 func intervene_event(r, t: Dictionary) -> Dictionary:
-	if r.endless():
-		return _ask_task_event(r, t)
-	var p: String = t["owner"]
-	var state := "on_track"
-	if t.get("stuck", 0) > 0:
-		state = "stuck"
-	elif t["blocked"] > 0:
-		state = "blocked"
-	elif t["progress"] >= 0.75 * t["size"]:
-		state = "almost"
-	elif r.days_needed(t) > t["due"] - r.day + 1.3:
-		state = "behind"
-	var said := state
-	if state == "behind" and r.info(p).get("workaholic", false) and r.days_needed(t) < t["due"] - r.day + 3.0:
-		said = "on_track"
-	return {"id": "intervene", "who": p, "target": p, "uid": t["uid"], "state": state, "names": task_names(r, t),
-		"lines": [{"who": p, "key": "event.intervene.ask." + said}],
-		"choices": ["trust", "faster", "careful", "cut", "my_way", "take_over"]}
+	return _ask_task_event(r, t)
 
 
-# Endless: they say what's actually wrong with it, and you leave it, help with that very thing, or hand it to
+# They say what's actually wrong with it, and you leave it, help with that very thing, or hand it to
 # someone else. Most say it straight; a workaholic won't admit being a little behind.
 func _ask_task_event(r, t: Dictionary) -> Dictionary:
 	var p: String = t["owner"]
@@ -813,82 +764,8 @@ func _resolve_ask_task(r, ev: Dictionary, c: String) -> String:
 
 
 func _resolve_intervene(r, ev: Dictionary, c: String) -> String:
-	if r.endless():
-		var said := _resolve_ask_task(r, ev, c)
-		return r._first_key(["%s.%s" % [said, ev["target"]], said])
-	var t: Dictionary = r.task(ev["uid"])
-	var p: String = ev["target"]
-	var st: Dictionary = r.people[p]
-	var info: Dictionary = r.info(p)
-	var reply := "event.intervene.%s.reply" % c
-	# Any real question gets them out of the wrong place; a pat on the back doesn't.
-	var unstuck: bool = t.get("stuck", 0) > 0 and c != "trust"
-	if unstuck:
-		t["stuck"] = 0
-		r.say(p, "event.intervene.unstuck", [], task_names(r, t))
-	match c:
-		"trust":
-			# Fine when it is going well; when they're behind, nothing changes and you'll find out later.
-			if ev["state"] != "behind":
-				st["mood"] += 0.3
-				st["trust"] += 1 if info["drive"] == "craft" else 0
-		"faster":
-			t["pace"] = 1.3
-			t["q_bonus"] -= 0.6
-			if info["drive"] == "craft" or info["drive"] == "peace":
-				st["mood"] -= 1.0
-				reply = "event.intervene.faster.reply.unhappy"
-			else:
-				st["mood"] -= 0.3
-		"careful":
-			t["pace"] = 0.85
-			t["q_bonus"] += 0.6
-			if info["drive"] == "craft" or info["drive"] == "peace":
-				st["mood"] += 0.5
-		"cut":
-			t["size"] = maxf(t["progress"] + 0.3, t["size"] * 0.6)
-			t["cut"] = true
-			if t["from"] == "boss":
-				r.boss -= 0.3
-		"my_way":
-			# Your way only helps if you actually know this better than they do.
-			t["involved"] = true
-			var mine: int = r.my_skill(t["cat"])
-			var theirs: int = st["skills"][t["cat"]]
-			if mine > theirs:
-				t["q_bonus"] += 0.8
-				r.learn(p, t["cat"], 1.0)
-				if info["drive"] == "craft" and theirs >= 3:
-					st["mood"] -= 0.7
-					reply = "event.intervene.my_way.right_proud"
-				else:
-					st["mood"] += 0.5 if info["drive"] == "growth" else 0.0
-					reply = "event.intervene.my_way.right"
-			elif unstuck:
-				# Your way was no better, but the question itself got them going: nothing more to say.
-				reply = ""
-			else:
-				t["q_bonus"] -= 0.5
-				st["mood"] -= 1.0
-				st["trust"] -= 1
-				reply = "event.intervene.my_way.wrong"
-		"take_over":
-			# Some are glad to be rid of it, some feel you didn't trust them.
-			var swamped: bool = r._feels_tired(p) or r.queue_of(p).size() >= r.OVERLOAD_AT or ev["state"] == "behind"
-			r.take_over(t)
-			if swamped:
-				st["mood"] += 0.5
-				reply = "event.intervene.take_over.relief"
-			elif info["drive"] == "peace":
-				st["mood"] -= 0.3
-				reply = "event.intervene.take_over.calm"
-			else:
-				st["mood"] -= 1.5 if info.get("touchy", false) else 1.0
-				st["trust"] -= 1
-				reply = "event.intervene.take_over.hurt"
-	if reply == "":
-		return ""
-	return r._first_key(["%s.%s" % [reply, p], reply])
+	var said := _resolve_ask_task(r, ev, c)
+	return r._first_key(["%s.%s" % [said, ev["target"]], said])
 
 
 # ---------- saying no ----------
@@ -919,8 +796,6 @@ func _resolve_decline(r, ev: Dictionary, c: String) -> String:
 			if (who == "taras" and c == "not_ours") or after / DECLINES_TO_COMPLAIN > before / DECLINES_TO_COMPLAIN:
 				r.boss -= 0.5
 				r.say("", "decline.escalated", [], {"who_gen": "@name.%s.gen" % who})
-				if who == "taras":
-					r.flags["taras_grudge"] = true
 		"irina":
 			r.spend_attention()
 			if r.has_weight():
@@ -1290,17 +1165,6 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 			r.say("dima", reply)
 			reply = "event.dima_bored.study.reply_gena"
 			who = "gena" if r.available("gena") else ""
-
-		"taras_borrow/lend":
-			var st: Dictionary = r.people[arg]
-			st["absent"] = true
-			st["absent_reason"] = "taras"
-			st["mood"] += {"alex": 0.5, "vika": -0.5, "dima": 1.0, "gena": -1.5}.get(arg, 0.0)
-			r.learn(arg, "pipelines", 2.0)
-			r.flags["taras_owes"] = true
-			r.say(arg, "event.taras_borrow.lent." + arg)
-		"taras_borrow/refuse":
-			r.flags["taras_grudge"] = true
 
 		"stayed_late/send_home":
 			r.spend_attention(r.choice_cost(ev, c))

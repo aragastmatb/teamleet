@@ -33,16 +33,6 @@ const SURVEY_AT := [10, 20] # days into the chapter
 const WEEKS := 16 # in the whole run
 
 
-static func chapter_first_day(ch: int) -> int:
-	var d := 1
-	for i in ch - 1:
-		d += CHAPTERS[i]["days"]
-	return d
-
-
-static func chapter_last_day(ch: int) -> int:
-	return chapter_first_day(ch) + CHAPTERS[ch - 1]["days"] - 1
-
 const TEAM := ["alex", "vika", "dima", "gena"]
 const CATEGORIES := ["pipelines", "infra", "portal", "support"]
 
@@ -112,23 +102,20 @@ const DEFAULT_BOSS := "A"
 
 # Who you were before this job, picked at the start. skills: yours when you do the work yourself or step
 # into someone's (same 0..4 scale as the team). attention: tokens a day. talk: added to how people take
-# it when you talk them into a task. knows_team: you start out knowing everyone's skills.
+# it when you talk them into a task.
 # upgrade_discount: off the price of every upgrade; rollout: how much faster upgrade rollout cards go.
 const PROFILES := {
 	# Strong hands; talking people round is the hard part.
 	"techie": {"skills": {"pipelines": 3, "infra": 3, "portal": 2, "support": 1}, "attention": 3, "talk": 0.0},
 	# Weak hands, but more time for people and better at it.
 	"manager": {"skills": {"pipelines": 1, "infra": 1, "portal": 2, "support": 2}, "attention": 4, "talk": 0.5},
-	# Grew up in this very team: knows who's good at what, but the old colleagues don't take orders well.
-	"insider": {"skills": {"pipelines": 2, "infra": 2, "portal": 2, "support": 2}, "attention": 3, "talk": -0.4, "knows_team": true},
 	# The endless run's third: designed platforms before, so upgrades come cheaper and roll out faster;
 	# the price is weaker hands than an engineer's.
 	"architect": {"skills": {"pipelines": 2, "infra": 3, "portal": 2, "support": 1}, "attention": 3, "talk": 0.0,
 		"upgrade_discount": 0.3, "rollout": 1.5},
 }
 # The story's choice; the endless run hires its own team, so knowing it from before makes no sense there.
-const PROFILE_KINDS := ["techie", "manager", "insider"]
-const RUN_PROFILE_KINDS := ["techie", "manager", "architect"]
+const PROFILE_KINDS := ["techie", "manager", "architect"]
 const DEFAULT_PROFILE := "techie"
 
 # When someone pushes back on a task, you answer with an intent. Each motive takes each intent
@@ -218,16 +205,6 @@ static var DUMPS: Array = []
 # By chapter: START_DAYS[ch][day of the chapter] the chains that begin that day.
 static var START_DAYS := {}
 
-# Improvements to Chainer live in data/improvements.tsv: the team's own backlog, no deadline. Three are on
-# offer at a time, in `order`; finishing one brings up the next. Columns: id, chapter, order, category, size,
-# effect, name/about/effect in both languages. effect, ";"-separated:
-#   remove:a,b      those cards stop coming
-#   shrink:a,b*0.5  those cards get smaller
-#   self:a,b        those requests get done by the teams themselves through the portal
-#   init            a special one the code knows (tech debt, the weekly report, the old docs)
-# a, b are card ids, template ids (red_build covers red_build@kyc and the rest) or #tags.
-const IMPROVEMENTS_PATH := "res://data/improvements.tsv"
-static var IMPROVEMENTS := {}
 static var TASK_TEXT := {"ru": {}, "en": {}}
 
 
@@ -254,7 +231,6 @@ static func _static_init() -> void:
 				START_DAYS[ch] = {}
 			for v in _variants(row, ch):
 				_add_card(row, ch, v)
-	_load_improvements()
 	_build_endless_deck()
 	_load_upgrades()
 	for b in BANKS:
@@ -394,44 +370,7 @@ static func _build_endless_deck() -> void:
 			ENDLESS_DECK.append(id)
 
 
-static func _load_improvements() -> void:
-	var f := FileAccess.open(IMPROVEMENTS_PATH, FileAccess.READ)
-	if f == null:
-		push_error("Can't read " + IMPROVEMENTS_PATH)
-		return
-	var header := f.get_csv_line("\t")
-	while not f.eof_reached():
-		var cells := f.get_csv_line("\t")
-		if cells.size() < header.size() or cells[0].strip_edges() == "":
-			continue
-		var row := {}
-		for i in header.size():
-			row[header[i]] = cells[i].strip_edges()
-		var id: String = row["id"]
-		var effects: Array = []
-		for part in row["effect"].split(";", false):
-			var kind_targets: PackedStringArray = part.strip_edges().split(":", false)
-			var targets: String = kind_targets[1] if kind_targets.size() > 1 else ""
-			var factor := 1.0
-			if targets.contains("*"):
-				factor = float(targets.get_slice("*", 1))
-				targets = targets.get_slice("*", 0)
-			effects.append({"kind": kind_targets[0].strip_edges(), "targets": Array(targets.split(",", false)).map(func(x): return x.strip_edges()), "factor": factor})
-		IMPROVEMENTS[id] = {"chapter": int(row["chapter"]), "order": int(row["order"]), "cat": row["category"], "size": float(row["size"]), "effects": effects}
-		for lang in ["ru", "en"]:
-			TASK_TEXT[lang]["taskname.init_" + id] = row["name_" + lang]
-			TASK_TEXT[lang]["imp.%s.about" % id] = row["about_" + lang]
-			TASK_TEXT[lang]["imp.%s.effect" % id] = row["effect_" + lang]
-
-
-# The improvements of a chapter in the order they come up.
-static func improvements_of(ch: int) -> Array:
-	var ids := IMPROVEMENTS.keys().filter(func(id): return IMPROVEMENTS[id]["chapter"] == ch)
-	ids.sort_custom(func(a, b): return IMPROVEMENTS[a]["order"] < IMPROVEMENTS[b]["order"])
-	return ids
-
-
-# Does an improvement's target (an id, a template id or a #tag) cover this card?
+# Does an upgrade's target (an id, a template id or a #tag) cover this card?
 static func covers(target: String, id: String) -> bool:
 	if target.begins_with("#"):
 		return TASKS.has(id) and TASKS[id]["tags"].has(target.substr(1))
@@ -538,26 +477,11 @@ const RAMP := {
 	1: [{"load": 0.55, "cards": 3, "slack": 2}, {"load": 0.7, "cards": 4, "slack": 1}, {"load": 0.85, "cards": 4, "slack": 0}, {"load": 0.95, "cards": 5, "slack": 0}],
 	# Automation month: less work comes in as the month goes on, so the team starts to have time on its hands.
 	2: [{"load": 0.85, "cards": 4, "slack": 1}, {"load": 0.8, "cards": 4, "slack": 0}, {"load": 0.7, "cards": 4, "slack": 0}, {"load": 0.6, "cards": 3, "slack": 0}],
-	0: [{"load": 0.8, "cards": 4, "slack": 1}],
 }
+const RAMP_LATER := [{"load": 0.8, "cards": 4, "slack": 1}] # story chapters with no ramp of their own
 const MAX_SAME_KIND := 2
-const BANK_LOAD := 0.7 # more work a day for each bank past the third
 const REPEAT_GAP := 5 # working days before the same card can come again
 const TEMPLATE_GAP := 2 # and before the same trouble comes from another team
-
-# What free people propose to do on their own, in order. Each is a small internal task; when it's
-# done, it changes the decks or the people.
-const INITIATIVES := {
-	"alex": ["tech_debt", "automate_report"],
-	"vika": ["showcase", "showcase"],
-	"dima": ["self_study", "self_study"],
-	"gena": ["write_docs", "automate_report"],
-}
-# The rest of what people offer (tech debt, the weekly report and the old docs are improvements: see below).
-const INIT_TASKS := {
-	"showcase": {"cat": "portal", "size": 1},
-	"self_study": {"cat": "infra", "size": 2},
-}
 
 # Things that happen inside a task while it's being worked on. Each comes up at most once per task.
 # who: "owner" (the person doing it) or "from" (whoever asked for it).
@@ -565,15 +489,13 @@ const INIT_TASKS := {
 # block (days it stands still) / hours (your own time; you were involved) / learn (owner xp) /
 # mood / energy (owner) / boss / special (handled in scenes.gd).
 # check: owner skill needed; "pass" and "fail" hold the effects for each outcome.
-# Complications are drawn by weight; improvements set weights to zero.
 const COMPLICATIONS := {
 	"legacy_bug": {"cats": ["pipelines"], "who": "owner", "choices": {
 		"fix": {"check": 3, "pass": {"size": 0.5, "quality": 0.8}, "fail": {"size": 1.5, "quality": 0.3}},
 		"hack": {"quality": -1.0},
 		"together": {"hours": 3, "size": 0.5, "quality": 0.5, "learn": 1.0}}},
 	"needs_access": {"cats": ["infra", "pipelines"], "who": "owner", "choices": {
-		"ask_taras": {"special": "taras"},
-		"escalate": {"boss": -0.5, "special": "grudge"},
+		"escalate": {"boss": -0.5},
 		"wait": {"block": 1}}},
 	"scope_creep": {"cats": ["pipelines", "infra", "portal", "support"], "who": "from", "choices": {
 		"accept": {"size": 1.0, "special": "please_from"},
