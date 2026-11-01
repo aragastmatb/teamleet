@@ -57,6 +57,8 @@ var period_start := 1
 # Endless run: the money you have, in thousands of roubles. Irina's budget comes in at the start of each
 # period, salaries go out every Friday; not enough for them, and the run is over.
 var money := 0
+# Every change to the money, in order: {"day", "period", "kind", "amount"}. The money window reads it.
+var ledger: Array = []
 # Before the first day: the CVs you're choosing the team from, and who you've picked.
 var draft_picked: Array = []
 var draft_rerolls := 0
@@ -179,7 +181,9 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	L.EXTRA = {"ru": {}, "en": {}}
 	L.STAND_IN = {}
 	# You start with what Irina gives for the first month, nothing else.
-	money = PERIOD_BUDGET
+	money = 0
+	ledger.clear()
+	_cash(PERIOD_BUDGET, "budget")
 	last_race = {}
 	draft_picked.clear()
 	# The story comes with its team; otherwise you pick one from Marina's CVs.
@@ -1284,7 +1288,7 @@ func hire(id: String) -> void:
 		return
 	var c := candidate(id)
 	candidates.erase(c)
-	money -= HIRE_FEE
+	_cash(-HIRE_FEE, "hire")
 	team.append(id)
 	_new_person(id, false)
 	# What the interview showed, you know about them from day one.
@@ -1351,7 +1355,7 @@ func let_go(p: String, with_warning: bool) -> void:
 	st["gone"] = true
 	st["fired"] = true
 	var severance := weekly_pay(p) * SEVERANCE_WEEKS
-	money -= severance
+	_cash(-severance, "severance")
 	_narrate("money.severance", [cash_arg(severance)], {"who": "@name.%s.nom" % p})
 	taras_like(2.0)
 	_drop_tasks(p)
@@ -2923,7 +2927,7 @@ func buy_upgrade(id: String) -> void:
 		return
 	var up: Dictionary = C.UPGRADES[id]
 	spend_attention(cost("buy"))
-	money -= upgrade_price(id)
+	_cash(-upgrade_price(id), "upgrade")
 	upgrades[id] = {"state": "building", "done": []}
 	_apply_effects(up["start"])
 	for card in up["cards"]:
@@ -2977,7 +2981,7 @@ func _apply_effects(effects: Array) -> void:
 	for e in effects:
 		match e["kind"]:
 			"money":
-				money += int(e["value"])
+				_cash(int(e["value"]), "other")
 			"clean":
 				# Only what missed deadlines added goes; the deck's own copies stay.
 				for target in e["targets"]:
@@ -3123,7 +3127,7 @@ func _penalty(t: Dictionary) -> void:
 				names["fire"] = "@taskname." + id
 			_narrate("penalty.debt.hit", [], names)
 		"money":
-			money -= pen["amount"]
+			_cash(-pen["amount"], "penalty")
 			_narrate("penalty.money.hit", [cash_arg(pen["amount"])], names)
 
 
@@ -3980,7 +3984,7 @@ func answer_review(choice: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 12
+const SAVE_VERSION := 13
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.
@@ -4240,8 +4244,7 @@ func _client_card_done(t: Dictionary) -> void:
 		_sla_fine(t)
 		return
 	var pay := card_bonus(t) if t["quality"] == "good" else card_bonus_ok(t)
-	money += pay
-	flags["bonus_p%d" % period] = flags.get("bonus_p%d" % period, 0) + pay
+	_cash(pay, "bonus")
 
 
 func _sla_fine(t: Dictionary) -> void:
@@ -4319,11 +4322,60 @@ func weekly_pay(p: String) -> int:
 	return int(round(salary(p) / 4.0))
 
 
+func _cash(amount: int, kind: String) -> void:
+	money += amount
+	ledger.append({"day": day, "period": period, "kind": kind, "amount": amount})
+
+
+# Today's salary is still ahead while the day hasn't been played yet.
+func _payday_ahead() -> bool:
+	return phase in ["plan", "event", "story", "standup", "draft"]
+
+
+# This month in money, kind by kind: what's come in and gone out so far, what's left over from last month.
+func money_month() -> Dictionary:
+	var by_kind := {}
+	var moved := 0
+	for e in ledger:
+		if e["period"] == period:
+			by_kind[e["kind"]] = by_kind.get(e["kind"], 0) + e["amount"]
+			moved += e["amount"]
+	return {"carried": money - moved, "kinds": by_kind, "salaries_ahead": money - money_at_budget(), "fines": flags.get("sla_p%d" % period, 0)}
+
+
+# The balance through the month for the money chart: x is days into the month (0 = the budget just came),
+# "fact" runs to now, "plan" from now to the next budget with only the salaries still to pay.
+func money_curve() -> Dictionary:
+	var first := first_day()
+	var start := money
+	for e in ledger:
+		if e["period"] == period:
+			if e["kind"] != "budget":
+				start -= e["amount"]
+	var fact := [Vector2(0, start)]
+	var now_x := day - first + (0 if _payday_ahead() else 1)
+	for x in range(1, now_x):
+		var bal := money
+		for e in ledger:
+			if e["period"] == period and e["day"] > first + x - 1:
+				bal -= e["amount"]
+		fact.append(Vector2(x, bal))
+	if now_x > 0:
+		fact.append(Vector2(now_x, money))
+	var plan := [Vector2(now_x, money)]
+	var bal := money
+	for d in range(first + now_x, last_day() + 1):
+		if d % 5 == 0:
+			bal -= payroll()
+		plan.append(Vector2(d - first + 1, bal))
+	return {"fact": fact, "plan": plan, "days": last_day() - first + 1}
+
+
 # What's left on the day Irina's next budget comes, after the salaries still to pay this month; with an
 # extra spend now (a hire, an upgrade) and an extra weekly salary from now on. Below zero, a Friday kills you.
 func money_at_budget(spend: int = 0, extra_weekly: int = 0) -> int:
 	var paydays := 0
-	var from := day if phase in ["plan", "event", "story", "standup", "draft"] else day + 1
+	var from := day if _payday_ahead() else day + 1
 	for d in range(from, last_day() + 1):
 		if d % 5 == 0:
 			paydays += 1
@@ -4399,7 +4451,7 @@ func _period_budget() -> void:
 		# The first month's money is already in the account since the draft.
 		_say("boss", "money.budget", [cash_arg(PERIOD_BUDGET)])
 		return
-	money += last_race["budget"]
+	_cash(last_race["budget"], "budget")
 	_say("boss", "money.split", [last_race["mine"], last_race["taras"], cash_arg(last_race["budget"])])
 
 
@@ -4415,7 +4467,7 @@ func _payday() -> void:
 		_say("boss", "boss.clean_week", [done])
 	var pay := payroll()
 	flags["revenue_p%d" % period] = flags.get("revenue_p%d" % period, 0) + revenue()
-	money -= pay
+	_cash(-pay, "salary")
 	_narrate("money.payday", [cash_arg(pay), cash_arg(money)])
 	if money < 0:
 		flags["bankrupt"] = true
