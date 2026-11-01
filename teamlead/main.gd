@@ -3323,6 +3323,23 @@ func _contact_of(p: String) -> String:
 	return GENERAL
 
 
+# Kept in the history (the task window's haggle reads it) but not worth a message: what the board
+# already shows. The chat is for what asks something of you or what you can't see on the board.
+const QUIET_PREFIXES := ["assign.say", "object.", "react.", "pace.", "stuck.found_", "standup.log", "result.any.good",
+	"result.any.ok", "result.mine", "init.yes"]
+const QUIET_KEYS := ["stayed_late"]
+
+
+func _quiet(key: String) -> bool:
+	if QUIET_KEYS.has(key):
+		return true
+	for prefix in QUIET_PREFIXES:
+		if key.begins_with(prefix):
+			return true
+	# A person's own finish line, unless it went badly.
+	return key.begins_with("result.") and not key.ends_with(".bad")
+
+
 func _sort_threads() -> void:
 	threads = {}
 	day_names = {}
@@ -3332,6 +3349,8 @@ func _sort_threads() -> void:
 		var key: String = e["key"]
 		if key == "log.morning":
 			day_names[e["day"]] = Loc.render(key, e.get("args", []), e.get("names", {})).replace("—", "").strip_edges()
+		if _quiet(key):
+			continue
 		var th := GENERAL
 		if e.has("thread"):
 			th = _contact_of(e["thread"])
@@ -3355,7 +3374,11 @@ func _sort_threads() -> void:
 		last = th
 		if not threads.has(th):
 			threads[th] = []
-		threads[th].append(i)
+		# A part of the day with nothing in it isn't worth its separator.
+		var list: Array = threads[th]
+		if key.begins_with("log.") and not list.is_empty() and rules.history[list[-1]]["key"].begins_with("log."):
+			list.pop_back()
+		list.append(i)
 
 
 # A loaded game or a test point starts with everything read.

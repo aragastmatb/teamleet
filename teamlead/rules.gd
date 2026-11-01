@@ -3059,15 +3059,19 @@ func _check_lies() -> void:
 # when the same person has complained twice.
 func _late(t: Dictionary) -> void:
 	var names := {"task": "@taskname." + t["id"]}
+	# In the endless run the penalty's own line says what slipped and what it cost: one message, not two.
+	var told := endless() and not penalty_of(t).is_empty()
 	if t["public"] or t["from"] == "boss":
 		boss -= 2.0 if t["key"] else 1.0
 		merit -= 1.0
 		weight_cause = t["id"]
-		_narrate("late.key" if t["key"] else "late", [], names)
+		if not told:
+			_narrate("late.key" if t["key"] else "late", [], names)
 		return
 	var who: String = t["from"]
 	flags["complaints_" + who] = flags.get("complaints_" + who, 0) + 1
-	_say(who, "late.complain.%s" % who, [], names)
+	if not told:
+		_say(who, "late.complain.%s" % who, [], names)
 	if flags["complaints_" + who] == 2:
 		boss -= 1
 		_narrate("late.escalated", [], {"who": "@name.%s.nom" % who, "who_gen": "@name.%s.gen" % who})
