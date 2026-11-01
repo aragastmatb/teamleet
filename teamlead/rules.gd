@@ -249,6 +249,8 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 
 func _start_day() -> void:
 	_narrate("log.morning", [day_key()])
+	for t in tasks:
+		t["gain_today"] = 0.0
 	var monday := day % 5 == 1 and day > 1
 	if monday:
 		debt = 0
@@ -476,6 +478,7 @@ func start_work() -> void:
 		return
 	step = "work"
 	flags.erase("tip_hl")
+	_half_day()
 	_narrate("log.midday")
 	scenes.queue(self, "midday")
 	if endless():
@@ -2907,6 +2910,24 @@ func _reveal(p: String, key: String) -> void:
 
 # ---------- the day's work ----------
 
+func _share_help() -> void:
+	shares.clear()
+	for t in tasks:
+		var share := help_share(t)
+		if share > 0.0:
+			shares[t["uid"]] = share
+
+
+# The morning half of the day's work, so midday shows who's moving and who isn't.
+func _half_day() -> void:
+	flags["half_day"] = day
+	_share_help()
+	for p in team:
+		_work(p, 0.5, false)
+	_work_myself(0.5, false)
+	shares.clear()
+
+
 func end_day() -> void:
 	if phase != "plan" or not pending.is_empty():
 		return
@@ -2922,14 +2943,11 @@ func end_day() -> void:
 	if endless():
 		_expire_letters(["triage", "work"])
 	_alex_nights()
-	shares.clear()
-	for t in tasks:
-		var share := help_share(t)
-		if share > 0.0:
-			shares[t["uid"]] = share
+	_share_help()
+	var part: float = 0.5 if flags.get("half_day", -1) == day else 1.0
 	for p in team:
-		_work(p)
-	_work_myself()
+		_work(p, part)
+	_work_myself(part)
 	for t in tasks:
 		t["sit_today"] = false
 		if t["blocked"] > 0:
@@ -3491,9 +3509,13 @@ func estimate(t: Dictionary, p: String = "") -> Dictionary:
 	return {"days": left / speed + t["blocked"], "sure": sure}
 
 
-func _work(p: String) -> void:
+# The day's work comes in two halves in endless: the morning's progress shows at midday, and the
+# evening adds the rest and everything that belongs to the whole day (tiredness, hours, idling).
+func _work(p: String, part: float = 1.0, upkeep: bool = true) -> void:
 	var st: Dictionary = people[p]
 	if st["gone"]:
+		return
+	if st["absent"] and not upkeep:
 		return
 	if st["absent"]:
 		if st["absent_reason"] == "taras":
@@ -3508,12 +3530,17 @@ func _work(p: String) -> void:
 	var help_part: float = shares.get(helping["uid"], 0.0) if not helping.is_empty() else 0.0
 	# Half the day went on the boss's urgent meeting.
 	var meeting: float = 0.5 if flags.get("meeting_day", -1) == day else 1.0
+	# Whatever of the morning went unused (nothing to do yet) carries over to the afternoon, so a card
+	# handed out at midday still gets the day's work.
+	var base: float = (1.0 - help_part) * meeting * part
+	if upkeep and part < 1.0:
+		base += st.get("morning_left", 0.0)
 	if not q.is_empty():
 		# The day is spent down the queue: whatever's left after finishing one task goes to the next.
 		# Half of it goes to the pair if they're helping someone.
 		var first: Dictionary = q[0]
 		var late := late_hours(p)
-		var time := (1.0 - help_part) * meeting + late / 8.0
+		var time := base + (late / 8.0 if upkeep else 0.0)
 		var stuck: Array = []
 		for t in q:
 			if time < 0.05:
@@ -3522,7 +3549,7 @@ func _work(p: String) -> void:
 				stuck.append(t)
 				continue
 			var skill: int = st["skills"][t["cat"]]
-			if _stuck_today(p, t, skill):
+			if _stuck_today(p, t, skill, upkeep):
 				time = 0.0
 				continue
 			var step := _speed(p, t) * (1.2 if t["sit_today"] else 1.0)
@@ -3535,6 +3562,7 @@ func _work(p: String) -> void:
 			var spend := minf(time, (t["size"] - t["progress"]) / step)
 			time -= spend
 			t["progress"] += step * spend
+			t["gain_today"] = t.get("gain_today", 0.0) + (told if archetype(p) == "faker" and not t.get("exposed", false) else step) * spend
 			var quality: float = skill + st["mood"] * 0.1 + rng.randf_range(-0.7, 0.7) + perk_add("quality", t["cat"])
 			var h: String = t["helper"]
 			var share: float = shares.get(t["uid"], 0.0)
@@ -3554,11 +3582,14 @@ func _work(p: String) -> void:
 				st["mood"] -= 0.25 * spend
 			if t["progress"] >= t["size"] - 0.001:
 				_finish(p, t)
-			else:
+			elif upkeep:
 				# How far they got today, relative to the task: the main way to read someone's skill.
-				var part: float = (told if archetype(p) == "faker" and not t.get("exposed", false) else step) * spend / t["size"]
-				var pace := "big" if part >= 0.45 else ("mid" if part >= 0.25 else "small")
+				var got: float = t["gain_today"] / t["size"]
+				var pace := "big" if got >= 0.45 else ("mid" if got >= 0.25 else "small")
 				_narrate("pace." + pace, [], {"who": "@name.%s.nom" % p, "task": "@taskname." + t["id"]})
+		if not upkeep:
+			st["morning_left"] = time
+			return
 		for t in stuck:
 			_narrate("blocked", [], {"task": "@taskname." + t["id"], "who": "@name.%s.nom" % p})
 		var drain: float = DRAIN
@@ -3576,6 +3607,9 @@ func _work(p: String) -> void:
 		st["energy"] -= drain
 		st["idle_said"] = false
 		st["idle_days"] = 0
+	if not upkeep:
+		st["morning_left"] = base
+		return
 	if help_part > 0.0:
 		_help(p, helping, help_part)
 	if q.is_empty():
@@ -3763,7 +3797,7 @@ func ask_stay(uid: int) -> void:
 # Looking in the wrong place: on the first day of a task someone unsure of it may get stuck. The day goes
 # by with nothing to show, and they say they're working on it. Someone stronger sitting with them, or
 # stepping in and asking, gets them out; on their own they find it after a few days.
-func _stuck_today(p: String, t: Dictionary, skill: int) -> bool:
+func _stuck_today(p: String, t: Dictionary, skill: int, upkeep: bool = true) -> bool:
 	var names := {"who": "@name.%s.nom" % p, "task": "@taskname." + t["id"]}
 	if t["q_days"] == 0.0 and not t.has("stuck"):
 		t["stuck"] = 0
@@ -3776,6 +3810,9 @@ func _stuck_today(p: String, t: Dictionary, skill: int) -> bool:
 		t["stuck"] = 0
 		_narrate("stuck.found_help", [], names)
 		return false
+	# At midday they're simply still stuck; the day counts in the evening.
+	if not upkeep:
+		return true
 	t["stuck"] += 1
 	if t["stuck"] > STUCK_DAYS:
 		t["stuck"] = 0
@@ -3887,16 +3924,18 @@ func _result_line(p: String, id: String, quality: String) -> String:
 	return "result.any.%s" % quality
 
 
-func _work_myself() -> void:
+func _work_myself(part: float = 1.0, upkeep: bool = true) -> void:
 	var q := queue_of("me")
 	if q.is_empty():
 		return
 	var t: Dictionary = q[0]
 	var skill: int = my_skill(t["cat"])
-	t["progress"] += my_speed(t["cat"])
-	t["q_sum"] += skill + rng.randf_range(-0.7, 0.7)
-	t["q_days"] += 1.0
-	add_my_hours(MY_HOURS)
+	t["progress"] += my_speed(t["cat"]) * part
+	t["gain_today"] = t.get("gain_today", 0.0) + my_speed(t["cat"]) * part
+	t["q_sum"] += (skill + rng.randf_range(-0.7, 0.7)) * part
+	t["q_days"] += part
+	if upkeep:
+		add_my_hours(MY_HOURS)
 	if t["progress"] >= t["size"]:
 		t["status"] = "done"
 		t["done_day"] = day

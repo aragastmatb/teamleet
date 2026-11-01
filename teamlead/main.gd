@@ -36,6 +36,8 @@ const COL_TOPBAR := Color("0747a6")
 const COL_DANGER := Color("de350b")
 const COL_WARN := Color("b65c02")
 const COL_GOOD := Color("00875a")
+const COL_GAIN := Color("36b37e") # today's part of a progress bar
+const COL_EARLIER := Color("abf5d1") # the part done before today
 const COL_STAR := Color("ff991f")
 # On the dark top bar.
 const COL_ON_TOP := Color("ffffff")
@@ -831,20 +833,26 @@ func _juice_state() -> Dictionary:
 		return {}
 	var owners := {}
 	var done := {}
+	var moved := {}
 	for t in rules.tasks:
 		if t["status"] == "active":
 			owners[t["uid"]] = t["owner"]
+			moved[t["uid"]] = rules.shown_progress(t)
 		elif t["status"] == "done":
 			done[t["uid"]] = true
 	return {"day": rules.day, "moment": _moment(), "phase": rules.phase, "points": rules.attention - rules.overtime_today, "money": rules.money,
-		"race": int(round(rules.my_points())), "owners": owners, "done": done}
+		"race": int(round(rules.my_points())), "owners": owners, "done": done, "moved": moved}
 
 
-# A card just handed to someone flashes blue; one finished since the last look flashes green.
+# A card just handed to someone flashes blue; one that moved forward flashes light green, one finished
+# since the last look flashes green.
 func _cards_to_flash(was: Dictionary, now: Dictionary) -> Dictionary:
 	var out := {}
 	if was.is_empty() or now.is_empty():
 		return out
+	for uid in now["moved"]:
+		if now["moved"][uid] > was.get("moved", {}).get(uid, INF) + 0.01:
+			out[uid] = COL_GAIN
 	for uid in now["owners"]:
 		if was["owners"].get(uid, "") != now["owners"][uid]:
 			out[uid] = COL_FOCUS
@@ -2605,15 +2613,9 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 		tags.add_child(_pill(Loc.t("chip_involved").trim_prefix("· "), COL_PRIMARY, COL_SELECTED))
 	v.add_child(_label(Loc.t("taskname." + t["id"]), 14, COL_TEXT, true))
 	if t["status"] == "active":
-		var bar := ProgressBar.new()
-		bar.max_value = t["size"]
-		bar.value = minf(rules.shown_progress(t), t["size"])
-		bar.show_percentage = false
-		bar.custom_minimum_size = Vector2(0, 4)
-		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bar.add_theme_stylebox_override("background", _box(COL_COLUMN, COL_COLUMN, 0, 0))
-		bar.add_theme_stylebox_override("fill", _box(COL_GOOD, COL_GOOD, 0, 0))
-		v.add_child(bar)
+		v.add_child(_progress_bar(t))
+		if _stalled(t):
+			v.add_child(_label(Loc.t("card.stalled"), 12, COL_WARN, true))
 	var foot := HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 4)
 	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2635,6 +2637,34 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 	if t["helper"] != "" and t["status"] == "active":
 		foot.add_child(_avatar(t["helper"], 22))
 	return card
+
+
+# What was done before today in pale green, today's gain in bright green. At midday a started task that
+# hasn't moved since the morning goes grey: that's the one to look into.
+func _progress_bar(t: Dictionary) -> Control:
+	var bar := Control.new()
+	bar.custom_minimum_size = Vector2(0, 6)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var size: float = t["size"]
+	var shown: float = minf(rules.shown_progress(t), size)
+	var today: float = clampf(t.get("gain_today", 0.0), 0.0, shown)
+	var stalled := _stalled(t)
+	bar.draw.connect(func():
+		var w := bar.size.x
+		var h := bar.size.y
+		bar.draw_rect(Rect2(0, 0, w, h), COL_COLUMN)
+		var earlier := w * (shown - today) / size
+		bar.draw_rect(Rect2(0, 0, earlier, h), COL_FAINT if stalled else COL_EARLIER)
+		bar.draw_rect(Rect2(earlier, 0, w * today / size, h), COL_GAIN))
+	return bar
+
+
+# Midday, and the task someone's on right now hasn't moved since the morning.
+func _stalled(t: Dictionary) -> bool:
+	if not rules.endless() or rules.step != "work" or t.get("gain_today", 0.0) > 0.0 or not rules.team.has(t["owner"]):
+		return false
+	var q := rules.queue_of(t["owner"])
+	return not q.is_empty() and q[0]["uid"] == t["uid"]
 
 
 # A card is picked on release, and only if the finger didn't move: dragging scrolls the list instead.
