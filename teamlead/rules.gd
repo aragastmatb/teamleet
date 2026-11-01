@@ -1016,8 +1016,16 @@ func _talk_topics(p: String) -> Array:
 		found.append("work")
 	found.append("how")
 	found.sort_custom(func(a, b): return Dialogue.TOPICS[a]["heat"] > Dialogue.TOPICS[b]["heat"])
+	# One topic per task, the sharpest: "stuck", "hate" and "work" can all be about the same card.
+	var about := {"stuck": _stuck_task(p), "hate": -1 if q.is_empty() else q[0]["uid"], "work": -1 if q.is_empty() else q[0]["uid"]}
+	var covered: Array = []
 	var out: Array = []
 	for topic in found:
+		var uid: int = about.get(topic, -1)
+		if uid >= 0:
+			if covered.has(uid):
+				continue
+			covered.append(uid)
 		var sid := _talk_scene(p, topic)
 		if sid != "":
 			out.append([topic, sid])
