@@ -433,6 +433,8 @@ func _start_run() -> void:
 
 func _open_setup(open: bool) -> void:
 	setup_open = open
+	# Opened afresh, it starts from the top; picks inside it keep the place.
+	scroll_memory.erase("setup")
 	_render()
 
 
@@ -647,6 +649,7 @@ func _render() -> void:
 		else:
 			_build_title()
 		_let_touches_through(ui)
+		_restore_scrolls()
 		return
 	if rules.phase == "draft":
 		_build_draft()
@@ -1278,8 +1281,8 @@ func _money_label(size: int, bold: bool) -> Label:
 	l.mouse_filter = Control.MOUSE_FILTER_STOP
 	l.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	l.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-			_open_window("money"))
+		if _tapped(event):
+			_open_window.call_deferred("money"))
 	juice_nodes["money"] = l
 	return l
 
@@ -1371,10 +1374,24 @@ func _draft_card(id: String, w: float) -> Control:
 
 
 func _on_draft_input(event: InputEvent, id: String) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		_play("select")
-		rules.draft_toggle(id)
-		_render()
+	if _tapped(event):
+		_draft_toggle.call_deferred(id)
+
+
+func _draft_toggle(id: String) -> void:
+	_play("select")
+	rules.draft_toggle(id)
+	_render()
+
+
+# A tap, not the start of a scroll: let go close to where the finger (or the mouse) went down.
+func _tapped(event: InputEvent) -> bool:
+	if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT):
+		return false
+	if event.pressed:
+		press_pos = event.global_position
+		return false
+	return event.global_position.distance_to(press_pos) < 12.0
 
 
 func _draft_reroll() -> void:
@@ -1413,12 +1430,9 @@ func _option_grid(kind: String, values: Array, chosen: String, width: int) -> Co
 
 
 func _on_option_input(event: InputEvent, kind: String, value: String) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed:
-			press_pos = event.global_position
-		elif event.global_position.distance_to(press_pos) < 12.0:
-			cue = "select"
-			_pick_option.call_deferred(kind, value)
+	if _tapped(event):
+		cue = "select"
+		_pick_option.call_deferred(kind, value)
 
 
 func _build_office() -> void:
@@ -1798,7 +1812,7 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 	dim.color = Color(0.035, 0.118, 0.259, 0.7)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and not event.pressed:
+		if _tapped(event):
 			_close_window.call_deferred())
 	ui.add_child(dim)
 	var view := get_viewport().get_visible_rect().size
@@ -1958,7 +1972,7 @@ func _person_row(p: String) -> Control:
 	card.add_theme_stylebox_override("panel", _box(COL_SELECTED if target else COL_SURFACE, COL_FOCUS if target else COL_BORDER, 2 if target else 1, 8))
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	card.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		if _tapped(event):
 			_open_window.call_deferred("person:" + p))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
@@ -2211,7 +2225,7 @@ func _sticker(id: String, sz: Vector2) -> Control:
 	tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	tile.tooltip_text = Loc.t("up.%s.name" % id)
 	tile.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		if _tapped(event):
 			_open_window.call_deferred("upgrade:" + id))
 	var v := _vbox(3)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2644,7 +2658,7 @@ func _me_head() -> Control:
 	card.add_theme_stylebox_override("panel", _box(COL_BG, COL_BORDER, 1, 8))
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	card.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		if _tapped(event):
 			_open_window.call_deferred("me"))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
@@ -2838,12 +2852,9 @@ func _stalled(t: Dictionary) -> bool:
 
 # A card is picked on release, and only if the finger didn't move: dragging scrolls the list instead.
 func _on_card_input(event: InputEvent, uid: int) -> void:
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		if event.pressed:
-			press_pos = event.global_position
-		elif event.global_position.distance_to(press_pos) < 12.0:
-			cue = "select"
-			_select.call_deferred(uid)
+	if _tapped(event):
+		cue = "select"
+		_select.call_deferred(uid)
 
 
 func _due_text(t: Dictionary) -> String:
@@ -2998,12 +3009,9 @@ func _pick_tile(t: Dictionary, p: String, best: bool) -> Control:
 	if can:
 		tile.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		tile.gui_input.connect(func(event: InputEvent):
-			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-				if event.pressed:
-					press_pos = event.global_position
-				elif event.global_position.distance_to(press_pos) < 12.0:
-					cue = "assign"
-					_pick.call_deferred(p))
+			if _tapped(event):
+				cue = "assign"
+				_pick.call_deferred(p))
 		var hover := _box(Color("ebf2ff"), COL_FOCUS, 2, 10)
 		tile.mouse_entered.connect(func(): tile.add_theme_stylebox_override("panel", hover))
 		tile.mouse_exited.connect(func(): tile.add_theme_stylebox_override("panel", _box(fill, COL_FOCUS if best or owner else COL_BORDER, 2 if best or owner else 1, 10)))
@@ -3225,7 +3233,7 @@ func _tab_item(icon: Control, text_value: String, badge: String, chosen: bool, a
 	item.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	item.add_theme_stylebox_override("panel", _box(COL_SELECTED if chosen else Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, 6))
 	item.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		if _tapped(event):
 			action.call_deferred())
 	var v := _vbox(2)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3542,7 +3550,7 @@ func _contact_dot(th: String) -> Control:
 	ring.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	ring.tooltip_text = _contact_name(th)
 	ring.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		if _tapped(event):
 			_open_thread.call_deferred(th))
 	spot.add_child(ring)
 	var face := _contact_face(th, 44)
@@ -3706,11 +3714,8 @@ func _phone_messenger() -> Control:
 		_anchor(row, "contact_" + th)
 		row.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 10))
 		row.gui_input.connect(func(event: InputEvent):
-			if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-				if event.pressed:
-					press_pos = event.global_position
-				elif event.global_position.distance_to(press_pos) < 12.0:
-					_open_thread.call_deferred(th))
+			if _tapped(event):
+				_open_thread.call_deferred(th))
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 10)
 		h.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -4796,10 +4801,13 @@ func _scroll(key: String) -> ScrollContainer:
 func _restore_scrolls() -> void:
 	var saved := scroll_memory.duplicate()
 	var live := scrolls.duplicate()
-	await get_tree().process_frame
-	for key in live:
-		if saved.has(key) and is_instance_valid(live[key]):
-			live[key].scroll_vertical = saved[key]
+	# The scroll range is known only once the new content is laid out, which can take a couple of frames;
+	# set too early, the position gets clipped to the top.
+	for _frame in 3:
+		await get_tree().process_frame
+		for key in live:
+			if saved.has(key) and is_instance_valid(live[key]):
+				live[key].scroll_vertical = saved[key]
 
 
 func _spacer(height: int) -> Control:
