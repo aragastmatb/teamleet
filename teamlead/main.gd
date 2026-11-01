@@ -1272,7 +1272,8 @@ func _money_text() -> String:
 # When the month closes: Irina splits the budget, and the race with Taras is counted.
 func _budget_text() -> String:
 	var left: int = rules.last_day() - rules.day + 1
-	return Loc.t("money.budget_tomorrow") if left <= 1 else Loc.t("money.budget_in", [left])
+	var when := Loc.t("money.budget_tomorrow") if left <= 1 else Loc.t("money.budget_in", [left])
+	return when + " · " + Loc.t("money.at_budget", [_rub(rules.money_at_budget())])
 
 
 func _money_color() -> Color:
@@ -1456,7 +1457,7 @@ func _top_bar() -> Control:
 	var race := _race_label(15)
 	juice_nodes["race"] = race
 	top.add_child(race)
-	top.add_child(_label(_budget_text(), 13, COL_ON_TOP_MUTED))
+	top.add_child(_label(_budget_text(), 13, COL_ON_TOP_DANGER if rules.money_at_budget() < 0 else COL_ON_TOP_MUTED))
 	if not rules.chapter_keys().is_empty():
 		var k := rules.key_status()
 		top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
@@ -1673,6 +1674,9 @@ func _candidate_card(c: Dictionary) -> Control:
 	take.disabled = take.disabled or not rules.can_hire(id)
 	row.add_child(take)
 	row.add_child(_button(Loc.t("hire.reject_btn"), _reject_candidate.bind(id), 0, "subtle"))
+	var after := rules.money_at_budget(rules.HIRE_FEE, int(round(rules.salary(id) / 4.0)))
+	if after < 0:
+		v.add_child(_label(Loc.t("money.would_sink", [_rub(after)]), 13, COL_DANGER, true))
 	return card
 
 
@@ -2262,6 +2266,9 @@ func _upgrade_window(id: String) -> void:
 		var b := _button(Loc.t("up.buy", [_rub(rules.upgrade_price(id))]) + _cost_mark(rules.cost("buy")), _buy_upgrade.bind(id), 0, "primary" if rules.can_buy(id) else "")
 		b.disabled = not rules.can_buy(id)
 		row.add_child(b)
+		var after := rules.money_at_budget(rules.upgrade_price(id))
+		if after < 0:
+			v.add_child(_label(Loc.t("money.would_sink", [_rub(after)]), 13, COL_DANGER, true))
 	row.add_child(_button(Loc.t("up.back"), _open_window.bind("upgrades"), 0, "subtle"))
 
 
@@ -3157,7 +3164,7 @@ func _phone_top() -> Control:
 	var race := _race_label(14)
 	juice_nodes["race"] = race
 	chips.add_child(_chip(race))
-	chips.add_child(_chip(_label(_budget_text(), 13, COL_ON_TOP, false, true)))
+	chips.add_child(_chip(_label(_budget_text(), 13, COL_ON_TOP_DANGER if rules.money_at_budget() < 0 else COL_ON_TOP, false, true)))
 	if not rules.chapter_keys().is_empty():
 		var k := rules.key_status()
 		chips.add_child(_chip(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 14, COL_ON_TOP, false, true)))

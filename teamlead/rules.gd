@@ -4319,6 +4319,17 @@ func weekly_pay(p: String) -> int:
 	return int(round(salary(p) / 4.0))
 
 
+# What's left on the day Irina's next budget comes, after the salaries still to pay this month; with an
+# extra spend now (a hire, an upgrade) and an extra weekly salary from now on. Below zero, a Friday kills you.
+func money_at_budget(spend: int = 0, extra_weekly: int = 0) -> int:
+	var paydays := 0
+	var from := day if phase in ["plan", "event", "story", "standup", "draft"] else day + 1
+	for d in range(from, last_day() + 1):
+		if d % 5 == 0:
+			paydays += 1
+	return money - spend - (payroll() + extra_weekly) * paydays
+
+
 func payroll() -> int:
 	var sum := 0
 	for p in team:
