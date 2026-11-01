@@ -380,6 +380,9 @@ func _nudge_pull(p: String, by: float) -> void:
 # keen beginner takes the biggest, the faker and the ones who'd rather not take the smallest.
 func _pull_choice(p: String) -> Dictionary:
 	var best: Dictionary = {}
+	# A newcomer doesn't pick work for themselves: they don't know yet what's what.
+	if endless() and newbie(p):
+		return best
 	var best_score := -INF
 	for t in inbox():
 		if t.get("midday", -1) == day or only_me(t):
@@ -2428,6 +2431,17 @@ func queue_of(p: String) -> Array[Dictionary]:
 	return result
 
 
+# Still finding their feet: in the endless run they work only with someone beside them.
+func newbie(p: String) -> bool:
+	return people.has(p) and day - people[p]["joined"] < NEWBIE_DAYS * perk_mult("newbie")
+
+
+# A newcomer's card with nobody to pair with them: it stands.
+func needs_pair(t: Dictionary) -> bool:
+	return endless() and t["status"] == "active" and team.has(t["owner"]) and newbie(t["owner"]) \
+		and not (people.has(t["helper"]) and available(t["helper"]) and not people[t["helper"]]["absent"]) and not t.get("sit_today", false)
+
+
 func available(p: String) -> bool:
 	return team.has(p) and not people[p]["gone"]
 
@@ -3537,7 +3551,7 @@ func _speed(p: String, t: Dictionary) -> float:
 		s *= PLODDER_PACE
 	var share: float = shares.get(t["uid"], 0.0)
 	# New people are slow at first, unless someone who knows the work sits with them.
-	if day - st["joined"] < NEWBIE_DAYS * perk_mult("newbie") and not (share > 0.0 and people.has(t["helper"]) and people[t["helper"]]["skills"][t["cat"]] >= 2):
+	if newbie(p) and not (share > 0.0 and people.has(t["helper"]) and people[t["helper"]]["skills"][t["cat"]] >= 2):
 		s *= 0.5
 	if share > 0.0 and people.has(t["helper"]):
 		var hs: int = people[t["helper"]]["skills"][t["cat"]]
@@ -3678,6 +3692,9 @@ func _work(p: String, part: float = 1.0, upkeep: bool = true) -> void:
 				stuck.append(t)
 				continue
 			var skill: int = st["skills"][t["cat"]]
+			# A newcomer leaves a card nobody pairs them on and works on one someone does.
+			if needs_pair(t):
+				continue
 			if _stuck_today(p, t, skill, upkeep):
 				time = 0.0
 				continue

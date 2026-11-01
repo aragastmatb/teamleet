@@ -1663,8 +1663,8 @@ func _person_card(p: String) -> Control:
 	v.add_child(state)
 	if st["absent"]:
 		state.add_child(_pill(Loc.t("absent.%s_label" % st["absent_reason"]), COL_WARN, Color("fff0b3")))
-	if rules.day - st["joined"] < rules.NEWBIE_DAYS:
-		state.add_child(_pill(Loc.t("newbie_label"), COL_PRIMARY, COL_SELECTED))
+	if rules.newbie(p):
+		state.add_child(_pill(Loc.t("newbie_label.alone" if rules.endless() else "newbie_label"), COL_PRIMARY, COL_SELECTED))
 	var late := rules.late_hours(p) if rules.phase == "plan" else 0
 	if late > 0:
 		state.add_child(_pill(Loc.render("late_preview", [], {"n": late}), COL_WARN, Color("fff0b3")))
@@ -2121,8 +2121,8 @@ func _person_row(p: String) -> Control:
 		line.add_child(_label(Loc.t("mood." + mood), 12, MOOD_COLORS[mood]))
 		var energy := rules.energy_word(p)
 		line.add_child(_label("· " + Loc.t("energy." + energy), 12, ENERGY_COLORS[energy]))
-	if rules.day - st["joined"] < rules.NEWBIE_DAYS:
-		line.add_child(_label("· " + Loc.t("newbie_label"), 12, COL_PRIMARY))
+	if rules.newbie(p):
+		line.add_child(_label("· " + Loc.t("newbie_label.alone" if rules.endless() else "newbie_label"), 12, COL_PRIMARY))
 	if rules.warned(p):
 		line.add_child(_label("· " + Loc.t("fire.warned_label"), 12, COL_DANGER))
 	return card
@@ -3004,7 +3004,9 @@ func _task_card(t: Dictionary, lane: String) -> Control:
 	v.add_child(_label(Loc.t("taskname." + t["id"]), 14, COL_TEXT, true))
 	if t["status"] == "active":
 		v.add_child(_progress_bar(t))
-		if _stalled(t):
+		if rules.needs_pair(t):
+			v.add_child(_label(Loc.t("card.no_pair"), 12, COL_DANGER, true))
+		elif _stalled(t):
 			v.add_child(_label(Loc.t("card.stalled"), 12, COL_WARN, true))
 	var foot := HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 4)
@@ -3159,7 +3161,7 @@ func _task_window(v: VBoxContainer, t: Dictionary) -> void:
 	if t["status"] == "active" and rules.team.has(t["owner"]) and rules.allowed("pair"):
 		var pair := _flow(6, 6)
 		v.add_child(pair)
-		pair.add_child(_row_label(Loc.t("helper_optional")))
+		pair.add_child(_row_label(Loc.t("helper_required" if rules.needs_pair(t) else "helper_optional")))
 		for p in rules.team:
 			if p != t["owner"] and rules.available(p):
 				var hb := _button(Loc.person(p) + _cost_mark(rules.cost("pair")), _helper.bind(p), 0, "chosen" if t["helper"] == p else "")
