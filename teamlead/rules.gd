@@ -4482,7 +4482,7 @@ func _tip_used(target: String) -> void:
 
 const SAVE_PATH := "user://save.bin"
 # Bump when the saved state changes shape; older saves are then dropped instead of loaded half-broken.
-const SAVE_VERSION := 10
+const SAVE_VERSION := 11
 
 
 # Everything about the run is in this object's variables, so a save is all of them plus where the dice are.
