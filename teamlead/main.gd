@@ -132,6 +132,8 @@ var chat_open := false
 var portrait := false
 # A sticky picked on the board waits for a column to go to: its new owner, or (pairing) the helper.
 var pairing := false
+# A sticky is being dragged: let go anywhere but a column and it goes back.
+var dragging := false
 # The messenger: a column of contacts, and the one conversation that's open ("" for none).
 var chat_thread := ""
 # How far each conversation has been read, as an index into the history.
@@ -1889,6 +1891,7 @@ func _nav_button(name: String, text_value: String, badge: String) -> Control:
 	_anchor(b, "chat_button" if name == "chat" else "nav_" + name)
 	b.tooltip_text = text_value
 	b.custom_minimum_size.y = 40 if compact else 34
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var path := ICON_DIR + "nav_" + name + ".svg"
 	if ResourceLoader.exists(path):
 		b.icon = load(path)
@@ -1911,8 +1914,9 @@ func _nav_button(name: String, text_value: String, badge: String) -> Control:
 	dot.add_child(_label(badge, 11, COL_SURFACE, false, true))
 	dot.anchor_left = 1.0
 	dot.anchor_right = 1.0
-	dot.offset_left = -12
-	dot.offset_top = -4
+	# Inside the bar: the window edge would cut off anything sticking out above the button.
+	dot.offset_left = -14
+	dot.offset_top = -1
 	dot.grow_horizontal = Control.GROW_DIRECTION_END
 	b.add_child(dot)
 	return b
@@ -2569,6 +2573,7 @@ func _person_column(p: String) -> Control:
 				col.accept_event()
 				cue = "assign"
 				_drop_on.call_deferred(p))
+		col.set_drag_forwarding(Callable(), _column_can_drop.bind(p), _column_drop.bind(p))
 	var v := _vbox(6)
 	col.add_child(_padded(v, 6 if compact else 8, 8))
 	v.add_child(_column_head(p))
@@ -2588,6 +2593,53 @@ func _person_column(p: String) -> Control:
 	for t in items:
 		list.add_child(_sticky(t, "column"))
 	return col
+
+
+# Dragging a sticky picks it, so the columns light up and the pick bar shows just as after a tap.
+# On a touch screen a mostly vertical move is the list scrolling, not a drag.
+func _sticky_drag(_at, uid, pair, card):
+	if not is_instance_valid(card) or rules.task(uid).is_empty():
+		return null
+	var move: Vector2 = card.get_global_mouse_position() - press_pos
+	if DisplayServer.is_touchscreen_available() and absf(move.y) > absf(move.x):
+		return null
+	var ghost := Control.new()
+	var paper := _sticky(rules.task(uid), "drag")
+	paper.position = -paper.custom_minimum_size / 2.0
+	paper.modulate.a = 0.9
+	ghost.add_child(paper)
+	card.set_drag_preview(ghost)
+	dragging = true
+	selected = uid
+	pairing = pair
+	deal_from = -1
+	window = ""
+	_render.call_deferred()
+	return {"sticky": uid}
+
+
+func _column_can_drop(_at, data, p) -> bool:
+	return data is Dictionary and data.has("sticky") and _picking() and _can_drop(p)
+
+
+func _column_drop(_at, _data, p) -> void:
+	cue = "assign"
+	_drop_on.call_deferred(p)
+
+
+func _bin_can_drop(_at, data) -> bool:
+	return data is Dictionary and data.has("sticky") and _picking() and not pairing and rules.can_decline(rules.task(selected)) and rules.can_afford(rules.cost("decline"))
+
+
+func _bin_drop(_at, _data) -> void:
+	_decline.call_deferred()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_DRAG_END and dragging:
+		dragging = false
+		if not get_viewport().gui_is_drag_successful():
+			_clear_selection.call_deferred()
 
 
 # Who a picked sticky can go to: anyone free to take it, or, for a pair, anyone here but its owner.
@@ -2614,6 +2666,7 @@ func _column_head(p: String) -> Control:
 		var prof := _label(Loc.t("me_profile." + rules.profile), 11, COL_MUTED, true)
 		prof.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		v.add_child(prof)
+		_skill_row(v, p)
 	else:
 		var st: Dictionary = rules.people[p]
 		var row := HBoxContainer.new()
@@ -2623,6 +2676,7 @@ func _column_head(p: String) -> Control:
 		v.add_child(row)
 		row.add_child(_mood_face(rules.mood_word(p), 18 if compact else 22))
 		row.add_child(_battery(rules.energy_word(p)))
+		_skill_row(v, p)
 		var notes := PackedStringArray()
 		if st["absent"]:
 			notes.append(Loc.t("absent.%s_label" % st["absent_reason"]))
@@ -2645,6 +2699,44 @@ func _column_head(p: String) -> Control:
 			v.accept_event()
 			_open_window.call_deferred("me" if me else "person:" + p))
 	return v
+
+
+# What they're good at, as four little stickies in the kinds' colours with the level in marker, "?"
+# until you've seen it. While a sticky waits, its kind stands out and the level is spelled out.
+func _skill_row(v: VBoxContainer, p: String) -> void:
+	var me := p == "me"
+	var held: String = rules.task(selected)["cat"] if _picking() else ""
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 4)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(row)
+	var side := 22 if compact else 26
+	for cat in CAT_COLORS:
+		var known: bool = me or rules.people[p]["known"].has("skill." + cat)
+		var level: int = rules.my_skill(cat) if me else rules.people[p]["skills"][cat]
+		var chip := PanelContainer.new()
+		var style := _flat(CAT_COLORS[cat][1])
+		if cat == held:
+			style.border_color = CAT_COLORS[cat][0]
+			style.set_border_width_all(2)
+		chip.add_theme_stylebox_override("panel", style)
+		chip.custom_minimum_size = Vector2(side, side)
+		chip.modulate.a = 0.35 if held != "" and cat != held else 1.0
+		chip.tooltip_text = "%s: %s" % [Loc.t("cat." + cat), Loc.t("level.%d" % level) if known else Loc.t("pick.unknown")]
+		var l := _hand(str(level) if known else "?", 17 if compact else 20, CAT_COLORS[cat][0])
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		chip.add_child(l)
+		row.add_child(chip)
+	if held == "":
+		return
+	var known: bool = me or rules.people[p]["known"].has("skill." + held)
+	var level: int = rules.my_skill(held) if me else rules.people[p]["skills"][held]
+	var word := _hand(Loc.t("level.%d" % level) if known else Loc.t("pick.unknown"), 18 if compact else 21, _level_color(level) if known else COL_FAINT)
+	word.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	word.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(word)
 
 
 # Questions from this person waiting for you: the one that holds the day, and their messages.
@@ -2788,6 +2880,7 @@ func _pick_bar() -> Control:
 	if not pairing and rules.can_decline(t):
 		var bin := _button(Loc.t("pick_bar.bin") + _cost_mark(rules.cost("decline")), _decline, 0, "on_top")
 		bin.disabled = bin.disabled or not rules.can_afford(rules.cost("decline"))
+		bin.set_drag_forwarding(Callable(), _bin_can_drop, _bin_drop)
 		row.add_child(bin)
 	row.add_child(_button(Loc.t("pick_bar.cancel"), _clear_selection, 0, "on_top"))
 	return bar
@@ -2798,7 +2891,7 @@ func _pick_bar() -> Control:
 func _sticky(t: Dictionary, where: String) -> Control:
 	var colors: Array = CAT_COLORS[t["cat"]]
 	var ink: Color = colors[0]
-	var chosen: bool = selected == t["uid"] and window == "" and where != "preview"
+	var chosen: bool = selected == t["uid"] and window == "" and where not in ["preview", "drag"]
 	var card := PanelContainer.new()
 	var style := _flat(colors[1])
 	style.set_content_margin_all(6 if compact else 8)
@@ -2811,22 +2904,24 @@ func _sticky(t: Dictionary, where: String) -> Control:
 	card.add_theme_stylebox_override("panel", style)
 	if where == "preview":
 		card.custom_minimum_size = Vector2(150, 150)
+	elif where == "drag":
+		card.custom_minimum_size = Vector2(COMPACT_COLUMN_W - 12 if compact else COLUMN_W - 16, 52 if compact else 64)
 	elif where == "inbox" and not compact:
 		card.custom_minimum_size = Vector2(116, 124)
 	else:
 		card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card.custom_minimum_size.y = 52 if compact else 64
-	var tilt: float = -2.0 if where == "preview" else 0.0 if chosen else float((t["uid"] * 37) % 7 - 3) * (0.9 if where == "inbox" else 0.4)
+	var tilt: float = -2.0 if where == "preview" else 4.0 if where == "drag" else 0.0 if chosen else float((t["uid"] * 37) % 7 - 3) * (0.9 if where == "inbox" else 0.4)
 	card.rotation_degrees = tilt
 	card.scale = Vector2(1.06, 1.06) if chosen else Vector2.ONE
 	card.resized.connect(_center_pivot.bind(card))
 	if where == "inbox" and rules.can_assign(t):
 		_anchor(card, "inbox_first")
-	if t["late"] and where != "done":
+	if t["late"] and where not in ["done", "drag"]:
 		_anchor(card, "late_card")
 	if where == "done":
 		card.modulate = Color(1, 1, 1, 0.8)
-	elif where != "preview" and _looking() and t["status"] in ["inbox", "active"]:
+	elif where in ["inbox", "column"] and _looking() and t["status"] in ["inbox", "active"]:
 		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		card.gui_input.connect(func(event: InputEvent):
 			if not _tapped(event):
@@ -2837,7 +2932,11 @@ func _sticky(t: Dictionary, where: String) -> Control:
 			card.accept_event()
 			cue = "select"
 			_sticky_tapped.call_deferred(t["uid"], where))
-	if flash_cards.has(t["uid"]) and where != "preview":
+		# The same stickies a tap picks can be dragged straight onto a column.
+		var pair: bool = where == "column" and rules.needs_pair(t) and rules.allowed("pair")
+		if (where == "inbox" and rules.can_assign(t)) or pair:
+			card.set_drag_forwarding(_sticky_drag.bind(t["uid"], pair, card), Callable(), Callable())
+	if flash_cards.has(t["uid"]) and where in ["inbox", "column", "done"]:
 		var color: Color = flash_cards[t["uid"]]
 		card.ready.connect(func(): _flash.call_deferred(card, color))
 	var v := _vbox(2)
