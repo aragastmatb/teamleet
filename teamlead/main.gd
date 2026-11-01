@@ -1814,9 +1814,9 @@ func _build_window() -> void:
 	if window == "upgrades" or window.begins_with("upgrade:"):
 		if not rules.endless():
 			return
-		if window == "upgrades":
-			_build_upgrades()
-		elif C.UPGRADES.has(window.substr(8)):
+		# One upgrade's card opens over the tree, which stays underneath.
+		_build_upgrades()
+		if window != "upgrades" and C.UPGRADES.has(window.substr(8)):
 			_upgrade_window(window.substr(8))
 		return
 	var view := get_viewport().get_visible_rect().size
@@ -1928,7 +1928,8 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED if wide_scroll or mobile else ScrollContainer.SCROLL_MODE_AUTO
 	right.add_child(scroll)
-	scrolls["window"] = scroll
+	# A window opened over another keeps its own scroll, so the one below stays where it was.
+	scrolls["window_top" if scrolls.has("window") else "window"] = scroll
 	var body := _vbox(12)
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var pad := _padded(body, 18 if mobile else 28, 4)
