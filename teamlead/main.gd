@@ -1604,9 +1604,6 @@ func _team_sidebar() -> Control:
 		v.add_child(_section(Loc.t("up.section")))
 		v.add_child(_upgrades_card())
 	v.add_child(_spacer(4))
-	v.add_child(_section(Loc.t("boss_header")))
-	v.add_child(_boss_card())
-	v.add_child(_spacer(4))
 	v.add_child(_section(Loc.t("chainer_header")))
 	v.add_child(_chainer_card())
 	if mobile:
@@ -1849,8 +1846,6 @@ func _build_window() -> void:
 			var card := _candidate_card(c)
 			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			grid.add_child(card)
-	elif window == "boss":
-		_modal(Loc.person("boss"), _attention_text(), minf(460.0, view.x - 16.0), false, true).add_child(_boss_card())
 	elif window == "company":
 		_modal(Loc.t("nav.clients_title"), "", minf(560.0, view.x - 16.0), false, true).add_child(_chainer_card())
 	elif window == "more":
@@ -1978,7 +1973,6 @@ func _nav_strip() -> Control:
 		if rules.bank_word(bank) in ["unhappy", "leaving"]:
 			unhappy += 1
 	row.add_child(_nav_button("clients", Loc.t("nav.clients"), _badge(unhappy), COL_DANGER))
-	row.add_child(_boss_button())
 	return bar
 
 
@@ -2045,52 +2039,6 @@ func _nav_button(name: String, text_value: String, badge: String, badge_color: C
 	dot.grow_horizontal = Control.GROW_DIRECTION_END
 	b.add_child(dot)
 	return b
-
-
-# Irina's door: her face and how she sees you; point at it and it says you can go in, and a click does.
-func _boss_button() -> Control:
-	var can_go: bool = rules.can_visit()
-	var word := rules.boss_word()
-	var resting := Loc.t("boss_label", ["@weight." + word])
-	var hover := Loc.t("visit_short") + _cost_mark(rules.cost("boss")) if can_go else Loc.t("nav.boss_seen" if rules.visited_today else "nav.boss_later")
-	var card := PanelContainer.new()
-	var normal := _box(COL_BG, COL_BORDER, 1, 0)
-	normal.content_margin_left = 6
-	normal.content_margin_right = 12
-	normal.content_margin_top = 2
-	normal.content_margin_bottom = 2
-	var lit := normal.duplicate()
-	lit.bg_color = COL_SELECTED
-	lit.border_color = COL_FOCUS
-	card.add_theme_stylebox_override("panel", normal)
-	card.custom_minimum_size.y = 34
-	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(row)
-	row.add_child(_avatar("boss", 26))
-	var text := _label(resting, 14, {"w3": COL_GOOD, "w2": COL_GOOD, "w1": COL_TEXT, "w0": COL_DANGER}[word])
-	text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	# As wide as the longer of the two texts, or the card shrinks from under the cursor and flickers.
-	var font := text.get_theme_font("font")
-	var fs := text.get_theme_font_size("font_size")
-	text.custom_minimum_size.x = ceilf(maxf(font.get_string_size(resting, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x, font.get_string_size(hover, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x))
-	row.add_child(text)
-	card.mouse_entered.connect(func():
-		text.text = hover
-		card.add_theme_stylebox_override("panel", lit))
-	card.mouse_exited.connect(func():
-		text.text = resting
-		card.add_theme_stylebox_override("panel", normal))
-	card.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-			# In the story, once you may ask her for people, her card has two things to do: open it.
-			if rules.flags.has("asked_people") and rules.openings == 0:
-				_open_window.call_deferred("boss")
-			elif can_go:
-				_visit_boss.call_deferred())
-	return card
 
 
 # The left column on a desktop: you, then the team, one line each; a click opens the whole card.
@@ -2541,33 +2489,6 @@ func _chainer_card() -> Control:
 		v.add_child(_label(Loc.t("chainer.nothing_yet"), 13, COL_FAINT, true))
 	for id in rules.improved:
 		v.add_child(_label("✓ " + Loc.t("imp.%s.effect" % id), 13, COL_GOOD, true))
-	return card
-
-
-func _boss_card() -> Control:
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _box(COL_SURFACE, COL_BORDER, 1, 10))
-	var v := _vbox(6)
-	card.add_child(v)
-	var head := HBoxContainer.new()
-	head.add_theme_constant_override("separation", 8)
-	v.add_child(head)
-	head.add_child(_avatar("boss", 32))
-	var names := _vbox(0)
-	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(names)
-	names.add_child(_label(Loc.person("boss"), 15, COL_TEXT, true, true))
-	names.add_child(_label(Loc.t("boss_role"), 12, COL_MUTED))
-	var visit := _button(Loc.t("visit_short") + _cost_mark(rules.cost("boss")), _visit_boss, 0, "subtle")
-	visit.disabled = not rules.can_visit()
-	visit.custom_minimum_size.y = 30
-	v.add_child(visit)
-	# After the first time (a story scene in chapter three), you can go and ask for people yourself.
-	if rules.flags.has("asked_people") and rules.openings == 0:
-		var ask := _button(Loc.t("people.button") + _cost_mark(rules.cost("people")), _ask_people, 0, "subtle")
-		ask.disabled = ask.disabled or not rules.can_ask_people()
-		ask.custom_minimum_size.y = 30
-		v.add_child(ask)
 	return card
 
 
@@ -3255,8 +3176,6 @@ func _phone_tabs() -> Control:
 		asks = asks or _letters_in(th) > 0 or _asked_thread() == th
 	row.add_child(_tab_item(_icon("nav_board"), Loc.t("tab.board"), "", tab == "board", _go_tab.bind("board")))
 	row.add_child(_tab_item(_icon("nav_chat"), Loc.t("tab.chat"), "!" if asks else _badge(unread), tab == "chat", _go_tab.bind("chat"), asks))
-	var boss := _avatar("boss", 26)
-	row.add_child(_tab_item(boss, Loc.t("tab.boss"), "", window == "boss", _open_window.bind("boss")))
 	row.add_child(_tab_item(_icon("nav_more"), Loc.t("tab.more"), _badge(_more_count()), window == "more", _open_window.bind("more")))
 	return bar
 
@@ -3608,9 +3527,14 @@ func _thread_view(th: String) -> Control:
 	if mobile:
 		head_row.add_child(_button("‹", _close_thread, 36, "subtle"))
 	head_row.add_child(_contact_face(th, 30))
-	var title := _label(_contact_name(th), 16, COL_TEXT, false, true)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head_row.add_child(title)
+	var titles := _vbox(0)
+	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head_row.add_child(titles)
+	titles.add_child(_label(_contact_name(th), 16, COL_TEXT, false, true))
+	# How Irina sees you lives here now that her door is her conversation.
+	if th == "boss":
+		var word := rules.boss_word()
+		titles.add_child(_label(Loc.t("weight." + word), 12, {"w3": COL_GOOD, "w2": COL_GOOD, "w1": COL_MUTED, "w0": COL_DANGER}[word]))
 	if rules.team.has(th):
 		var card := _button(Loc.t("chat.card"), _open_window.bind("person:" + th), 0, "subtle")
 		card.add_theme_font_size_override("font_size", _fs(12))
@@ -3687,6 +3611,13 @@ func _thread_prompt(list: VBoxContainer, th: String) -> void:
 		var go := _button(Loc.t("visit_button") + _cost_mark(rules.cost("boss")), _visit_boss, 0, "")
 		go.disabled = go.disabled or not rules.can_visit()
 		list.add_child(go)
+		if not rules.can_visit():
+			list.add_child(_label(Loc.t("nav.boss_seen" if rules.visited_today else "nav.boss_later"), 12, COL_MUTED, true))
+		# After the first time (a story scene in chapter three), you can go and ask for people yourself.
+		if rules.flags.has("asked_people") and rules.openings == 0:
+			var ask := _button(Loc.t("people.button") + _cost_mark(rules.cost("people")), _ask_people, 0, "")
+			ask.disabled = ask.disabled or not rules.can_ask_people()
+			list.add_child(ask)
 
 
 # A one-on-one going on right now: what's been said, then what you can say, each line a reply that costs.
