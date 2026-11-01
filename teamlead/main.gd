@@ -3295,10 +3295,12 @@ func _contact_dot(th: String) -> Control:
 	var holder := CenterContainer.new()
 	# A plain box under the ring, so the counter can hang off its corner instead of being laid out.
 	var spot := Control.new()
-	spot.custom_minimum_size = Vector2(52, 52)
+	spot.custom_minimum_size = Vector2(56, 60)
 	holder.add_child(spot)
 	var ring := PanelContainer.new()
-	ring.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Room above and to the right, or the scrolling list clips the counter.
+	ring.position = Vector2(0, 8)
+	ring.size = Vector2(52, 52)
 	var open: bool = chat_thread == th
 	var rs := _box(COL_SELECTED if open else Color(0, 0, 0, 0), COL_FOCUS if open else Color(0, 0, 0, 0), 2, 3)
 	rs.set_corner_radius_all(30)
@@ -3316,8 +3318,8 @@ func _contact_dot(th: String) -> Control:
 	if badge:
 		badge.anchor_left = 1.0
 		badge.anchor_right = 1.0
-		badge.offset_left = -16
-		badge.offset_top = -4
+		badge.offset_left = -20
+		badge.offset_top = 0
 		badge.grow_horizontal = Control.GROW_DIRECTION_END
 		spot.add_child(badge)
 	return holder
