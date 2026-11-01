@@ -3908,7 +3908,7 @@ func _review_prompt(list: VBoxContainer) -> void:
 	v.add_child(_label(Loc.render("review.context", [], {"owner": Loc.person(t["owner"])}), 13, COL_MUTED, true))
 	for choice in rules.review_choices(item):
 		v.add_child(_answer_button(Loc.render("review.a." + choice, [], names), _answer.bind(choice)))
-	v.add_child(_label(Loc.t("review_hint." + item["kind"]), 12, COL_MUTED, true))
+	v.add_child(_label(Loc.t("review_hint.endless" if rules.endless() else "review_hint." + item["kind"]), 12, COL_MUTED, true))
 
 
 func _offer_card(p: String, offer: String) -> Control:

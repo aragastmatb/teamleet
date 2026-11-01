@@ -1273,6 +1273,19 @@ func resolve(r, ev: Dictionary, choice: String) -> void:
 				r.add_task_raw("escalation_boss", "support", r.CALL_SIZE, r.day + 1, true, "boss")
 				r.say("boss", "event.complaint.escalated", [], names)
 
+		# After the Friday review: what you do with the one who slipped.
+		"deal/scold":
+			r.people[who]["mood"] -= 0.7
+			r._nudge_pull(who, r.PULL_SCOLD)
+		"deal/talk":
+			r.people[who]["mood"] += 0.3
+			r.people[who]["trust"] += 1
+			if not t.is_empty():
+				r.learn(who, t["cat"], 1.0)
+		"deal/let_go":
+			if not ev.get("silent", false):
+				r.people[who]["mood"] += 0.2
+
 		"offer/go":
 			if not t.is_empty() and t["status"] == "active":
 				if ev["kind"] == "shortcut":

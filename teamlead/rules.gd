@@ -1789,7 +1789,7 @@ func answer_letter(i: int, choice: String) -> void:
 # What silence means for each question: the answer it amounts to.
 const SILENCE := {"chaos_meeting": "later", "boss_deadline": "yes", "boss_details": "dodge", "boris_drunk": "refuse",
 	"friday_deploy": "allow", "marina_warns": "dismiss", "stayed_late": "ignore", "conflict": "ignore", "complaint": "shrug",
-	"boss_dump": "take", "taras_brag": "noted", "offer": "not_now"}
+	"boss_dump": "take", "taras_brag": "noted", "offer": "not_now", "deal": "let_go"}
 const SILENT_WORDS := ["ignore", "stay_out", "shrug", "later", "dodge", "noted", "dismiss", "not_yet", "ok"]
 
 
@@ -4145,7 +4145,10 @@ func _build_review() -> void:
 		elif by_team and (t["late"] or (done and t["public"] and not good)):
 			if worst.is_empty() or _pain(t) > _pain(worst):
 				worst = t
-	if not best.is_empty():
+	# Irina doesn't ask who did what went well in the endless run: she cares that it's done.
+	if not best.is_empty() and endless():
+		best["reviewed"] = true
+	elif not best.is_empty():
 		review.append({"uid": best["uid"], "kind": "success"})
 	if not worst.is_empty():
 		review.append({"uid": worst["uid"], "kind": "failure"})
@@ -4185,7 +4188,39 @@ func _ask_review() -> void:
 func review_choices(item: Dictionary) -> Array:
 	if item["kind"] == "success":
 		return ["credit_owner", "team", "self", "scale"]
+	if endless():
+		return ["own", "blame"]
 	return ["own", "overload", "blame", "change"]
+
+
+# Something slipped this week, and Irina asks you: you're the lead, so it costs you either way. Take it
+# on yourself and it costs more, but the team sees you cover them; name who did it and it costs less,
+# but they're hurt and the others see you hand people over. Then it's yours to deal with them.
+const REVIEW_HIT := 0.5
+const REVIEW_OWN := 0.5
+
+
+func _review_failure(t: Dictionary, choice: String, names: Dictionary) -> void:
+	var p: String = t["owner"]
+	boss -= REVIEW_HIT
+	if choice == "own":
+		boss -= REVIEW_OWN
+		people[p]["trust"] += 1
+		for q in team:
+			if available(q) and q != p:
+				people[q]["mood"] += 0.2
+		_say("boss", "review.boss.own", [], names)
+	else:
+		people[p]["mood"] -= 1.0
+		people[p]["trust"] -= 1
+		for q in team:
+			if available(q) and q != p:
+				people[q]["mood"] -= 0.3
+		_say("boss", "review.boss.named", [], names)
+	# Now it's between you and them, in their conversation.
+	events.append({"id": "deal", "who": p, "uid": t["uid"], "names": names, "choices": ["scold", "talk", "let_go"],
+		"lines": [{"who": p, "key": "event.deal.ask." + choice}]})
+	_post_letters()
 
 
 # Is this answer true? The weekly report is the evidence for "we were swamped".
@@ -4221,6 +4256,10 @@ func answer_review(choice: String) -> void:
 	history.append({"who": "you", "key": "review.a." + choice, "args": [], "names": names, "to": "boss", "day": day})
 	for pair in REVIEW_STYLE[choice]:
 		lead(pair[0], pair[1])
+	# The endless run's review is only about what went wrong, and works its own way (below).
+	if endless() and item["kind"] == "failure":
+		_review_failure(t, choice, names)
+		choice = ""
 	match choice:
 		"credit_owner":
 			taras_like(-0.5)
