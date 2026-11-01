@@ -478,11 +478,11 @@ func start_work() -> void:
 		phase = "event"
 
 
-# This morning's work: the weekly report on Mondays (unless automated), key projects on their days,
+# This morning's work: the weekly report on Mondays, key projects on their days,
 # and a few cards from the deck — no more than two of one kind on one day.
 func _arrivals() -> Array:
 	var out: Array = []
-	if day % 5 == 1 and not flags.has("automated_report"):
+	if day % 5 == 1:
 		out.append_array(C.tasks_with("kind", "weekly"))
 	# The endless run has no key projects and no story chains, only the deck.
 	var keys: Dictionary = C.KEY_DAYS.get(chapter, {})
@@ -591,8 +591,6 @@ func deck_source() -> Array:
 
 func _refill_deck() -> void:
 	var fresh: Array = deck_source().duplicate()
-	if flags.has("tech_debt_done"):
-		fresh = fresh.filter(func(id): return not C.TASKS[id]["tags"].has("debt"))
 	fresh.append_array(curses)
 	fresh.append_array(upkeep)
 	# (cards the upgrades took over stay in: drawn, they count as done by the upgrades)
@@ -2850,7 +2848,7 @@ func _end_of_my_day() -> void:
 		if flags[burnout_key()] == burnouts_to_quit() - 1:
 			_narrate("you.burnout_warning_run")
 	# Untouched tech debt makes itself felt: each Friday another outage goes into the deck.
-	if day % 5 == 0 and day < last_day() and not flags.has("tech_debt_done"):
+	if day % 5 == 0 and day < last_day():
 		var fires := C.tasks_with("tag", "debt").filter(func(id): return not _improved_by("remove", id))
 		if not fires.is_empty():
 			deck.insert(mini(2, deck.size()), fires[rng.randi() % fires.size()])
@@ -3277,7 +3275,6 @@ func _speed(p: String, t: Dictionary) -> float:
 const TOOLS_BASE := 0.1
 const TOOLS_PER_IMPROVEMENT := 0.03
 const TOOLS_MAX := 0.25
-const GENA_SWITCH_DAYS := 3
 
 
 func tools_factor(p: String) -> float:
@@ -4150,7 +4147,6 @@ const LATE_PENALTY := 0.5
 const TARAS_RATE := 0.7
 const TARAS_GROWTH := 0.02 # a period, up to TARAS_RATE_MAX
 const TARAS_RATE_MAX := 0.9
-const BUDGET_POT := 2000 # both departments' budget together
 const SHARE_MIN := 0.3
 const SHARE_MAX := 0.7
 
@@ -4390,8 +4386,6 @@ func payroll() -> int:
 		if available(p):
 			sum += weekly_pay(p)
 	return sum
-
-
 
 
 func _draft_add() -> void:

@@ -10,7 +10,6 @@ const Dialogue = preload("res://teamlead/dialogue.gd")
 const DevTest = preload("res://teamlead/devtest.gd")
 
 const BASE_FONT := 15
-const SIDEBAR_W := 250
 const CHAT_W := 350
 const TOP_H := 50
 # Base sizes the screen is laid out for: a landscape desktop, or a phone held upright.
@@ -19,7 +18,6 @@ const PHONE_SIZE := Vector2i(430, 860)
 const PHONE_WIDE_SIZE := Vector2i(860, 430) # a phone on its side
 # Below this (in CSS pixels on the web, window pixels elsewhere) the desktop layout gets too small to read.
 const DESKTOP_MIN := Vector2(900, 560)
-const PHONE_TOP_H := 64
 
 const COL_BG := Color("f4f5f7")
 const COL_SURFACE := Color("ffffff")
@@ -64,7 +62,6 @@ const EMO_COLORS := {
 
 const MOOD_COLORS := {"happy": COL_GOOD, "good": COL_GOOD, "neutral": COL_MUTED, "down": COL_WARN, "angry": COL_DANGER}
 const ENERGY_COLORS := {"fresh": COL_GOOD, "ok": COL_MUTED, "tired": COL_WARN, "drained": COL_DANGER}
-const BOSS_COLORS := {"w3": COL_ON_TOP_GOOD, "w2": COL_ON_TOP_GOOD, "w1": COL_ON_TOP, "w0": COL_ON_TOP_DANGER}
 # Category labels: text colour and fill, like tracker labels.
 const CAT_COLORS := {
 	"pipelines": [Color("006644"), Color("e3fcef")],
@@ -1233,10 +1230,9 @@ func _build_setup() -> void:
 	var tips_row := HBoxContainer.new()
 	tips_row.add_theme_constant_override("separation", 12)
 	v.add_child(tips_row)
-	# Marina shows the new lead around for a month in the endless run, for the first week in the story.
-	var tips_key := "setup.run_tips"
-	tips_row.add_child(_button(Loc.t(tips_key + ("_on" if pick_tips else "_off")), _toggle_tips, 0, "chosen" if pick_tips else ""))
-	tips_row.add_child(_label(Loc.t(tips_key + "_hint"), 13, COL_MUTED, true))
+	# Marina shows the new lead around for the first month.
+	tips_row.add_child(_button(Loc.t("setup.run_tips_on" if pick_tips else "setup.run_tips_off"), _toggle_tips, 0, "chosen" if pick_tips else ""))
+	tips_row.add_child(_label(Loc.t("setup.run_tips_hint"), 13, COL_MUTED, true))
 	v.add_child(_spacer(6))
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 12)
@@ -2682,9 +2678,6 @@ func _done_strip(items: Array) -> Control:
 
 # Three columns: the inbox, what's on people's plates (each person's queue, the first card being worked
 # on), and what's done this week.
-const LANES := ["inbox", "people", "done"]
-
-
 func _lanes() -> Dictionary:
 	var lanes := {"inbox": rules.inbox(), "people": [], "done": []}
 	lanes["inbox"].sort_custom(func(a, b): return a["due"] < b["due"])
@@ -3355,7 +3348,7 @@ func _contact_of(p: String) -> String:
 # The chat holds only what asks for an answer or is a conversation, nothing else. Whatever
 # you did on the board, and news that changes nothing you'd do right now, shows on the board itself.
 const CHAT_SHOWN := ["event.", "review.", "budget.", "money.budget", "money.split", "boss.clean_week", "hire.cv",
-	"convo.", "story.", "talk.open", "visit.open", "fire.open", "people.", "intervene.open", "decline.open"]
+	"convo.", "story.", "talk.open", "visit.open", "fire.open", "intervene.open", "decline.open"]
 
 
 func _quiet(key: String) -> bool:
@@ -3386,10 +3379,6 @@ func _sort_threads() -> void:
 				th = _contact_of(e["to"])
 			elif key.begins_with("visit."):
 				th = "boss"
-			elif key == "you.to_taras":
-				th = "taras"
-			elif key == "people.ask":
-				th = "marina"
 			elif key.begins_with("up."):
 				th = GENERAL
 			else:
