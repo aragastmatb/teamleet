@@ -745,7 +745,8 @@ func _resolve_intervene(r, ev: Dictionary, c: String) -> String:
 	var info: Dictionary = r.info(p)
 	var reply := "event.intervene.%s.reply" % c
 	# Any real question gets them out of the wrong place; a pat on the back doesn't.
-	if t.get("stuck", 0) > 0 and c != "trust":
+	var unstuck: bool = t.get("stuck", 0) > 0 and c != "trust"
+	if unstuck:
 		t["stuck"] = 0
 		r.say(p, "event.intervene.unstuck", [], task_names(r, t))
 	match c:
@@ -786,6 +787,9 @@ func _resolve_intervene(r, ev: Dictionary, c: String) -> String:
 				else:
 					st["mood"] += 0.5 if info["drive"] == "growth" else 0.0
 					reply = "event.intervene.my_way.right"
+			elif unstuck:
+				# Your way was no better, but the question itself got them going: nothing more to say.
+				reply = ""
 			else:
 				t["q_bonus"] -= 0.5
 				st["mood"] -= 1.0
@@ -805,6 +809,8 @@ func _resolve_intervene(r, ev: Dictionary, c: String) -> String:
 				st["mood"] -= 1.5 if info.get("touchy", false) else 1.0
 				st["trust"] -= 1
 				reply = "event.intervene.take_over.hurt"
+	if reply == "":
+		return ""
 	return r._first_key(["%s.%s" % [reply, p], reply])
 
 

@@ -771,6 +771,10 @@ func _register_hire(id: String) -> void:
 	if hires[id]["name"] < 0:
 		return # a named character: their names are in locale.gd
 	var n: Dictionary = C.HIRE_NAMES[hires[id]["name"]]
+	if n.get("f", false):
+		L.FEMALE[id] = true
+	else:
+		L.FEMALE.erase(id)
 	var cases := ["nom", "gen", "dat", "acc", "ins"]
 	for i in cases.size():
 		L.EXTRA["ru"]["name.%s.%s" % [id, cases[i]]] = n["ru"][i]
@@ -814,7 +818,9 @@ const INTERVIEW_SITTINGS := 2
 
 
 func _convo_line(who: String, key: String, names: Dictionary = {}) -> void:
-	convo["log"].append({"who": who, "key": key, "names": names})
+	var said := names.duplicate()
+	said["_by"] = who
+	convo["log"].append({"who": who, "key": key, "names": said})
 
 
 func convo_choices() -> Array:
@@ -1106,7 +1112,9 @@ func _talk_line(op: Dictionary) -> void:
 	var who: String = convo["who"] if op["who"] == "them" else op["who"]
 	if who == convo["who"] and op["emo"] != "":
 		convo["emo"] = op["emo"]
-	convo["log"].append({"who": who, "ru": op["ru"], "en": op["en"], "names": convo["names"]})
+	var said: Dictionary = convo["names"].duplicate()
+	said["_by"] = who
+	convo["log"].append({"who": who, "ru": op["ru"], "en": op["en"], "names": said})
 
 
 # What you can say now: what the answer leaves open, then the topics not yet touched.
@@ -1293,7 +1301,9 @@ func _confide(p: String) -> void:
 	if not L.has_key(line):
 		line = "talk.listen.any"
 	if not convo.is_empty():
-		convo["log"].append({"who": p, "key": line, "names": names})
+		var said := names.duplicate()
+		said["_by"] = p
+		convo["log"].append({"who": p, "key": line, "names": said})
 	_reveal(p, key)
 	var note: Dictionary = history[-1]
 	if not convo.is_empty() and note["key"].begins_with("know."):
@@ -5326,7 +5336,10 @@ func say(who: String, key: String, args: Array = [], names: Dictionary = {}) -> 
 
 
 func _say(who: String, key: String, args: Array = [], names: Dictionary = {}) -> void:
-	history.append({"who": who, "key": key, "args": args, "names": names, "day": day})
+	# Who says it, so the line takes their grammatical gender ({сказал|сказала}).
+	var said := names.duplicate()
+	said["_by"] = who
+	history.append({"who": who, "key": key, "args": args, "names": said, "day": day})
 
 
 func _narrate(key: String, args: Array = [], names: Dictionary = {}) -> void:

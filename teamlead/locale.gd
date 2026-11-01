@@ -84,7 +84,7 @@ const S := {
 		"stay.grudging.gena": "В шесть у меня жизнь. Но ладно. Один раз.",
 		"stay.no_tired": "Я сегодня не могу. Я на нуле.",
 		"stay.grudging": "Ладно. Но это не должно стать привычкой.",
-		"stay.glad": "Конечно. Я и так собирался.",
+		"stay.glad": "Конечно. Я и так {собирался|собиралась}.",
 		"stay.yes": "Хорошо, задержусь.",
 		"stay.ask": "Сможешь сегодня задержаться? Надо дожать «{task}».",
 		"stayed_late": "{who} задерживается ещё на {hours} ч ради «{task}».",
@@ -145,9 +145,9 @@ const S := {
 		"name.stas.gen": "Стаса",
 		"name.stas.nom": "Стас",
 		"event.comp_one_user_bug.together.reply": "Вдвоём нашли: символ в имени, кодировка. Этому багу лет пять.",
-		"event.comp_one_user_bug.restart.reply": "Почистил, перезашёл. Не помогло. Закрыли как «не воспроизводится».",
+		"event.comp_one_user_bug.restart.reply": "{Почистил, перезашёл|Почистила, перезашла}. Не помогло. Закрыли как «не воспроизводится».",
 		"event.comp_one_user_bug.dig.fail": "Копаю. Пока ничего. Это какая-то мистика.",
-		"event.comp_one_user_bug.dig.pass": "Нашёл! У него в имени символ, который старый Python не читает. Всё падало молча.",
+		"event.comp_one_user_bug.dig.pass": "{Нашёл|Нашла}! У него в имени символ, который старый Python не читает. Всё падало молча.",
 		"event.comp_one_user_bug.choice.together": "Давай посмотрим вместе.",
 		"event.comp_one_user_bug.choice.restart": "Пусть почистит кэш и перезайдёт.",
 		"event.comp_one_user_bug.choice.dig": "Копай до дна.",
@@ -226,11 +226,11 @@ const S := {
 		"event.intervene.faster.reply": "Ладно, ускорюсь. Но за качество не ручаюсь.",
 		"event.intervene.faster.reply.unhappy": "Быстрее значит хуже, вы же понимаете?",
 		"event.intervene.careful.reply": "Хорошо, без спешки.",
-		"event.intervene.cut.reply": "Минимальная версия, понял. Будет работать, но не более.",
+		"event.intervene.cut.reply": "Минимальная версия, {понял|поняла}. Будет работать, но не более.",
 		"event.intervene.my_way.right": "О, так правда проще. Спасибо!",
-		"event.intervene.my_way.right_proud": "…Да, так лучше. Мог бы и сам додуматься.",
-		"event.intervene.my_way.wrong": "Так не получится, я это уже пробовал. Но раз вы настаиваете…",
-		"event.intervene.take_over.relief": "Правда? Спасибо. Я уже не вывозил.",
+		"event.intervene.my_way.right_proud": "…Да, так лучше. {Мог бы и сам|Могла бы и сама} додуматься.",
+		"event.intervene.my_way.wrong": "Так не получится, я это уже {пробовал|пробовала}. Но раз вы настаиваете…",
+		"event.intervene.take_over.relief": "Правда? Спасибо. Я уже не {вывозил|вывозила}.",
 		"event.intervene.take_over.calm": "Ну, раз так. Мне меньше забот.",
 		"event.intervene.take_over.hurt": "То есть вы мне не доверяете. Понятно.",
 		"event.intervene.take_over.hurt.alex": "Я бы сам доделал. Но как скажете.",
@@ -445,7 +445,7 @@ const S := {
 		"hire.answer.drive.hire_faker": "Масштаб! Влияние! Хочу, чтобы мои решения меняли компанию.",
 		"hire.answer.drive.hire_genius": "Чтобы не мешали. Дайте задачу и не трогайте, результат будет.",
 		"hire.answer.drive.hire_life_first": "Нормальный график. Я хорошо работаю, когда мне есть куда уйти вечером.",
-		"hire.answer.drive.hire_plodder": "Да чтоб люди рядом хорошие были. И чтоб нужен был кому-то, а то дома одному тоскливо.",
+		"hire.answer.drive.hire_plodder": "Да чтоб люди рядом хорошие были. И чтоб {нужен был|нужна была} кому-то, а то дома {одному|одной} тоскливо.",
 		"hire.answer.not_want.any": "Только не «{cat}», пожалуйста. Делать буду, но без радости.",
 		"hire.answer.not_want.hire": "Да мне в целом всё равно, что дадут.",
 		"hire.answer.not_want.hire_faker": "Я за любую задачу! Слабых мест у меня нет, честно.",
@@ -463,7 +463,7 @@ const S := {
 		"hire.answer.last_job.stump": "Да как-то так получилось. Отдел сократили.",
 		"hire.answer.last_job.life_first": "Там требовали сидеть до ночи. А у меня собака, марафон и вообще жизнь.",
 		"hire.answer.last_job.genius": "Там никто не понимал, что я предлагаю. Надеюсь, здесь поймут.",
-		"hire.answer.last_job.plodder": "Да всего понемногу: сервера, сеть, принтеры, кофемашину однажды чинил. Все ко мне шли, и я никому не отказывал.",
+		"hire.answer.last_job.plodder": "Да всего понемногу: сервера, сеть, принтеры, кофемашину однажды {чинил|чинила}. Все ко мне шли, и я никому не {отказывал|отказывала}.",
 		"hire.answer.overtime.solid": "Если горит, останусь, а если горит каждый день, поговорим.",
 		"hire.answer.overtime.junior": "Сколько надо! Мне всё интересно.",
 		"hire.answer.overtime.faker": "Конечно, без проблем! Сколько скажете.",
@@ -503,7 +503,7 @@ const S := {
 		"hello.hire_life_first": "Привет! Сразу скажу: по вечерам у меня собака и бег. Но в рабочее время я полностью в работе.",
 		"hello.hire_genius": "Привет. Ваш Chainer, конечно, смелый. Ничего, поправим.",
 		"hello.hire_plodder": "Здравствуйте, коллеги! Чай в термосе общий, не стесняйтесь.",
-		"plodder.oops": "Ой, а я по-другому понял… Ничего-ничего, сейчас переделаю!",
+		"plodder.oops": "Ой, а я по-другому {понял|поняла}… Ничего-ничего, сейчас переделаю!",
 		"plodder.redo": "{who} приносит «{task}», и это не совсем то, что просили. Почти всё заново.",
 		"talk.listen.hire.level.0": "«{cat}» не моё, честно.",
 		"talk.listen.hire.level.1": "В «{cat}» так, по верхам.",
@@ -670,8 +670,8 @@ const S := {
 		"event.deal.choice.scold": "Так больше нельзя. В следующий раз отвечаешь сам.",
 		"event.deal.choice.talk": "Давай разберём, что пошло не так и как сделать иначе.",
 		"event.deal.choice.let_go": "Бывает. Проехали.",
-		"event.deal.scold.reply": "Понял.",
-		"event.deal.talk.reply": "Спасибо. Кажется, я понял, где ошибся.",
+		"event.deal.scold.reply": "{Понял|Поняла}.",
+		"event.deal.talk.reply": "Спасибо. Кажется, я {понял, где ошибся|поняла, где ошиблась}.",
 		"event.deal.let_go.reply": "Ладно.",
 		"review.q.success": "Хорошая работа с «{task}». Кто это делал?",
 		"review.q.late": "Что произошло с «{task}»? Срок сорван.",
@@ -891,7 +891,7 @@ const S := {
 		"event.stayed_late.choice.stay_with": "Давай посижу с тобой, вдвоём быстрее.",
 		"event.stayed_late.choice.ignore": "Как хочешь, только не засиживайся.",
 		"event.stayed_late.send_home.reply": "Да я бы ещё… ладно, ладно, ухожу.",
-		"event.stayed_late.stay_with.reply": "Серьёзно? Ну давай, я как раз застрял вот тут.",
+		"event.stayed_late.stay_with.reply": "Серьёзно? Ну давай, я как раз {застрял|застряла} вот тут.",
 		"event.stayed_late.ignore.reply": "Ага. Я быстро.",
 		"event.conflict.ask": "Слушай, с {other_ins} невозможно работать. Я в который раз переделываю за ними, и это уже не смешно.",
 		"event.conflict.choice.mediate": "Давайте сядем втроём и разберёмся.",
@@ -1253,15 +1253,15 @@ const S := {
 		"sit.button": "Посидеть вместе",
 		"sit.say": "Давай посмотрим вместе, как идёт «{task}».",
 		"sit.ok": "Давай, вдвоём быстрее.",
-		"sit.micro": "Я и сам справлюсь. Но ладно, смотри.",
+		"sit.micro": "Я и {сам|сама} справлюсь. Но ладно, смотри.",
 		"init.accept": "Давай",
 		"init.yes": "Давай, хорошая идея.",
 		"init.offer.tech_debt": "Задач нет, можно я пока разберу техдолг в пайплайнах? Давно руки чешутся.",
 		"init.offer.automate_report": "Можно я автоматизирую еженедельный отчёт? Чтобы больше не собирать его руками.",
 		"init.offer.showcase": "Давай я соберу демо платформы для Ирины Викторовны?",
-		"init.offer.self_study.infra": "Можно я пока поучусь? Есть курс по Kubernetes, давно хотел посмотреть.",
+		"init.offer.self_study.infra": "Можно я пока поучусь? Есть курс по Kubernetes, давно {хотел|хотела} посмотреть.",
 		"init.offer.self_study.pipelines": "Можно я пока разберусь, как у нас пайплайны собираются? А то я только кнопку жму и молюсь.",
-		"init.offer.self_study.portal": "Можно я посмотрю, как портал устроен внутри? Хочу хоть раз сам что-то в нём поправить.",
+		"init.offer.self_study.portal": "Можно я посмотрю, как портал устроен внутри? Хочу хоть раз {сам|сама} что-то в нём поправить.",
 		"init.offer.self_study.support": "Можно я почитаю старые обращения банков? Хочу понимать, что у них обычно болит.",
 		"init.offer.write_docs": "Давай я напишу документацию по старому Jenkins. Пока помню, как он устроен.",
 		"init.done.tech_debt": "Техдолг в пайплайнах разобран: пожаров станет меньше.",
@@ -1439,9 +1439,9 @@ const S := {
 		"event.comp_bad_data.choice.clean": "Разберись, сделаем честно.",
 		"event.comp_bad_data.choice.as_is": "Отключи эти тесты, потом вернём.",
 		"event.comp_bad_data.choice.together": "Давай разберёмся вместе.",
-		"event.comp_bad_data.clean.pass": "Нашёл, что сломано на самом деле. Пара часов, и готово.",
+		"event.comp_bad_data.clean.pass": "{Нашёл|Нашла}, что сломано на самом деле. Пара часов, и готово.",
 		"event.comp_bad_data.clean.fail": "Это не пара часов. Это ад. Но разбираюсь.",
-		"event.comp_bad_data.as_is.reply": "Отключил. Всё зелёное. Подозрительно зелёное.",
+		"event.comp_bad_data.as_is.reply": "{Отключил|Отключила}. Всё зелёное. Подозрительно зелёное.",
 		"event.comp_bad_data.together.reply": "Вдвоём быстрее. Спасибо.",
 		"event.comp_client_changes.ask": "Банк передумал: по «{task}» им теперь нужен OpenShift, а не ванильный кубер. Половину переделывать.",
 		"event.comp_client_changes.choice.redo": "Переделываем.",
@@ -3509,6 +3509,9 @@ static func has_key(key: String) -> bool:
 # person, who to read instead: STAND_IN["hire3"] = ["hire_faker", "hire"] (their kind, then any hire).
 static var EXTRA := {"ru": {}, "en": {}}
 static var STAND_IN := {}
+# Who speaks of themselves in the feminine: a line can say "{пробовал|пробовала}" and gets the form for
+# whoever says it (names._by), or "{who:понял|поняла}" for the person in that placeholder.
+static var FEMALE := {"vika": true, "marina": true, "boss": true, "olga": true}
 
 
 static func _find(key: String, in_lang: String):
@@ -3541,7 +3544,7 @@ static func t(key: String, args: Array = []) -> String:
 
 # Keyed text with %s args and {named} placeholders filled in.
 static func render(key: String, args: Array = [], names: Dictionary = {}) -> String:
-	var s := t(key, args)
+	var s := _gendered(t(key, args), names)
 	if names.is_empty():
 		return s
 	var resolved := {}
@@ -3552,7 +3555,7 @@ static func render(key: String, args: Array = [], names: Dictionary = {}) -> Str
 
 # A line written straight in a scene (both languages) with its {named} placeholders filled in.
 static func fill(ru: String, en: String, names: Dictionary = {}) -> String:
-	var s := en if lang == "en" and en != "" else ru
+	var s := _gendered(en if lang == "en" and en != "" else ru, names)
 	if names.is_empty():
 		return s
 	var resolved := {}
@@ -3576,6 +3579,23 @@ static func cash_word(n: int) -> String:
 	if a % 10 in [2, 3, 4] and not (a % 100 in [12, 13, 14]):
 		return "куника"
 	return "куников"
+
+
+static func _gendered(s: String, names: Dictionary) -> String:
+	if not s.contains("|"):
+		return s
+	var re := RegEx.create_from_string("\\{(?:(\\w+):)?([^{}|]*)\\|([^{}|]*)\\}")
+	var out := ""
+	var at := 0
+	for m in re.search_all(s):
+		var who: String = names.get("_by", "")
+		if m.get_string(1) != "":
+			# "@name.<id>.<case>" names the person.
+			var ref: String = str(names.get(m.get_string(1), ""))
+			who = ref.get_slice(".", 1) if ref.begins_with("@name.") else ""
+		out += s.substr(at, m.get_start() - at) + (m.get_string(3) if FEMALE.has(who) else m.get_string(2))
+		at = m.get_end()
+	return out + s.substr(at)
 
 
 static func person(id: String) -> String:
