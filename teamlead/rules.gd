@@ -4390,10 +4390,6 @@ func payroll() -> int:
 	return sum
 
 
-# Weeks the money lasts at this payroll, budgets aside.
-func weeks_left() -> int:
-	var pay := payroll()
-	return 99 if pay == 0 else money / pay
 
 
 func _draft_add() -> void:

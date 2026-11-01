@@ -1270,14 +1270,22 @@ func _money_text() -> String:
 
 
 # When the month closes: Irina splits the budget, and the race with Taras is counted.
-func _budget_text() -> String:
+func _budget_when() -> String:
 	var left: int = rules.last_day() - rules.day + 1
-	var when := Loc.t("money.budget_tomorrow") if left <= 1 else Loc.t("money.budget_in", [left])
-	return when + " · " + Loc.t("money.at_budget", [_rub(rules.money_at_budget())])
+	return Loc.t("money.budget_tomorrow") if left <= 1 else Loc.t("money.budget_in", [left])
 
 
-func _money_color() -> Color:
-	return COL_ON_TOP_DANGER if rules.weeks_left() < 2 else COL_ON_TOP
+# The balance on the top bar turns red when the salaries still due this month don't fit in it; a click opens the money window.
+func _money_label(size: int, bold: bool) -> Label:
+	var l := _label(_money_text(), size, COL_ON_TOP_DANGER if rules.money_at_budget() < 0 else COL_ON_TOP, false, bold)
+	l.tooltip_text = Loc.t("money.open")
+	l.mouse_filter = Control.MOUSE_FILTER_STOP
+	l.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	l.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_open_window("money"))
+	juice_nodes["money"] = l
+	return l
 
 
 # Before the first day of an endless run: pick the team from the CVs Marina brought.
@@ -1451,13 +1459,10 @@ func _top_bar() -> Control:
 	var points := _attention_label(15)
 	juice_nodes["points"] = points
 	top.add_child(points)
-	var money := _label(_money_text(), 15, _money_color())
-	juice_nodes["money"] = money
-	top.add_child(money)
+	top.add_child(_money_label(15, false))
 	var race := _race_label(15)
 	juice_nodes["race"] = race
 	top.add_child(race)
-	top.add_child(_label(_budget_text(), 13, COL_ON_TOP_DANGER if rules.money_at_budget() < 0 else COL_ON_TOP_MUTED))
 	if not rules.chapter_keys().is_empty():
 		var k := rules.key_status()
 		top.add_child(_label(Loc.render("keys_label", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 15, COL_ON_TOP))
@@ -1736,6 +1741,9 @@ func _build_window() -> void:
 			selected = -1
 			return
 		_task_window(_modal(Loc.t("taskname." + t["id"]), "", minf(820.0, view.x - 16.0), true, true), t)
+		return
+	if window == "money":
+		_money_window(_modal(Loc.t("money.window.title"), Loc.t("money.window.hint", [_budget_when(), _rub(rules.payroll())]), minf(640.0, view.x - 16.0), true, true))
 		return
 	if window.begins_with("person:"):
 		var p := window.substr(7)
@@ -3158,13 +3166,10 @@ func _phone_top() -> Control:
 	var points := _label(Loc.t("you.sick_today") if rules.sick_today else dots, 17, COL_ON_TOP if rules.overtime_today == 0 else COL_ON_TOP_DANGER, false, true)
 	juice_nodes["points"] = points
 	chips.add_child(_chip(points))
-	var money := _label(_money_text(), 14, _money_color(), false, true)
-	juice_nodes["money"] = money
-	chips.add_child(_chip(money))
+	chips.add_child(_chip(_money_label(14, true)))
 	var race := _race_label(14)
 	juice_nodes["race"] = race
 	chips.add_child(_chip(race))
-	chips.add_child(_chip(_label(_budget_text(), 13, COL_ON_TOP_DANGER if rules.money_at_budget() < 0 else COL_ON_TOP, false, true)))
 	if not rules.chapter_keys().is_empty():
 		var k := rules.key_status()
 		chips.add_child(_chip(_label(Loc.render("keys_short", [], {"good": k["good"], "total": rules.chapter_keys().size()}), 14, COL_ON_TOP, false, true)))
@@ -4477,6 +4482,91 @@ func _budget_block(v: VBoxContainer) -> void:
 	else:
 		var ok: bool = not race["defended"].ends_with("_no")
 		box.add_child(_label(Loc.t("budget." + race["defended"], [_rub(race["budget"])]), 15, COL_TEXT if ok else COL_DANGER, true))
+
+
+const MONEY_KINDS := ["budget", "salary", "hire", "severance", "upgrade", "bonus", "penalty", "other"]
+
+
+# Where the month's money went, on a chart and line by line, down to what's left when the next budget comes.
+func _money_window(body: VBoxContainer) -> void:
+	body.add_child(_money_chart())
+	body.add_child(_label(Loc.t("money.legend"), 12, COL_MUTED, true))
+	var month := rules.money_month()
+	var rows := _vbox(4)
+	body.add_child(rows)
+	if month["carried"] != 0:
+		rows.add_child(_money_row(Loc.t("money.kind.carried"), month["carried"], COL_TEXT, false))
+	for kind in MONEY_KINDS:
+		var sum: int = month["kinds"].get(kind, 0)
+		if sum != 0:
+			rows.add_child(_money_row(Loc.t("money.kind." + kind), sum, COL_TEXT, false))
+	rows.add_child(_money_row(Loc.t("money.now"), rules.money, COL_TEXT, true))
+	if month["salaries_ahead"] > 0:
+		rows.add_child(_money_row(Loc.t("money.ahead"), -month["salaries_ahead"], COL_TEXT, false))
+	var left := rules.money_at_budget()
+	rows.add_child(_money_row(Loc.t("money.left"), left, COL_DANGER if left < 0 else COL_GOOD, true))
+	if month["fines"] > 0:
+		body.add_child(_label(Loc.t("money.fines", [_rub(month["fines"])]), 13, COL_DANGER, true))
+
+
+func _money_row(name: String, amount: int, color: Color, bold: bool) -> Control:
+	var row := HBoxContainer.new()
+	var l := _label(name, 14, color, false, bold)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(l)
+	row.add_child(_label(("+" if amount > 0 and not bold else "") + _rub(amount), 14, color, false, bold))
+	return row
+
+
+# The month's balance day by day: solid up to now, dashed on to the next budget, with paydays and zero marked.
+func _money_chart() -> Control:
+	var curve := rules.money_curve()
+	var chart := Control.new()
+	chart.custom_minimum_size = Vector2(0, 170)
+	chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chart.draw.connect(func():
+		var font := chart.get_theme_default_font()
+		var days: int = curve["days"]
+		var lo := 0.0
+		var hi := 1.0
+		for pt in curve["fact"] + curve["plan"]:
+			lo = minf(lo, pt.y)
+			hi = maxf(hi, pt.y)
+		var pad := (hi - lo) * 0.1
+		lo -= pad
+		hi += pad
+		var area := Rect2(8, 18, chart.size.x - 16, chart.size.y - 36)
+		var at := func(pt: Vector2) -> Vector2:
+			return Vector2(area.position.x + area.size.x * pt.x / days, area.position.y + area.size.y * (hi - pt.y) / (hi - lo))
+		# Fridays, when salaries go out.
+		for x in range(1, days + 1):
+			if (rules.first_day() + x - 1) % 5 == 0:
+				var top: Vector2 = at.call(Vector2(x, hi))
+				var bottom: Vector2 = at.call(Vector2(x, lo))
+				chart.draw_line(top, bottom, COL_BORDER, 1.0)
+				chart.draw_string(font, bottom + Vector2(-8, 14), Loc.t("money.payday_mark"), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, COL_FAINT)
+		chart.draw_dashed_line(at.call(Vector2(0, 0)), at.call(Vector2(days, 0)), COL_FAINT, 1.0, 4.0)
+		var steps := func(pts: Array, color: Color, dashed: bool):
+			for i in range(1, pts.size()):
+				var a: Vector2 = at.call(pts[i - 1])
+				var b: Vector2 = at.call(Vector2(pts[i].x, pts[i - 1].y))
+				var c: Vector2 = at.call(pts[i])
+				for seg in [[a, b], [b, c]]:
+					if dashed:
+						chart.draw_dashed_line(seg[0], seg[1], color, 2.0, 6.0)
+					else:
+						chart.draw_line(seg[0], seg[1], color, 2.5)
+		var end: Vector2 = curve["plan"][-1]
+		var plan_col := COL_DANGER if end.y < 0 else COL_MUTED
+		steps.call(curve["fact"], COL_PRIMARY, false)
+		steps.call(curve["plan"], plan_col, true)
+		var now: Vector2 = curve["plan"][0]
+		chart.draw_circle(at.call(now), 4.0, COL_PRIMARY)
+		var tag := _rub(int(end.y))
+		var tag_at: Vector2 = at.call(end)
+		var tw := font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+		chart.draw_string(font, Vector2(minf(tag_at.x - tw / 2.0, area.end.x - tw), maxf(tag_at.y - 6, 12)), tag, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, plan_col))
+	return chart
 
 
 func _defend(choice: String) -> void:
