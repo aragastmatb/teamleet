@@ -58,6 +58,7 @@ var period_start := 1
 var money := 0
 # Before the first day: the CVs you're choosing the team from, and who you've picked.
 var draft_picked: Array = []
+var draft_rerolls := 0
 # Taras's department this period: what it has delivered so far and what it's on course for. Who delivers
 # more gets the bigger share of next month's budget (see _split_budget).
 var taras_points := 0.0
@@ -187,7 +188,9 @@ func start_run(seed_value: int = -1, boss_kind: String = C.DEFAULT_BOSS, profile
 	L.STAND_IN = {}
 	if endless():
 		team = []
-		money = START_MONEY
+		# You start with what Irina gives for the first month, nothing else.
+		money = PERIOD_BUDGET
+		draft_rerolls = DRAFT_REROLLS
 		draft_picked.clear()
 		last_race = {}
 		for i in DRAFT_SIZE:
@@ -4641,14 +4644,13 @@ static func cash_arg(n: int) -> String:
 
 # Money, in thousands of roubles. A salary is what the CV asks for: SALARY_BASE plus SALARY_PER_LEVEL for
 # each level it claims, so a faker costs like the engineer they pretend to be. It's paid a quarter a week.
-const START_MONEY := 1500
 const PERIOD_BUDGET := 1000
 const SALARY_BASE := 60
 const SALARY_PER_LEVEL := 25
 const HIRE_FEE := 100 # the recruiter's cut
 const SEVERANCE_WEEKS := 2
 const DRAFT_SIZE := 6
-const DRAFT_REROLL := 50
+const DRAFT_REROLLS := 3 # fresh CVs Marina will bring before you start
 const DRAFT_MAX := 6
 const CANDIDATE_EVERY := 3 # days between CVs in the endless run, while there's room in the list
 
@@ -4876,9 +4878,9 @@ func draft_toggle(id: String) -> void:
 
 # New CVs in place of everyone not picked.
 func draft_reroll() -> void:
-	if phase != "draft" or money < DRAFT_REROLL:
+	if phase != "draft" or draft_rerolls <= 0:
 		return
-	money -= DRAFT_REROLL
+	draft_rerolls -= 1
 	for c in candidates.duplicate():
 		if not draft_picked.has(c["id"]):
 			candidates.erase(c)
@@ -4915,7 +4917,7 @@ func draft_start() -> void:
 func _period_budget() -> void:
 	_taras_period()
 	if last_race.is_empty():
-		money += PERIOD_BUDGET
+		# The first month's money is already in the account since the draft.
 		_say("boss", "money.budget", [cash_arg(PERIOD_BUDGET)])
 		return
 	money += last_race["budget"]

@@ -1360,14 +1360,14 @@ func _build_draft() -> void:
 	for c in rules.candidates:
 		grid.add_child(_draft_card(c["id"], (width - 12 * (cols - 1)) / float(cols)))
 	var month := rules.draft_payroll()
-	var sum := Loc.t("draft.sum", [rules.draft_picked.size(), _rub(month), _rub(rules.money), _rub(rules.PERIOD_BUDGET)])
+	var sum := Loc.t("draft.sum", [rules.draft_picked.size(), _rub(month), _rub(rules.PERIOD_BUDGET)])
 	v.add_child(_label(sum, 16, COL_DANGER if month > rules.PERIOD_BUDGET else COL_TEXT, true, true))
 	var buttons := _flow(12, 12)
 	var go := _button(Loc.t("draft.start"), _draft_start, 160 if mobile else 260, "primary")
 	go.disabled = rules.draft_picked.is_empty()
 	buttons.add_child(go)
-	var again := _button(Loc.t("draft.reroll", [_rub(rules.DRAFT_REROLL)]), _draft_reroll, 0)
-	again.disabled = rules.money < rules.DRAFT_REROLL
+	var again := _button(Loc.t("draft.reroll", [rules.draft_rerolls]), _draft_reroll, 0)
+	again.disabled = rules.draft_rerolls <= 0
 	buttons.add_child(again)
 	if mobile:
 		var bar := PanelContainer.new()
