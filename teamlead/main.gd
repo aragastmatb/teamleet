@@ -174,7 +174,8 @@ var chat_last := ""
 
 func _ready() -> void:
 	Loc.lang = "ru" if OS.get_locale_language() == "ru" else "en"
-	# Bundled fonts (the web build has no system fonts): Nunito for reading, Caveat for marker on the board.
+	# Bundled fonts (the web build has no system fonts): Nunito for reading, Caveat for marker on the board,
+	# a few symbols from DejaVu Sans behind both.
 	var regular := _weight(load("res://fonts/Nunito.ttf"), 600)
 	font_bold = _weight(load("res://fonts/Nunito.ttf"), 800)
 	font_hand = _weight(load("res://fonts/Caveat.ttf"), 700)
@@ -226,6 +227,8 @@ func _ready() -> void:
 func _weight(base: Font, wght: int) -> FontVariation:
 	var f := FontVariation.new()
 	f.base_font = base
+	# Neither font has the marks we use (dots, stars, ticks, arrows), and a browser lends none.
+	f.fallbacks = [load("res://fonts/Symbols.ttf")]
 	f.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): wght}
 	return f
 
