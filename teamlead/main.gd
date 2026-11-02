@@ -328,14 +328,14 @@ func _drop_on(p: String) -> void:
 
 
 # Picking someone hands them the task. If they push back, the window turns into the talk about it;
-# if not, it closes, unless a helper can still be added right away (the story's mornings).
+# if not, the sticky is simply theirs.
 func _pick(p: String) -> void:
 	var from := rules.history.size()
 	rules.assign(selected, p)
 	if not rules.pending.is_empty():
 		deal_from = from
 		deal_who = p
-	elif p == "me" or not rules.allowed("pair"):
+	else:
 		selected = -1
 		window = ""
 	_render()
