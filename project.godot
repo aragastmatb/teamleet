@@ -23,6 +23,7 @@ window/size/viewport_width=1280
 window/size/viewport_height=800
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+window/handheld/orientation=4
 
 [rendering]
 
@@ -30,3 +31,4 @@ environment/defaults/default_clear_color=Color(0.9568628, 0.9607843, 0.96862745,
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true

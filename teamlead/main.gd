@@ -257,8 +257,8 @@ func _start_test(point: String) -> void:
 
 # On Retina screens the window opens at physical pixels and looks tiny; scale it up to fit the screen.
 func _fit_window() -> void:
-	if OS.has_feature("web"):
-		return # the page sizes the canvas
+	if OS.has_feature("web") or OS.has_feature("mobile"):
+		return # the page or the phone sizes it
 	var w := get_window()
 	var screen := w.current_screen
 	var hidpi := DisplayServer.screen_get_scale(screen)
@@ -270,9 +270,11 @@ func _fit_window() -> void:
 
 
 # Upright: the note to turn the phone. Small (a phone on its side): the compact board. Windows and the
-# web canvas are in device pixels, so a 3x phone or a Retina laptop is measured in points.
+# web canvas are in device pixels, so a 3x phone or a Retina laptop is measured in points (dp on Android).
 func _apply_layout_mode() -> bool:
-	var size := Vector2(get_window().size) / maxf(1.0, DisplayServer.screen_get_scale())
+	# Android reports no scale; its density (dpi over 160) is the same thing.
+	var scale := DisplayServer.screen_get_dpi() / 160.0 if OS.has_feature("android") else DisplayServer.screen_get_scale()
+	var size := Vector2(get_window().size) / maxf(1.0, scale)
 	var up := size.x < size.y
 	var small := up or size.x < DESKTOP_MIN.x or size.y < DESKTOP_MIN.y
 	var target := PORTRAIT_SIZE if up else (COMPACT_SIZE if small else DESKTOP_SIZE)
