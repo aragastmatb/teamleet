@@ -141,6 +141,8 @@ var coach_target: Control
 var coach_forced := false
 var coach_id := ""
 var coach_press := Vector2.ZERO
+# The hint tucked into the corner as Marina's face, by its id; it opens again when tapped.
+var coach_folded := ""
 # The part of a phone's screen clear of its cutout, as of the last render.
 var safe_area := Rect2i()
 # The columns on the board by who they belong to, to light up the ones a dragged sticky can go to.
@@ -2450,7 +2452,7 @@ func _coach() -> void:
 	# Out of the way while a sticky is dragged.
 	layer.add_to_group("coach")
 	coach_layer = layer
-	coach_bubble = _coach_bubble(step, coach_forced, _coach_hole(), _view())
+	coach_bubble = _coach_face(step["id"]) if coach_folded == step["id"] else _coach_bubble(step, coach_forced, _coach_hole(), _view())
 	layer.add_child(coach_bubble)
 
 
@@ -2545,6 +2547,8 @@ func _coach_bubble(step: Dictionary, forced: bool, hole: Rect2, view: Vector2) -
 	row.add_child(v)
 	v.add_child(_label(Loc.person("marina"), 13, COL_MUTED, false, true))
 	v.add_child(_label(Loc.t("coach." + step["id"]), 15, COL_TEXT, true))
+	v.add_child(_label(Loc.t("coach.fold"), 11, COL_FAINT, true))
+	bubble.gui_input.connect(_fold_coach.bind(bubble, step["id"]))
 	bubble.modulate.a = 0.0
 	if not forced:
 		var ok := _button(Loc.t("coach.ok"), _coach_seen.bind(step["id"]), 0, "primary")
@@ -2566,6 +2570,31 @@ func _coach_bubble(step: Dictionary, forced: bool, hole: Rect2, view: Vector2) -
 			bubble.position = Vector2(12.0, 8.0)
 			bubble.modulate.a = 1.0))
 	return bubble
+
+
+# The hint folded away: Marina's face in the bottom right corner, tapped to open it again.
+func _coach_face(id: String) -> Control:
+	var face := PanelContainer.new()
+	var style := _box(COL_SURFACE, COL_STAR, 3, 4)
+	style.set_corner_radius_all(32)
+	face.add_theme_stylebox_override("panel", style)
+	var pic := _avatar("marina", 48)
+	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for c in pic.find_children("*", "Control", true, false):
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	face.add_child(pic)
+	face.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	face.gui_input.connect(_fold_coach.bind(face, ""))
+	await_size(face, func(sz: Vector2):
+		face.position = _view() - sz - Vector2(16, 16))
+	return face
+
+
+func _fold_coach(event: InputEvent, c, id: String) -> void:
+	if _tapped(event) and is_instance_valid(c):
+		c.accept_event()
+		coach_folded = id
+		_render.call_deferred()
 
 
 func await_size(c: Control, place: Callable) -> void:
