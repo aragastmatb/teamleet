@@ -134,6 +134,8 @@ var portrait := false
 var pairing := false
 # A sticky is being dragged: let go anywhere but a column and it goes back.
 var dragging := false
+# The columns on the board by who they belong to, to light up the ones a dragged sticky can go to.
+var drop_columns := {}
 # The messenger: a column of contacts, and the one conversation that's open ("" for none).
 var chat_thread := ""
 # How far each conversation has been read, as an index into the history.
@@ -2383,6 +2385,8 @@ func _coach() -> void:
 	layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(layer)
+	# Out of the way while a sticky is dragged.
+	layer.add_to_group("coach")
 	var view := get_viewport().get_visible_rect().size
 	var hole := Rect2(view / 2.0, Vector2.ZERO)
 	if target != null:
@@ -2497,6 +2501,7 @@ func _board_area() -> Control:
 	row.add_theme_constant_override("separation", 0)
 	v.add_child(row)
 	row.add_child(_inbox_column())
+	drop_columns.clear()
 	# More people than fit: the columns scroll sideways.
 	var people := ScrollContainer.new()
 	people.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -2578,7 +2583,8 @@ func _person_column(p: String) -> Control:
 				col.accept_event()
 				cue = "assign"
 				_drop_on.call_deferred(p))
-		col.set_drag_forwarding(Callable(), _column_can_drop.bind(p), _column_drop.bind(p))
+	col.set_drag_forwarding(Callable(), _column_can_drop.bind(p), _column_drop.bind(p))
+	drop_columns[p] = col
 	var v := _vbox(6)
 	col.add_child(_padded(v, 6 if compact else 8, 8))
 	v.add_child(_column_head(p))
@@ -2600,8 +2606,9 @@ func _person_column(p: String) -> Control:
 	return col
 
 
-# Dragging a sticky picks it, so the columns light up and the pick bar shows just as after a tap.
-# On a touch screen a mostly vertical move is the list scrolling, not a drag.
+# Dragging a sticky picks it and lights up the columns it can go to. Nothing is rebuilt until it's
+# dropped: a phone drops the drag when the control it started from goes away. On a touch screen
+# a mostly vertical move is the list scrolling, not a drag.
 func _sticky_drag(_at, uid, pair, card):
 	if not is_instance_valid(card) or rules.task(uid).is_empty():
 		return null
@@ -2614,12 +2621,16 @@ func _sticky_drag(_at, uid, pair, card):
 	paper.modulate.a = 0.9
 	ghost.add_child(paper)
 	card.set_drag_preview(ghost)
+	card.modulate.a = 0.35
 	dragging = true
 	selected = uid
 	pairing = pair
 	deal_from = -1
 	window = ""
-	_render.call_deferred()
+	for p in drop_columns:
+		if is_instance_valid(drop_columns[p]) and _can_drop(p):
+			drop_columns[p].add_theme_stylebox_override("panel", _flat(Color(COL_PRIMARY, 0.07)))
+	get_tree().call_group("coach", "hide")
 	return {"sticky": uid}
 
 
@@ -2630,14 +2641,6 @@ func _column_can_drop(_at, data, p) -> bool:
 func _column_drop(_at, _data, p) -> void:
 	cue = "assign"
 	_drop_on.call_deferred(p)
-
-
-func _bin_can_drop(_at, data) -> bool:
-	return data is Dictionary and data.has("sticky") and _picking() and not pairing and rules.can_decline(rules.task(selected)) and rules.can_afford(rules.cost("decline"))
-
-
-func _bin_drop(_at, _data) -> void:
-	_decline.call_deferred()
 
 
 func _notification(what: int) -> void:
@@ -2885,7 +2888,6 @@ func _pick_bar() -> Control:
 	if not pairing and rules.can_decline(t):
 		var bin := _button(Loc.t("pick_bar.bin") + _cost_mark(rules.cost("decline")), _decline, 0, "on_top")
 		bin.disabled = bin.disabled or not rules.can_afford(rules.cost("decline"))
-		bin.set_drag_forwarding(Callable(), _bin_can_drop, _bin_drop)
 		row.add_child(bin)
 	row.add_child(_button(Loc.t("pick_bar.cancel"), _clear_selection, 0, "on_top"))
 	return bar
