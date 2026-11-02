@@ -134,6 +134,13 @@ var portrait := false
 var pairing := false
 # A sticky is being dragged: let go anywhere but a column and it goes back.
 var dragging := false
+# Marina's hint on screen: its layer, bubble, what it points at, whether it holds the screen.
+var coach_layer: Control
+var coach_bubble: Control
+var coach_target: Control
+var coach_forced := false
+var coach_id := ""
+var coach_press := Vector2.ZERO
 # The part of a phone's screen clear of its cutout, as of the last render.
 var safe_area := Rect2i()
 # The columns on the board by who they belong to, to light up the ones a dragged sticky can go to.
@@ -2408,8 +2415,9 @@ func _coach() -> void:
 	var step := _coach_step()
 	if step.is_empty():
 		return
-	# Layout settles a frame after the screen is built.
-	await get_tree().process_frame
+	# Layout settles a frame after the screen is built, and remembered scrolls a few more after that.
+	for i in 4:
+		await get_tree().process_frame
 	if not is_instance_valid(ui):
 		return
 	var target: Control = null
@@ -2418,47 +2426,103 @@ func _coach() -> void:
 		if is_instance_valid(c) and c.is_visible_in_tree() and c.size.x > 0.0:
 			target = c
 			break
+	# What it points at may be scrolled out of sight: bring it in.
+	if target != null:
+		var up := target.get_parent()
+		while up != null and up != ui:
+			if up is ScrollContainer:
+				up.ensure_control_visible(target)
+			up = up.get_parent()
+		await get_tree().process_frame
+		if not is_instance_valid(ui) or not is_instance_valid(target):
+			return
+	coach_target = target
 	# Nothing to point at (another screen layout): a plain note, never a lock.
-	var forced: bool = step["forced"] and target != null
+	coach_forced = step["forced"] and target != null
+	coach_id = step["id"]
+	# The shade and ring are drawn each frame around wherever the target is now, so scrolling under
+	# them works; taps off the target are caught in _input.
 	var layer := Control.new()
 	layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.draw.connect(_draw_coach.bind(layer))
 	ui.add_child(layer)
 	# Out of the way while a sticky is dragged.
 	layer.add_to_group("coach")
-	var view := _view()
-	var hole := Rect2(view / 2.0, Vector2.ZERO)
-	if target != null:
-		var g := Rect2(target.get_global_rect().position - ui.global_position, target.size).grow(6.0)
-		hole = Rect2(g.position.floor(), g.size.ceil())
+	coach_layer = layer
+	coach_bubble = _coach_bubble(step, coach_forced, _coach_hole(), _view())
+	layer.add_child(coach_bubble)
+
+
+# Where Marina points, in the game's own coordinates: around the target, or nowhere (mid-screen).
+func _coach_hole() -> Rect2:
+	if not is_instance_valid(coach_target):
+		return Rect2(_view() / 2.0, Vector2.ZERO)
+	var g := Rect2(coach_target.get_global_rect().position, coach_target.size).grow(6.0)
+	# Scrolled partly out of its list: only the part that shows.
+	var up := coach_target.get_parent()
+	while up != null and up != ui:
+		if up is ScrollContainer:
+			g = g.intersection(up.get_global_rect().grow(6.0))
+		up = up.get_parent()
+	g.position -= ui.global_position
+	return Rect2(g.position.floor(), g.size.ceil())
+
+
+func _draw_coach(layer) -> void:
+	if not is_instance_valid(layer):
+		return
+	var view: Vector2 = layer.size
+	var hole := _coach_hole()
 	var dim := Color(0.12, 0.13, 0.15, 0.5)
 	for r in [Rect2(0, 0, view.x, hole.position.y), Rect2(0, hole.end.y, view.x, view.y - hole.end.y),
 			Rect2(0, hole.position.y, hole.position.x, hole.size.y), Rect2(hole.end.x, hole.position.y, view.x - hole.end.x, hole.size.y)]:
-		if r.size.x <= 0.0 or r.size.y <= 0.0:
-			continue
-		var shade := ColorRect.new()
-		shade.color = dim
-		shade.position = r.position
-		shade.size = r.size
-		shade.mouse_filter = Control.MOUSE_FILTER_STOP
-		if not forced:
-			shade.gui_input.connect(func(event: InputEvent):
-				if event is InputEventMouseButton and event.pressed:
-					_coach_seen.call_deferred(step["id"]))
-		layer.add_child(shade)
-	if target != null:
-		var ring := Panel.new()
-		var rs := StyleBoxFlat.new()
-		rs.bg_color = Color(0, 0, 0, 0)
-		rs.border_color = COL_STAR
-		rs.set_border_width_all(3)
-		rs.set_corner_radius_all(10)
-		ring.add_theme_stylebox_override("panel", rs)
-		ring.position = hole.position
-		ring.size = hole.size
-		ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		layer.add_child(ring)
-	layer.add_child(_coach_bubble(step, forced, hole, view))
+		if r.size.x > 0.0 and r.size.y > 0.0:
+			layer.draw_rect(r, dim)
+	if is_instance_valid(coach_target):
+		var ring := StyleBoxFlat.new()
+		ring.bg_color = Color(0, 0, 0, 0)
+		ring.border_color = COL_STAR
+		ring.set_border_width_all(3)
+		ring.set_corner_radius_all(10)
+		layer.draw_style_box(ring, hole)
+
+
+func _process(_delta: float) -> void:
+	if is_instance_valid(coach_layer):
+		coach_layer.queue_redraw()
+
+
+# With Marina's hint up, a tap off what she points at does nothing (and closes a hint that isn't
+# forced); a drag still scrolls. The tap's release is swallowed and the press let go far away, so
+# whatever was under the finger doesn't fire.
+func _input(event: InputEvent) -> void:
+	if not is_instance_valid(coach_layer) or not coach_layer.visible:
+		return
+	if not (event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT) or event.position.x < -1000.0:
+		return
+	if event.pressed:
+		coach_press = event.position
+		return
+	if event.position.distance_to(coach_press) >= 12.0:
+		return
+	var at: Vector2 = event.position - ui.global_position
+	if (is_instance_valid(coach_target) and _coach_hole().has_point(at)) or (is_instance_valid(coach_bubble) and coach_bubble.get_rect().has_point(at)):
+		return
+	get_viewport().set_input_as_handled()
+	var away := Vector2(-9999, -9999)
+	var move := InputEventMouseMotion.new()
+	move.button_mask = MOUSE_BUTTON_MASK_LEFT
+	move.position = away
+	move.global_position = away
+	get_viewport().push_input(move, true)
+	var lift := InputEventMouseButton.new()
+	lift.button_index = MOUSE_BUTTON_LEFT
+	lift.position = away
+	lift.global_position = away
+	get_viewport().push_input(lift, true)
+	if not coach_forced:
+		_coach_seen.call_deferred(coach_id)
 
 
 func _coach_bubble(step: Dictionary, forced: bool, hole: Rect2, view: Vector2) -> Control:
@@ -2486,24 +2550,35 @@ func _coach_bubble(step: Dictionary, forced: bool, hole: Rect2, view: Vector2) -
 		var ok := _button(Loc.t("coach.ok"), _coach_seen.bind(step["id"]), 0, "primary")
 		ok.size_flags_horizontal = Control.SIZE_SHRINK_END
 		v.add_child(ok)
-	# Below what it points at if there's room, else above; kept on screen.
+	# Below what it points at if there's room, else above. Neither (it points at most of the screen):
+	# a wide strip along the top, so it covers as little of it as it can.
 	await_size(bubble, func(sz: Vector2):
-		var x := clampf(hole.position.x, 12.0, view.x - sz.x - 12.0)
 		var y := hole.end.y + 12.0
 		if y + sz.y > view.y - 12.0:
 			y = hole.position.y - sz.y - 12.0
-		if y < 12.0:
-			y = clampf(view.y - sz.y - 24.0, 12.0, view.y)
-		bubble.position = Vector2(x, y)
-		bubble.modulate.a = 1.0)
+		if y >= 8.0:
+			bubble.position = Vector2(clampf(hole.position.x, 12.0, view.x - sz.x - 12.0), y)
+			bubble.modulate.a = 1.0
+			return
+		face.hide()
+		bubble.custom_minimum_size.x = view.x - 24.0
+		await_size(bubble, func(wide: Vector2):
+			bubble.position = Vector2(12.0, 8.0)
+			bubble.modulate.a = 1.0))
 	return bubble
 
 
 func await_size(c: Control, place: Callable) -> void:
-	c.ready.connect(func():
-		await get_tree().process_frame
-		if is_instance_valid(c):
-			place.call(c.size))
+	if c.is_inside_tree():
+		_place_later(c, place)
+	else:
+		c.ready.connect(_place_later.bind(c, place))
+
+
+func _place_later(c, place: Callable) -> void:
+	await get_tree().process_frame
+	if is_instance_valid(c):
+		place.call(c.size)
 
 
 func _coach_seen(id: String) -> void:
@@ -2817,8 +2892,11 @@ func _ask_bubble(v: VBoxContainer, p: String, ev: Dictionary) -> VBoxContainer:
 	bs.set_corner_radius_all(10)
 	bs.set_content_margin_all(8)
 	bubble.add_theme_stylebox_override("panel", bs)
-	_anchor(bubble, "ask_" + p)
-	v.add_child(bubble)
+	# The question with its answers is one thing to point at.
+	var ask := _vbox(3)
+	_anchor(ask, "ask_" + p)
+	v.add_child(ask)
+	ask.add_child(bubble)
 	var said := PackedStringArray()
 	for line in ev["lines"]:
 		if line["who"] == p:
@@ -2831,7 +2909,7 @@ func _ask_bubble(v: VBoxContainer, p: String, ev: Dictionary) -> VBoxContainer:
 	bubble.add_child(text)
 	var box := _vbox(3)
 	box.set_meta("small", true)
-	v.add_child(box)
+	ask.add_child(box)
 	return box
 
 
