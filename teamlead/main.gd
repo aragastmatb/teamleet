@@ -134,6 +134,8 @@ var portrait := false
 var pairing := false
 # A sticky is being dragged: let go anywhere but a column and it goes back.
 var dragging := false
+# The part of a phone's screen clear of its cutout, as of the last render.
+var safe_area := Rect2i()
 # The columns on the board by who they belong to, to light up the ones a dragged sticky can go to.
 var drop_columns := {}
 # The messenger: a column of contacts, and the one conversation that's open ("" for none).
@@ -214,10 +216,18 @@ func _ready() -> void:
 	_apply_volume()
 	_apply_layout_mode()
 	get_viewport().size_changed.connect(_on_resize)
+	# A phone's camera cutout stays black; the game keeps clear of it (_fit_safe_area).
 	var bg := ColorRect.new()
-	bg.color = COL_BG
+	bg.color = Color.BLACK if OS.has_feature("mobile") else COL_BG
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
+	if OS.has_feature("mobile"):
+		# Turning the phone the other way round moves the cutout without resizing anything.
+		var timer := Timer.new()
+		timer.wait_time = 0.5
+		timer.timeout.connect(_check_safe_area)
+		add_child(timer)
+		timer.start()
 	_render()
 	var args := OS.get_cmdline_user_args()
 	var at := args.find("--start")
@@ -286,6 +296,34 @@ func _apply_layout_mode() -> bool:
 	compact = small
 	get_window().content_scale_size = target
 	return true
+
+
+# Off a phone's camera cutout and rounded corners: the screen shrinks to the safe area.
+func _fit_safe_area() -> void:
+	safe_area = DisplayServer.get_display_safe_area() if OS.has_feature("mobile") else Rect2i()
+	if safe_area.size.x <= 0:
+		return
+	var win := Vector2(get_window().size)
+	var k := get_viewport().get_visible_rect().size.x / win.x
+	ui.offset_left = safe_area.position.x * k
+	ui.offset_top = safe_area.position.y * k
+	ui.offset_right = -(win.x - safe_area.end.x) * k
+	ui.offset_bottom = -(win.y - safe_area.end.y) * k
+	var paper := ColorRect.new()
+	paper.color = COL_BG
+	paper.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	paper.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(paper)
+
+
+# The screen the game has: all of it, less a phone's cutout.
+func _view() -> Vector2:
+	return ui.size if ui else get_viewport().get_visible_rect().size
+
+
+func _check_safe_area() -> void:
+	if ui and DisplayServer.get_display_safe_area() != safe_area:
+		_render()
 
 
 func _on_resize() -> void:
@@ -679,6 +717,7 @@ func _render() -> void:
 	ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(ui)
+	_fit_safe_area()
 	if portrait:
 		_build_turn_phone()
 		return
@@ -770,7 +809,7 @@ func _achievement_toast(id: String, order: int) -> void:
 	await get_tree().process_frame
 	if not is_instance_valid(box):
 		return
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	box.position = Vector2((view.x - box.size.x) / 2.0, 96.0 + order * (box.size.y + 8.0))
 	box.modulate.a = 0.0
 	var t := create_tween()
@@ -820,7 +859,7 @@ func _splash(text_value: String) -> void:
 	await get_tree().process_frame
 	if not is_instance_valid(box):
 		return
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	box.position = (view - box.size) / 2.0 - Vector2(0, view.y * 0.12)
 	box.modulate.a = 0.0
 	var t := create_tween()
@@ -893,7 +932,7 @@ func _float_change(node_name: String, delta: int, unit: String, cost: bool) -> v
 	tag.z_index = 50
 	tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(tag)
-	var at := node.get_global_rect()
+	var at := Rect2(node.get_global_rect().position - ui.global_position, node.size)
 	tag.position = Vector2(at.position.x + at.size.x * (0.25 if cost else 0.5), at.position.y + at.size.y - 4)
 	var t := create_tween().set_parallel()
 	t.tween_property(tag, "position:y", tag.position.y + 26, 0.9).set_ease(Tween.EASE_OUT)
@@ -963,7 +1002,7 @@ func _build_title() -> void:
 	if art == null:
 		_build_title_plain()
 		return
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	var pic := TextureRect.new()
 	pic.texture = art
 	pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -1126,7 +1165,7 @@ func _build_menu_overlay() -> void:
 	card.add_theme_stylebox_override("panel", style)
 	center.add_child(card)
 	var v := _vbox(14)
-	v.custom_minimum_size.x = minf(420.0, get_viewport().get_visible_rect().size.x - 88.0)
+	v.custom_minimum_size.x = minf(420.0, _view().x - 88.0)
 	card.add_child(v)
 	_menu_page(v, true)
 
@@ -1743,7 +1782,7 @@ func _build_window() -> void:
 		if window != "upgrades" and C.UPGRADES.has(window.substr(8)):
 			_upgrade_window(window.substr(8))
 		return
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	if window == "task":
 		var t := rules.task(selected)
 		if t.is_empty() or (t["status"] not in ["inbox", "active"] and deal_from < 0):
@@ -1802,7 +1841,7 @@ func _modal(title: String, hint: String, w: float, wide_scroll: bool, fit: bool 
 		if _tapped(event):
 			_close_window.call_deferred())
 	ui.add_child(dim)
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	# Small windows (fit) grow to what's in them, up to the screen; big ones take the screen.
 	var h := view.y - (16.0 if compact else 64.0)
 	var panel := PanelContainer.new()
@@ -1945,7 +1984,7 @@ func _buy_upgrade(id: String) -> void:
 
 
 func _build_upgrades() -> void:
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	var w := view.x - (16.0 if compact else 64.0)
 	var body := _modal(Loc.t("up.title"), Loc.t("up.hint") + "   " + _money_text() + "   " + _attention_text(), w, compact)
 	var ids: Array = C.UPGRADES.keys()
@@ -2175,7 +2214,7 @@ func _sticker(id: String, sz: Vector2) -> Control:
 # The full card of one upgrade, opened from its sticker: what it does now and when rolled out, what it
 # brings into the deck, what it needs, and the buy button.
 func _upgrade_window(id: String) -> void:
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	var up: Dictionary = C.UPGRADES[id]
 	var state := rules.upgrade_state(id)
 	var v := _modal(Loc.t("up.%s.name" % id), _money_text() + "   " + _attention_text(), minf(560.0, view.x - 16.0), true, true)
@@ -2387,10 +2426,10 @@ func _coach() -> void:
 	ui.add_child(layer)
 	# Out of the way while a sticky is dragged.
 	layer.add_to_group("coach")
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	var hole := Rect2(view / 2.0, Vector2.ZERO)
 	if target != null:
-		var g := target.get_global_rect().grow(6.0)
+		var g := Rect2(target.get_global_rect().position - ui.global_position, target.size).grow(6.0)
 		hole = Rect2(g.position.floor(), g.size.ceil())
 	var dim := Color(0.12, 0.13, 0.15, 0.5)
 	for r in [Rect2(0, 0, view.x, hole.position.y), Rect2(0, hole.end.y, view.x, view.y - hole.end.y),
@@ -3505,7 +3544,7 @@ func _row_label(text_value: String) -> Control:
 	return l
 
 func _view_width() -> float:
-	return get_viewport().get_visible_rect().size.x
+	return _view().x
 
 
 # ---------- the messenger ----------
@@ -4161,7 +4200,7 @@ func _build_story() -> void:
 	dim.color = Color(0.12, 0.13, 0.15, 0.6)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	var w := minf(880.0, view.x - (16.0 if compact else 64.0))
 	var h := view.y - 16.0 if compact else minf(600.0, view.y - 64.0)
 	var panel := PanelContainer.new()
@@ -4229,7 +4268,7 @@ func _build_convo() -> void:
 	dim.color = Color(0.12, 0.13, 0.15, 0.6)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	var w := minf(880.0, view.x - (16.0 if compact else 64.0))
 	var h := view.y - 16.0 if compact else minf(600.0, view.y - 64.0)
 	var panel := PanelContainer.new()
@@ -4294,7 +4333,7 @@ func _build_standup() -> void:
 	dim.color = Color(0.12, 0.13, 0.15, 0.6)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ui.add_child(dim)
-	var view := get_viewport().get_visible_rect().size
+	var view := _view()
 	var w := minf(960.0, view.x - (16.0 if compact else 64.0))
 	var h := view.y - 16.0 if compact else minf(640.0, view.y - 64.0)
 	var panel := PanelContainer.new()
